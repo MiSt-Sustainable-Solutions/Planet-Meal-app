@@ -1,0 +1,17 @@
+# the app's own database — derived, rebuildable by seeding from the catalogue repo
+data/*.db
+data/*.db-journal
+
+# client data received through the app — NEVER commit purchase files
+data/uploads/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# os
+Thumbs.db
+.DS_Store

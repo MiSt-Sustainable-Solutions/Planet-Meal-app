@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Pre-flight{% endblock %}
+{% block body %}
+
+{% set v = report.verdict %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Pre-flight · {{ report.filename }}</div>
+
+    <div class="verdict {{ v }}">
+      <span class="badge">
+        {% if v == 'go' %}Clean.{% elif v == 'go_with_warnings' %}Usable, with caveats.{% else %}Stop.{% endif %}
+      </span>
+      <span class="pill {{ 'soft' if v=='go' else ('warn' if v=='go_with_warnings' else 'bad') }}">
+        {{ v|replace('_',' ') }}
+      </span>
+    </div>
+
+    <p class="lede" style="margin-top:18px;">{{ report.summary }}</p>
+
+    <div class="grid g4" style="margin-top:clamp(24px,3vw,38px);">
+      <div class="card"><div class="stat">
+        <span class="k">Lines</span><span class="v" style="font-size:clamp(24px,2.4vw,34px);">{{ "{:,}".format(report.lines) }}</span>
+      </div></div>
+      <div class="card"><div class="stat">
+        <span class="k">Products</span><span class="v" style="font-size:clamp(24px,2.4vw,34px);">{{ "{:,}".format(report.products) }}</span>
+      </div></div>
+      <div class="card"><div class="stat">
+        <span class="k">Months</span><span class="v" style="font-size:clamp(24px,2.4vw,34px);">{{ report.periods|length }}</span>
+        <span class="sub">{% if report.periods %}{{ report.periods[0] }} → {{ report.periods[-1] }}{% endif %}</span>
+      </div></div>
+      <div class="card"><div class="stat">
+        <span class="k">Spend</span><span class="v" style="font-size:clamp(24px,2.4vw,34px);">€{{ "{:,}".format(report.spend_eur|int) }}</span>
+        <span class="sub">read with the {{ report.adapter }} adapter</span>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section class="dark">
+  <div class="inner">
+    <div class="sec-label sl-teal">Every check, and what it found</div>
+    <div class="card">
+      {% for f in report.findings %}
+      <div class="finding">
+        <span class="dot {{ f.severity }}"></span>
+        <div>
+          <div class="code">{{ f.code|replace('_',' ') }}</div>
+          <div class="msg">{{ f.message }}</div>
+
+          {% if f.examples %}
+          <div class="detail">
+            {% for e in f.examples[:6] %}
+            <div>{{ e.description|truncate(48) if e.description else e.artikelnr }}
+              {% if e.spend_eur is defined %}<span style="opacity:.7;"> — €{{ "{:,}".format(e.spend_eur) }}</span>{% endif %}
+            </div>
+            {% endfor %}
+            {% if f.examples|length > 6 %}<div style="opacity:.7;">…and {{ f.examples|length - 6 }} more</div>{% endif %}
+          </div>
+          {% endif %}
+
+          {% if f.unknown %}
+          <div class="detail">{{ f.unknown|join(' · ') }}</div>
+          {% endif %}
+
+          {% if f.already_loaded %}
+          <div class="detail">
+            <strong style="color:var(--white);">Already loaded:</strong> {{ f.already_loaded|join(' · ') }}<br/>
+            <strong style="color:var(--white);">New in this file:</strong>
+            {{ f.new_months|join(' · ') if f.new_months else 'none' }}
+          </div>
+          {% endif %}
+
+          {% if f.months and not f.already_loaded %}
+          <div class="detail">{{ f.months|join(' · ') }}</div>
+          {% endif %}
+
+          {% if f.rows %}
+          <div class="detail">
+            {% for r in f.rows[:5] %}<div>row {{ r.row }} — {{ r.problem }}</div>{% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">What happens next</div>
+
+    {% if report.committed %}
+      <h2 class="sec-h2">Already <em>imported.</em></h2>
+      <p class="lede" style="margin-top:16px;">
+        Committed {{ report.committed_at }} in <strong>{{ report.commit_mode }}</strong> mode —
+        {{ report.commit_note }}
+      </p>
+      <p style="margin-top:24px;"><a class="btn-main" href="/">See the dashboard</a></p>
+
+    {% else %}
+      <h2 class="sec-h2">Your call.</h2>
+
+      {% if v == 'blocked' %}
+      <p class="lede" style="margin-top:16px;">
+        This file would produce a wrong number as it stands. The usual cause is
+        <strong>overlap</strong>: Sligro exports are cumulative, so a December file also
+        contains January to November. Importing it on top of months you already hold counts
+        them twice.
+      </p>
+      {% endif %}
+
+      <form method="post" action="/upload/{{ report.upload_id }}/commit" style="margin-top:26px;">
+        <div class="grid g3" style="align-items:stretch;">
+          {% for mode in commit_modes %}
+          <label class="card" style="cursor:pointer;display:block;">
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <input type="radio" name="mode" value="{{ mode.key }}" {% if mode.default %}checked{% endif %}
+                     style="margin-top:5px;accent-color:var(--teal);"/>
+              <div>
+                <div class="h3" style="font-size:17px;">{{ mode.label }}</div>
+                <p class="muted" style="margin-top:6px;">{{ mode.description }}</p>
+                {% if mode.effect %}<p class="muted" style="margin-top:8px;"><strong>{{ mode.effect }}</strong></p>{% endif %}
+              </div>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+
+        {% if v == 'blocked' %}
+        <label class="muted" style="display:flex;gap:9px;align-items:flex-start;margin-top:22px;max-width:66ch;">
+          <input type="checkbox" name="override" value="1" style="margin-top:5px;accent-color:var(--danger);"/>
+          <span>
+            I have read the blocking findings above and want to import anyway. I understand
+            this can double-count months and produce a wrong footprint.
+          </span>
+        </label>
+        {% endif %}
+
+        <div style="display:flex;gap:20px;align-items:center;margin-top:26px;flex-wrap:wrap;">
+          <button class="btn-main" type="submit">Import into {{ client_name }}'s data</button>
+          <a class="btn-ghost" href="/upload/{{ report.upload_id }}/discard">Discard this file</a>
+          <a class="btn-ghost" href="/upload">Upload a different file</a>
+        </div>
+      </form>
+
+      {% if commit_error %}
+      <div class="card" style="margin-top:24px;border-color:var(--danger);">
+        <div class="finding" style="border:none;padding:0;">
+          <span class="dot error"></span>
+          <div><div class="code">import refused</div><div class="msg">{{ commit_error }}</div></div>
+        </div>
+      </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}

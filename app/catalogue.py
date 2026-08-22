@@ -1,0 +1,110 @@
+"""
+The client for the shared catalogue API.
+
+The only place this app talks to the catalogue. Everything goes over HTTP, even in local
+development, because that boundary is the product: the catalogue is a shared asset that
+gets better with every client, and this app is one client's packaging of it.
+
+We send purchase lines and get scored results back. We never send who the client is, and
+the catalogue never stores what we sent.
+
+Every call degrades rather than explodes. If the catalogue is down the upload page still
+works, the pre-flight still runs, and the parts that need it say so.
+"""
+from __future__ import annotations
+
+import httpx
+
+import config
+
+
+class CatalogueDown(Exception):
+    """The shared catalogue could not be reached or refused the request."""
+
+
+def _client() -> httpx.Client:
+    return httpx.Client(base_url=config.CATALOGUE_API, timeout=config.API_TIMEOUT)
+
+
+def health() -> dict | None:
+    try:
+        with _client() as c:
+            r = c.get("/health", timeout=5)
+            return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def score(lines: list[dict], label: str = "analysis", profile: str | None = None,
+          top: int = 20) -> dict:
+    """Score purchase lines. -> the whole dashboard in one response.
+
+    Raises CatalogueDown so the caller can show something honest instead of a stack trace.
+    """
+    if not lines:
+        raise CatalogueDown("there are no purchase lines to score")
+    payload = {"lines": lines, "label": label, "top": top}
+    if profile:
+        payload["profile"] = profile
+    try:
+        with _client() as c:
+            r = c.post("/analysis/run", json=payload)
+    except Exception as e:
+        raise CatalogueDown(
+            f"could not reach the catalogue API at {config.CATALOGUE_API} "
+            f"({type(e).__name__}). Is it running?") from e
+    if r.status_code != 200:
+        detail = r.json().get("detail") if r.headers.get("content-type", "").startswith(
+            "application/json") else r.text
+        raise CatalogueDown(f"the catalogue refused the request ({r.status_code}): {detail}")
+    return r.json()
+
+
+def work_queue(lines: list[dict], label: str = "analysis", limit: int = 50) -> dict:
+    try:
+        with _client() as c:
+            r = c.post("/analysis/run/work-queue",
+                       json={"lines": lines, "label": label, "top": limit})
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        raise CatalogueDown(f"could not fetch the work queue: {type(e).__name__}") from e
+
+
+def explain(artikelnr: str, lines: list[dict], label: str = "analysis") -> dict | None:
+    try:
+        with _client() as c:
+            r = c.post(f"/analysis/run/product/{artikelnr}",
+                       json={"lines": lines, "label": label})
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        raise CatalogueDown(f"could not explain {artikelnr}: {type(e).__name__}") from e
+
+
+def eat_profiles() -> dict | None:
+    try:
+        with _client() as c:
+            r = c.get("/eat/profiles", timeout=15)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def recognise(products: list[dict]) -> dict | None:
+    """How many of these products does the catalogue already know, and which categories
+    are unmapped? Returns None if the catalogue is unreachable — the caller must then say
+    'unavailable' rather than assume everything is fine.
+    """
+    if not products:
+        return {"recognised": 0, "unmapped_categories": []}
+    try:
+        with _client() as c:
+            r = c.post("/catalogue/recognise", json={"products": products}, timeout=60)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:
+        return None

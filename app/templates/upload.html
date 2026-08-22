@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Upload{% endblock %}
+{% block body %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Upload</div>
+    <h1 class="page-h1">Drop the file in. <em>Nothing counts yet.</em></h1>
+    <p class="lede" style="margin-top:22px;">
+      The file is read and checked first. You see exactly what is in it — and what is wrong
+      with it — before a single number is produced. Nothing enters {{ client_name }}'s data
+      until you say so.
+    </p>
+
+    {% if error %}
+    <div class="card" style="margin-top:26px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div>
+          <div class="code">could not read the file</div>
+          <div class="msg">{{ error }}</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/upload" enctype="multipart/form-data" style="margin-top:30px;" id="upForm">
+      <label class="drop" id="drop">
+        <input type="file" name="file" id="file" accept=".xlsx,.xlsm,.xls" required/>
+        <div class="h3">Choose a file, or drag it here</div>
+        <p class="muted" style="margin-top:10px;">
+          A Sligro export, or the MiSt template. <code>.xlsx</code>
+        </p>
+        <p class="muted" id="chosen" style="margin-top:14px;font-weight:700;color:var(--teal-ink);"></p>
+      </label>
+
+      <div style="display:flex;gap:20px;align-items:center;margin-top:24px;flex-wrap:wrap;">
+        <button class="btn-main" type="submit" id="go">Check this file</button>
+        <label class="muted" style="display:flex;gap:8px;align-items:center;">
+          Year (only if a Sligro file was renamed)
+          <input type="number" name="year" min="2000" max="2100" placeholder="—"
+                 style="width:96px;font-family:var(--sans);font-size:13px;padding:8px 10px;
+                        border:1px solid var(--mist);border-radius:6px;background:var(--white);color:var(--ink);"/>
+        </label>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="dark tight">
+  <div class="inner">
+    <div class="sec-label sl-teal">What we accept</div>
+    <div class="grid g2" style="margin-top:6px;">
+      {% for a in adapters %}
+      <div class="card">
+        <div class="h3">{{ a.label }}</div>
+        <p class="muted" style="margin-top:10px;">{{ a.description }}</p>
+        {% if a.name == 'mist_template' %}
+        <p style="margin-top:16px;"><a class="btn-ghost" href="/upload/template">Download the template</a></p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="muted" style="margin-top:22px;max-width:70ch;">
+      A different wholesaler — Bidfood, Hanos, anyone — needs one new adapter and nothing
+      else. The catalogue behind this is keyed on barcode, so the same product bought
+      elsewhere lands on a decision that has already been made.
+    </p>
+  </div>
+</section>
+
+{% if uploads %}
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">Earlier files</div>
+    <div class="card scroll-x">
+      <table class="tbl">
+        <thead><tr>
+          <th>File</th><th>Read as</th><th>Months</th><th class="num">Lines</th>
+          <th class="num">Spend €</th><th>Verdict</th><th>State</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for u in uploads %}
+        <tr>
+          <td class="name">{{ u.filename|truncate(34) }}</td>
+          <td class="muted">{{ u.adapter }}</td>
+          <td class="muted">{{ u.periods|length }}{% if u.periods %} <span style="opacity:.7;">({{ u.periods[0] }}…{{ u.periods[-1] }})</span>{% endif %}</td>
+          <td class="num">{{ "{:,}".format(u.lines) }}</td>
+          <td class="num">{{ "{:,}".format(u.spend_eur|int) }}</td>
+          <td>
+            <span class="pill {{ 'soft' if u.verdict=='go' else ('warn' if u.verdict=='go_with_warnings' else 'bad') }}">
+              {{ u.verdict|replace('_',' ') }}
+            </span>
+          </td>
+          <td class="muted">{{ 'committed' if u.committed else 'staged' }}</td>
+          <td><a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+  var drop = document.getElementById('drop'),
+      file = document.getElementById('file'),
+      chosen = document.getElementById('chosen'),
+      form = document.getElementById('upForm'),
+      go = document.getElementById('go');
+  function show(){ chosen.textContent = file.files.length ? file.files[0].name : ''; }
+  file.addEventListener('change', show);
+  ['dragenter','dragover'].forEach(function(e){
+    drop.addEventListener(e, function(ev){ ev.preventDefault(); drop.classList.add('over'); });
+  });
+  ['dragleave','drop'].forEach(function(e){
+    drop.addEventListener(e, function(ev){ ev.preventDefault(); drop.classList.remove('over'); });
+  });
+  drop.addEventListener('drop', function(ev){
+    if(ev.dataTransfer.files.length){ file.files = ev.dataTransfer.files; show(); }
+  });
+  form.addEventListener('submit', function(){
+    go.disabled = true;
+    go.textContent = 'Reading the file…';
+  });
+})();
+</script>
+{% endblock %}

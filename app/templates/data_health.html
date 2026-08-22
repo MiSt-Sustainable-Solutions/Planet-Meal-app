@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Data health{% endblock %}
+{% block body %}
+
+{% if error %}
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Data health</div>
+    <h1 class="page-h1">Nothing to assess <em>yet.</em></h1>
+    <p class="lede" style="margin-top:22px;">{{ error }}</p>
+  </div>
+</section>
+{% else %}
+
+{% set dh = result.data_health %}
+{% set conf = dh.confidence %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Data health · {{ result.window.label }}</div>
+    <h1 class="page-h1">What we are <em>not sure about.</em></h1>
+    <p class="lede" style="margin-top:22px;">
+      Everything the client should not have to think about, and we must. This page is the
+      differentiator: the incumbent cannot say what share of their number is a real match
+      versus a group average. Per product, we can.
+    </p>
+  </div>
+</section>
+
+<section class="dark">
+  <div class="inner">
+    <div class="sec-label sl-teal">The tier ladder</div>
+    <h2 class="sec-h2">Every kilogram, <em>and where its number came from.</em></h2>
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Tier</th><th>What it means</th><th class="num">% of weight</th>
+          <th class="num">% of CO<sub>2</sub></th><th class="num">Products</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for t in dh.by_tier %}
+        <tr>
+          <td class="name">{{ t.label }}</td>
+          <td class="muted" style="max-width:46ch;">{{ t.explain }}</td>
+          <td class="num">{{ t.pct_of_weight }}</td>
+          <td class="num">{{ t.pct_of_co2 }}</td>
+          <td class="num">{{ "{:,}".format(t.products) }}</td>
+          <td>
+            <span class="pill {{ 'soft' if t.product_level else 'warn' }}">
+              {{ 'specific' if t.product_level else 'average' }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:18px;">
+      <strong>{{ conf.headline }}</strong>
+      The tiers are tried in order and the first match wins, so a reviewed decision always
+      beats a rule, and a rule always beats an average.
+    </p>
+  </div>
+</section>
+
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">The work queue</div>
+    <h2 class="sec-h2">Ranked by <em>kilograms.</em></h2>
+    <p class="lede" style="margin-top:14px;">
+      Products still resolved by an average, heaviest first. This is the list that turns
+      "{{ conf.product_specific_pct_of_weight|round|int }}% specific" into a plan — curating
+      from the top is worth many times curating from the middle.
+      {% if work_queue %}
+      <strong>{{ "{:,}".format(work_queue.total_kg_on_average) }} kg</strong> across
+      <strong>{{ "{:,}".format(work_queue.total_products_on_average) }}</strong> products
+      currently sit on an average.
+      {% endif %}
+    </p>
+    {% if work_queue and work_queue.rows %}
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th class="num">#</th><th>Product</th><th>Category</th><th>Group</th>
+          <th class="num">kg</th><th class="num">kg CO<sub>2</sub>e</th><th>Currently</th>
+        </tr></thead>
+        <tbody>
+        {% for p in work_queue.rows[:40] %}
+        <tr>
+          <td class="num muted">{{ loop.index }}</td>
+          <td class="name">{{ p.description|truncate(44) }}</td>
+          <td class="muted">{{ (p.category or '')|truncate(24) }}</td>
+          <td class="muted">{{ fg(p.food_group) }}</td>
+          <td class="num">{{ "{:,}".format(p.food_kg) }}</td>
+          <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
+          <td><span class="pill warn">{{ p.source_label }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% elif work_queue_error %}
+    <div class="card" style="margin-top:24px;">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot warning"></span>
+        <div><div class="code">work queue unavailable</div><div class="msg">{{ work_queue_error }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="dark">
+  <div class="inner">
+    <div class="sec-label sl-teal">The weight gap</div>
+    <h2 class="sec-h2">{{ result.piece_items.pct_of_spend }}% of spend <em>weighs zero.</em></h2>
+    <p class="muted" style="margin-top:14px;max-width:66ch;">
+      {{ result.piece_items.products }} products are sold per piece and carry no weight in the
+      export, so they contribute nothing to the footprint. This is not something we can
+      compute around — only the wholesaler can supply piece weights. Until then it is
+      disclosed on every screen that shows a total.
+    </p>
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Product</th><th>Category</th><th>Pack</th><th class="num">Pieces</th><th class="num">Spend €</th>
+        </tr></thead>
+        <tbody>
+        {% for p in result.piece_items.rows[:30] %}
+        <tr>
+          <td class="name">{{ p.description|truncate(44) }}</td>
+          <td class="muted">{{ (p.category or '')|truncate(26) }}</td>
+          <td class="muted">{{ p.vp }} / {{ p.eenh }}</td>
+          <td class="num">{{ "{:,}".format(p.pieces) }}</td>
+          <td class="num">{{ "{:,}".format(p.spend_eur) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Coverage by month</div>
+    <h2 class="sec-h2">What we <em>hold.</em></h2>
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Month</th><th class="num">Lines</th><th class="num">Spend €</th>
+          <th class="num">kg</th><th class="num">Piece lines</th><th>Quality</th>
+        </tr></thead>
+        <tbody>
+        {% for m in months %}
+        <tr>
+          <td class="name">{{ m.period }}</td>
+          <td class="num">{{ "{:,}".format(m.lines) }}</td>
+          <td class="num">{{ "{:,}".format(m.spend_eur) }}</td>
+          <td class="num">{{ "{:,}".format(m.kg) }}</td>
+          <td class="num">{{ "{:,}".format(m.piece_lines) }}</td>
+          <td>
+            <span class="pill {{ 'soft' if m.complete else 'bad' }}">
+              {{ 'complete' if m.complete else m.quality }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:16px;">
+      A month marked otherwise came from an incomplete export. It is kept, because deleting
+      data is worse than labelling it — but it is never drawn as a comparable month.
+    </p>
+  </div>
+</section>
+
+{% endif %}
+{% endblock %}

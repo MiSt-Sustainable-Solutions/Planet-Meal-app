@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+{% block body %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">History</div>
+    <h1 class="page-h1">Every analysis, <em>kept.</em></h1>
+    <p class="lede" style="margin-top:22px;">
+      Each run is stored with the numbers it produced and the EAT-Lancet profile that
+      produced them. If a rule changes later, an old figure can still explain itself.
+    </p>
+
+    {% if runs %}
+    <div class="card scroll-x" style="margin-top:28px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Ran</th><th>Window</th><th class="num">Food t</th><th class="num">CO<sub>2</sub> t</th>
+          <th class="num">Intensity</th><th class="num">EAT</th><th class="num">Specific %</th>
+          <th>Profile</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for r in runs %}
+        <tr>
+          <td class="muted">{{ r.ran_at|replace('T',' ') }}</td>
+          <td class="name">{{ r.label }}</td>
+          <td class="num">{{ (r.food_kg/1000)|round(1) }}</td>
+          <td class="num">{{ (r.co2_kg/1000)|round(1) }}</td>
+          <td class="num">{{ r.intensity }}</td>
+          <td class="num">{{ r.eat_score }}</td>
+          <td class="num">{{ r.specific_pct }}</td>
+          <td class="muted">{{ r.eat_profile }}</td>
+          <td><a class="btn-ghost" href="/api/run/{{ r.id }}">JSON</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="lede" style="margin-top:24px;">No analyses have been run yet.</p>
+    <p style="margin-top:20px;"><a class="btn-main" href="/">Run one now</a></p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="dark tight">
+  <div class="inner">
+    <div class="sec-label sl-teal">Files received</div>
+    {% if uploads %}
+    <div class="card scroll-x">
+      <table class="tbl">
+        <thead><tr>
+          <th>File</th><th>Read as</th><th>Uploaded</th><th class="num">Lines</th>
+          <th>Verdict</th><th>State</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for u in uploads %}
+        <tr>
+          <td class="name">{{ u.filename|truncate(36) }}</td>
+          <td class="muted">{{ u.adapter }}</td>
+          <td class="muted">{{ u.uploaded_at|replace('T',' ') }}</td>
+          <td class="num">{{ "{:,}".format(u.lines) }}</td>
+          <td>
+            <span class="pill {{ 'soft' if u.verdict=='go' else ('warn' if u.verdict=='go_with_warnings' else 'bad') }}">
+              {{ u.verdict|replace('_',' ') }}
+            </span>
+          </td>
+          <td class="muted">{{ 'committed' if u.committed else 'staged' }}</td>
+          <td><a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">No files received yet.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}
