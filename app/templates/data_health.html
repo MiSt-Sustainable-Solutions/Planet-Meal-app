@@ -143,6 +143,72 @@
   </div>
 </section>
 
+<!-- ============================ the review loop ============================ -->
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">Curation</div>
+    <h2 class="sec-h2">Take the list away, and <em>bring decisions back.</em></h2>
+    <p class="lede" style="margin-top:14px;">
+      The queue leaves as a spreadsheet, because that is what a person can actually work
+      through. One row per product, heaviest first, with the three best candidate reference
+      products already found &mdash; so you pick rather than search. Fill in the blue columns
+      and send it back.
+    </p>
+    <p class="lede" style="margin-top:12px;">
+      Every answer becomes a <strong>rule, not a number</strong>. A decision records that this
+      product <em>is</em> that reference product; the footprint is recalculated from it, so it
+      keeps improving as the sources do. And where the product has a barcode the decision is
+      stored against that, which means it applies to the same item from any wholesaler
+      &mdash; for every client, once.
+    </p>
+
+    {% if curated %}
+    <div class="card" style="margin-top:24px;">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot ok"></span>
+        <div><div class="code">decisions filed</div><div class="msg">{{ curated }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+    {% if curate_error %}
+    <div class="card" style="margin-top:24px;">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">the sheet was not accepted</div><div class="msg">{{ curate_error }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card" style="margin-top:24px;display:flex;flex-wrap:wrap;gap:28px;align-items:center;">
+      <a class="btn-main" href="/review-sheet.xlsx{% if selected_window %}?window={{ selected_window }}{% endif %}">
+        Download the review sheet
+      </a>
+      <form method="post" action="/curate" enctype="multipart/form-data"
+            style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;">
+        <input type="file" name="file" accept=".xlsx" required
+               style="font-family:inherit;font-size:13px;color:var(--sage);"/>
+        <button class="btn-ghost" type="submit" name="check" value="1"
+                style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;">Check it first</button>
+        <button class="btn-main" type="submit">Send decisions to the catalogue</button>
+      </form>
+    </div>
+
+    <p class="lede" style="margin-top:20px;font-size:14px;">
+      {% if decisions %}
+      The shared catalogue holds <strong>{{ "{:,}".format(decisions.decisions) }}</strong>
+      decisions so far, <strong>{{ decisions.portable_pct }}%</strong> of them stored against a
+      barcode. Sending a sheet changes the catalogue for <em>every</em> client, which is the
+      point &mdash; and why it is a button rather than something that happens on its own.
+      {% else %}
+      Sending a sheet changes the shared catalogue for every client, which is why it is a
+      deliberate action rather than a side effect of an upload.
+      {% endif %}
+      Afterwards the dashboard will say the numbers are behind, and wait for you to
+      recalculate.
+    </p>
+  </div>
+</section>
+
 <section class="dark">
   <div class="inner">
     <div class="sec-label sl-teal">The weight gap</div>
