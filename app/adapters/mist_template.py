@@ -14,6 +14,7 @@ import os
 import re
 
 import openpyxl
+from openpyxl.utils import get_column_letter
 
 from .sligro import mass_kg, parse_ivp
 
@@ -53,8 +54,13 @@ def _norm(v) -> str:
 
 
 def _header(ws):
+    """The header row. Must carry 'periode' — that is what distinguishes this template
+    from a Sligro export, which also names a Klantnr and an Artikelnr but lays its periods
+    out in columns rather than in a column of its own."""
     for row in ws.iter_rows(min_row=1, max_row=8, values_only=True):
         got = {_norm(v) for v in row if v is not None}
+        if "periode" not in got or "artikelnr" not in got:
+            continue
         if sum(1 for c in REQUIRED if _norm(c) in got) >= 6:
             return {_norm(v): i for i, v in enumerate(row) if v is not None}
     return None
@@ -102,7 +108,7 @@ def read(path: str, filename: str | None = None, year: int | None = None):
         i = idx.get(_norm(col))
         return row[i] if i is not None and i < len(row) else None
 
-    prod, lines, problems = {}, [], []
+    prod, lines, problems, source_rows = {}, [], [], []
     started = False
     for n, row in enumerate(ws.iter_rows(values_only=True), start=1):
         if not started:                                   # skip down to past the header
@@ -124,7 +130,10 @@ def read(path: str, filename: str | None = None, year: int | None = None):
         try:
             y, m = _period(cell(row, "periode"))
         except ValueError as e:
-            problems.append(dict(row=n, artikelnr=art, problem=str(e)))
+            col = idx.get(_norm("periode"))
+            problems.append(dict(
+                row=n, artikelnr=art, problem=str(e),
+                cell=f"{get_column_letter(col + 1)}{n}" if col is not None else f"row {n}"))
             continue
 
         maat = cell(row, "maat")
@@ -145,13 +154,14 @@ def read(path: str, filename: str | None = None, year: int | None = None):
         lines.append((y, m, str(cell(row, "klantnr") or "").strip(),
                       str(cell(row, "restaurant") or "").strip(), "", art, float(a),
                       float(o) if isinstance(o, (int, float)) else 0.0, kg, known, "complete"))
+        source_rows.append(n)
     wb.close()
 
     if not lines:
         raise TemplateError("the template contains no purchase lines with a quantity")
 
     return Reading(adapter=NAME, filename=filename, products=prod, lines=lines,
-                   row_problems=problems,
+                   row_problems=problems, source_rows=source_rows,
                    notes=["Read as the MiSt template; periods come from the periode column."])
 
 

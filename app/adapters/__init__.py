@@ -42,13 +42,17 @@ class Reading:
     row_problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     quirks: list = field(default_factory=list)   # supplier-specific findings for pre-flight
+    # source_rows[i] is the spreadsheet row that produced lines[i], so a finding can point
+    # at a row the user can actually open. Empty when an adapter cannot track it.
+    source_rows: list = field(default_factory=list)
 
     @property
     def periods(self) -> list[str]:
         return [f"{y}-{m:02d}" for y, m in sorted({(l[0], l[1]) for l in self.lines})]
 
 
-REGISTRY = [sligro, mist_template]
+# most specific first: the template is identified by its 'periode' column
+REGISTRY = [mist_template, sligro]
 
 
 def detect(path: str, filename: str | None = None):

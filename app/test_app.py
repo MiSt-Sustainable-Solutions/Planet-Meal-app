@@ -210,6 +210,98 @@ for bad in ("FY1999", "nonsense"):
     except analysis.WindowError:
         P(True, f"{bad} rejected cleanly")
 
+
+# ------------------------------------------------------------------ every real export
+print("\n=== every real Sligro export is readable, whatever shape it is ===")
+import glob  # noqa: E402
+files = sorted(glob.glob(os.path.join(SLIGRO_DIR, "*.xlsx")))
+P(len(files) == 20, f"{len(files)} exports found")
+unreadable, layouts = [], {"NAME": 0, "struct": 0}
+per_file = {}
+for fp in files:
+    try:
+        rd = adapters.read(fp, os.path.basename(fp))
+        layouts["NAME" if any("by column NAME" in n for n in rd.notes) else "struct"] += 1
+        per_file[os.path.basename(fp)] = rd
+    except Exception as e:
+        unreadable.append(f"{os.path.basename(fp)}: {type(e).__name__}")
+P(not unreadable, f"all {len(files)} read without error ({unreadable})")
+P(layouts["NAME"] >= 8, f"{layouts['NAME']} read by column NAME, {layouts['struct']} by structure")
+
+print("\n=== the two shifted files are read at the right column ===")
+# Januari 2025 and Januari 2026 carry two extra columns, so their quantities start at 18.
+# Reading column 17 there takes the GBR account code instead. This is the regression that
+# matters most: it is the difference between a right answer and a silently wrong one.
+jan25 = per_file.get("Januari 2025.xlsx")
+P(jan25 is not None and abs(sum(l[7] for l in jan25.lines) - 155163) < 1,
+  f"Januari 2025 spend is EUR {sum(l[7] for l in jan25.lines):,.0f} (the verified figure)")
+jan26 = per_file.get("Januari 2026.xlsx")
+P(jan26 is not None and abs(sum(l[7] for l in jan26.lines) - 131966) < 1,
+  f"Januari 2026 spend is EUR {sum(l[7] for l in jan26.lines):,.0f} (the verified figure)")
+shifted = [f for f, rd in per_file.items()
+           if any(q["code"] == "nonstandard_layout" for q in rd.quirks)]
+P("Januari 2026.xlsx" in shifted, f"the shifted layout is disclosed, not silently absorbed ({shifted})")
+
+print("\n=== apostrophe-wrapped text is unwrapped ===")
+# Januari 2026 stores text as "'KP'". Left alone, every unit lookup fails and every mass
+# becomes unknown.
+P(sligro._text("'KP'") == "KP", "'KP' -> KP")
+P(sligro._text("  'APPEL TU DELFT'  ") == "APPEL TU DELFT", "surrounding whitespace and quotes go")
+P(sligro._text("O'BRIEN") == "O'BRIEN", "an apostrophe INSIDE a word is left alone")
+P(sligro._text(None) == "" and sligro._text(12) == "12", "None and numbers survive")
+weighed = sum(1 for l in jan26.lines if l[9] == 1) / max(len(jan26.lines), 1)
+P(weighed > 0.5, f"{weighed:.0%} of Januari 2026 lines have a usable weight")
+
+print("\n=== a file is never claimed by the wrong adapter ===")
+misrouted = [os.path.basename(f) for f in files
+             if adapters.detect(f, os.path.basename(f)).NAME != "sligro"]
+P(not misrouted, f"all 20 Sligro exports route to the sligro adapter ({misrouted})")
+P(adapters.detect(tpl, "template.xlsx").NAME == "mist_template",
+  "the MiSt template routes to the template adapter, not to sligro")
+
+print("\n=== duplicate rows: the account is part of the key ===")
+# One product bought by three restaurants in one month is normal, not a duplicate.
+# Keying on (period, product) alone flagged all 20 real files.
+false_pos = [f for f, rd in per_file.items()
+             if any(x["code"] == "duplicate_rows" for x in preflight.check_duplicate_rows(rd))]
+P(not false_pos, f"no real export is flagged as duplicated ({false_pos})")
+
+
+class _FakeReading:
+    adapter, filename, products, notes, quirks, row_problems = "x", "f", {}, [], [], []
+    source_rows = [11, 12]
+    lines = [(2025, 3, "131723", "R", "", "999", 1, 10.0, 1.0, 1, "complete"),
+             (2025, 3, "131723", "R", "", "999", 1, 10.0, 1.0, 1, "complete")]
+
+
+dup = preflight.check_duplicate_rows(_FakeReading())
+P(len(dup) == 1, "the same account buying the same product twice in one month IS flagged")
+P("11, 12" in (dup[0]["examples"][0]["rows"] if dup else ""),
+  f"and it names the rows ({dup[0]['examples'][0]['rows'] if dup else '-'})")
+
+print("\n=== volume: a quiet July is not a truncated export ===")
+# July 2025 is 0.24 of the annual median, which tripped the error band on the reference
+# file itself. Compared against another July it is completely normal.
+dec25 = per_file.get("December 2025.xlsx")
+vol = preflight.check_volume(dec25)
+flagged = {m for x in vol for m in x.get("months", [])}
+P("2025-07" not in flagged, f"July 2025 is not flagged ({sorted(flagged) or 'nothing flagged'})")
+P(not any(x["severity"] == "error" for x in vol), "the reference export raises no volume error")
+
+print("\n=== but a genuinely partial export still is ===")
+for name in ("December 2024.xlsx", "September 2024.xlsx", "augustus 2025.xlsx"):
+    rd = per_file.get(name)
+    if rd is None:
+        continue
+    v = preflight.check_volume(rd)
+    P(any(x["severity"] == "error" for x in v), f"{name} still raises partial_months")
+
+print("\n=== findings point at somewhere a person can look ===")
+located = [q for rd in per_file.values() for q in rd.quirks if q.get("location")]
+P(located, f"{len(located)} findings carry a cell reference, e.g. {located[0]['location']}")
+P(all(len(rd.source_rows) == len(rd.lines) for rd in per_file.values()),
+  "every line knows which spreadsheet row it came from")
+
 shutil.rmtree(_TMP, ignore_errors=True)
 print(f"\n{'ALL PASS' if not FAILED else str(len(FAILED)) + ' FAILED'}")
 sys.exit(1 if FAILED else 0)

@@ -57,22 +57,36 @@ def check_structure(r) -> list[dict]:
 
 
 def check_duplicate_rows(r) -> list[dict]:
-    """The same product billed twice for the same month, inside one file.
+    """The same product billed twice, to the same account, for the same month.
 
-    Usually means the file was concatenated from several exports — which is exactly how a
-    cumulative file double-counts.
+    The account matters. One product bought by three restaurants in one month is completely
+    normal — it is not a duplicate, and keying on (period, product) alone flags every real
+    Sligro file, which is what it did. A genuine duplicate is the same account buying the
+    same product twice in one period, which usually means the file was assembled from
+    several exports — exactly how a cumulative file double-counts.
     """
     seen = {}
-    for line in r.lines:
-        key = (line[0], line[1], line[5])
-        seen[key] = seen.get(key, 0) + 1
-    dupes = [f"{art} in {y}-{m:02d}" for (y, m, art), n in seen.items() if n > 1]
+    for i, line in enumerate(r.lines):
+        seen.setdefault((line[0], line[1], line[5], line[2]), []).append(i)
+    dupes = {k: v for k, v in seen.items() if len(v) > 1}
     if not dupes:
         return []
+
+    rows = r.source_rows or []
+    examples = []
+    for (y, m, art, kl), idxs in sorted(dupes.items(), key=lambda kv: -len(kv[1]))[:10]:
+        at = [rows[i] for i in idxs if i < len(rows)]
+        examples.append(dict(
+            artikelnr=art, description=(r.products.get(art) or ("", ""))[1],
+            period=f"{y}-{m:02d}", account=kl, times=len(idxs),
+            rows=(", ".join(str(x) for x in at[:6]) + ("…" if len(at) > 6 else "")) if at else ""))
+
+    extra = sum(len(v) - 1 for v in dupes.values())
     return [_f("duplicate_rows", "warning",
-               f"{len(dupes)} product/period combinations appear on more than one row. They "
-               "will be summed. If this file was assembled from several exports, check that "
-               "is what you intended.", examples=dupes[:10])]
+               f"{len(dupes)} product/account/period combination(s) appear on more than one "
+               f"row — {extra} extra row(s) in total. They will be summed. If this file was "
+               "assembled from several exports, check that is what you intended.",
+               examples=examples)]
 
 
 # --------------------------------------------------------------------------- the app's data
@@ -98,10 +112,13 @@ def check_overlap(r, tenant: str | None = None) -> list[dict]:
 def check_volume(r, tenant: str | None = None) -> list[dict]:
     """Catch a truncated export.
 
-    Measured against THIS CLIENT'S own median complete month where we have one, because a
-    partial file judged only against itself looks perfectly consistent. July and August are
-    genuinely quiet in a university, so they are exempt from the softer band but not from
-    the hard one.
+    Seasonal first: the right yardstick for July is another July, not the annual median. A
+    university empties out over the summer, so measuring a holiday month against a
+    year-round median calls a perfectly normal July a truncated export — it did exactly
+    that, flagging July 2025 at 0.24 of the median on the reference file itself.
+
+    So: compare a month against the same calendar month in this client's history where we
+    have one. Only fall back to the annual median when we do not.
     """
     by_period = {}
     for line in r.lines:
@@ -109,46 +126,63 @@ def check_volume(r, tenant: str | None = None) -> list[dict]:
     if not by_period:
         return []
 
-    hist = [m["spend_eur"] for m in db.months(tenant)
-            if m["complete"] and m["month"] not in HOLIDAY_MONTHS and m["spend_eur"]]
-    if len(hist) >= 3:
-        hist.sort()
-        yardstick = hist[len(hist) // 2]
-        basis = "this client's median complete month"
+    history = db.months(tenant)
+    same_month = {}
+    for h in history:
+        if h["complete"] and h["spend_eur"] and (h["year"], h["month"]) not in by_period:
+            same_month.setdefault(h["month"], []).append(h["spend_eur"])
+
+    overall = sorted(h["spend_eur"] for h in history
+                     if h["complete"] and h["month"] not in HOLIDAY_MONTHS and h["spend_eur"])
+    if len(overall) >= 3:
+        fallback = overall[len(overall) // 2]
+        fallback_basis = "this client's median complete month"
     else:
-        vals = sorted(v for (y, m), v in by_period.items() if m not in HOLIDAY_MONTHS) \
-               or sorted(by_period.values())
-        yardstick = vals[len(vals) // 2]
-        basis = "the median month inside this file"
-    if not yardstick:
+        vals = sorted(v for (y, m), v in by_period.items() if m not in HOLIDAY_MONTHS)                or sorted(by_period.values())
+        fallback = vals[len(vals) // 2]
+        fallback_basis = "the median month inside this file"
+    if not fallback:
         return []
 
-    partial, thin = [], []
+    def yardstick_for(month):
+        peers = sorted(same_month.get(month, []))
+        if peers:
+            return peers[len(peers) // 2], f"the same month in earlier years"
+        return fallback, fallback_basis
+
+    partial, thin, bases = [], [], set()
     for (y, m), eur in sorted(by_period.items()):
-        ratio = eur / yardstick
+        yard, basis_used = yardstick_for(m)
+        bases.add(basis_used)
+        ratio = eur / yard if yard else 1.0
         label = f"{y}-{m:02d}"
         if ratio < PARTIAL_RATIO:
-            partial.append((label, eur))
+            partial.append((label, eur, yard))
         elif ratio < THIN_RATIO and m not in HOLIDAY_MONTHS:
-            thin.append((label, eur))
+            thin.append((label, eur, yard))
+    basis = " and ".join(sorted(bases))
 
     out = []
     if partial:
         out.append(_f("partial_months", "error",
                       f"{len(partial)} month(s) hold a small fraction of a normal month's "
-                      f"spend ({', '.join(f'{p} at EUR {e:,.0f}' for p, e in partial[:6])}"
-                      f"{'...' if len(partial) > 6 else ''}). Measured against {basis} of "
-                      f"EUR {yardstick:,.0f}. This is what a truncated export looks like; "
-                      "analysing it would understate the footprint without saying so.",
-                      months=[p for p, _ in partial]))
+                      f"spend ("
+                      + ", ".join(f"{p} at EUR {e:,.0f} against EUR {v:,.0f}"
+                                  for p, e, v in partial[:6])
+                      + f"{'...' if len(partial) > 6 else ''}). Compared against {basis}. "
+                      "This is what a truncated export looks like; analysing it would "
+                      "understate the footprint without saying so.",
+                      months=[p for p, _, _ in partial]))
     if thin:
         out.append(_f("thin_months", "warning",
-                      f"{len(thin)} month(s) are well below a normal month but not obviously "
-                      f"broken ({', '.join(f'{p} at EUR {e:,.0f}' for p, e in thin)}). Worth "
-                      "confirming the export covers the whole month.",
-                      months=[p for p, _ in thin]))
+                      f"{len(thin)} month(s) are well below normal but not obviously broken ("
+                      + ", ".join(f"{p} at EUR {e:,.0f} against EUR {v:,.0f}"
+                                  for p, e, v in thin)
+                      + "). Worth confirming the export covers the whole month.",
+                      months=[p for p, _, _ in thin]))
     if not out:
-        out.append(_f("volume", "ok", f"Every month is a plausible size against {basis}."))
+        out.append(_f("volume", "ok",
+                      f"Every month is a plausible size, compared against {basis}."))
     return out
 
 

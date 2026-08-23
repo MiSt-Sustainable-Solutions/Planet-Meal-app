@@ -229,8 +229,11 @@ h1.page-h1 em{color:var(--teal);font-style:italic;}
 .confbar .t6{background:var(--tier6);}
 
 /* ---------------------------------------------------------------- dropzone */
-.drop{border:2px dashed var(--mist);border-radius:16px;padding:clamp(34px,5vw,64px);text-align:center;
-  background:var(--white);transition:border-color .2s,background .2s;cursor:pointer;}
+/* a <label> is display:inline by default, so without this the box collapses into a
+   narrow strip and the text escapes to the right. That is exactly what it did. */
+.drop{display:block;width:100%;border:2px dashed var(--mist);border-radius:16px;
+  padding:clamp(34px,5vw,64px);text-align:center;background:var(--white);
+  transition:border-color .2s,background .2s;cursor:pointer;}
 .drop:hover,.drop.over{border-color:var(--teal);background:rgba(45,158,117,.05);}
 .drop input{display:none;}
 
@@ -267,3 +270,44 @@ footer{background:var(--ink);border-top:1px solid var(--ink2);padding:44px var(-
   .nav-links.open{display:flex;}
   .nav-brand .tenant{display:none;}
 }
+
+
+/* ---------------------------------------------------------------- findings */
+/* A cell reference a person can find in Excel: R9, rows 12/18/24. */
+.loc{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:5px;
+  background:rgba(45,158,117,.12);color:var(--teal-ink);border:1px solid rgba(45,158,117,.3);
+  white-space:nowrap;}
+.dark .loc{background:rgba(111,221,180,.14);color:var(--teal-light);
+  border-color:rgba(111,221,180,.3);}
+
+.find-group{margin-bottom:26px;}
+.find-group:last-child{margin-bottom:0;}
+.find-group > h4{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--sage);margin-bottom:10px;display:flex;align-items:center;gap:9px;}
+.dark .find-group > h4{color:var(--teal-light);}
+.find-group > h4 .n{font-weight:800;}
+
+.find{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:14px 0;
+  border-bottom:1px solid rgba(143,184,154,.3);}
+.find:last-child{border-bottom:none;}
+.dark .find{border-color:rgba(143,184,154,.18);}
+.find .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:5px;}
+.find .code{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--sage);}
+.dark .find .code{color:var(--teal-light);}
+.find .msg{font-size:14.5px;line-height:1.62;}
+.find .detail{margin-top:10px;font-size:12.5px;line-height:1.6;color:var(--sage);}
+.dark .find .detail{color:rgba(242,248,243,.66);}
+.find .detail table{font-size:12.5px;}
+.find .detail th{text-align:left;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  padding:0 14px 6px 0;font-weight:700;}
+.find .detail td{padding:4px 14px 4px 0;vertical-align:top;}
+.find .detail .k{color:var(--ink);font-weight:400;}
+.dark .find .detail .k{color:var(--white);}
+
+/* quiet list for the checks that passed */
+.passed{display:flex;flex-wrap:wrap;gap:8px;}
+.passed span{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--sage);
+  border:1px solid var(--mist);border-radius:100px;padding:4px 12px;}
+.dark .passed span{color:rgba(242,248,243,.72);border-color:rgba(143,184,154,.32);}
