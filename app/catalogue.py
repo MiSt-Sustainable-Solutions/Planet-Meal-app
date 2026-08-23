@@ -84,6 +84,28 @@ def explain(artikelnr: str, lines: list[dict], label: str = "analysis") -> dict 
         raise CatalogueDown(f"could not explain {artikelnr}: {type(e).__name__}") from e
 
 
+def learn(products: list[dict], dry_run: bool = False) -> dict | None:
+    """Tell the catalogue about products it has never seen.
+
+    Called when an upload is committed. This is the only call that changes the shared
+    catalogue, and what it stores is knowledge about a PRODUCT — food group, footprint,
+    and the tier that produced them. No quantities, no prices, no client identity.
+
+    Returns None if the catalogue is unreachable. That is deliberately non-fatal: the
+    client's own import has already succeeded, and the products will be learned the next
+    time something is scored. Never fail a commit because a shared service is down.
+    """
+    if not products:
+        return {"learned": 0, "already_known": 0, "rows": []}
+    try:
+        with _client() as c:
+            r = c.post("/catalogue/learn",
+                       json={"products": products, "dry_run": dry_run}, timeout=180)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
 def eat_profiles() -> dict | None:
     try:
         with _client() as c:

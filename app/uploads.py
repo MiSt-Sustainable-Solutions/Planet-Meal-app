@@ -22,6 +22,7 @@ import shutil
 import uuid
 
 import adapters
+import catalogue
 import config
 import db
 import preflight
@@ -209,6 +210,19 @@ def commit(uid: str, mode: str = "new_only", override: bool = False,
             (tenant, p["artikelnr"], p["description"], p["brand"], p["category"], p["ivp"],
              p["vp"], p["maat"], p["eenh"], p["ean"], p["ean_he"], p["foodflag"], now, now))
 
+    # Tell the shared catalogue about anything it has not seen. A product resolved once is
+    # resolved for every future upload and every future client — that is the whole reason
+    # the catalogue is shared. Non-fatal: the import has already succeeded.
+    learned = None
+    try:
+        learned = catalogue.learn([
+            dict(artikelnr=p["artikelnr"], description=p["description"] or "",
+                 category=p["category"] or "", ean_ce=p["ean"] or "",
+                 ean_he=p["ean_he"] or "")
+            for p in prods])
+    except Exception:
+        learned = None
+
     note = (f"imported {len(rows):,} lines for {len(take)} month(s)"
             + (f"; replaced {len(replaced)} existing month(s)" if replaced else "")
             + (f"; skipped {len(file_periods) - len(take)} already-loaded month(s)"
@@ -219,6 +233,8 @@ def commit(uid: str, mode: str = "new_only", override: bool = False,
     con.close()
 
     return dict(upload_id=uid, mode=mode, note=note, imported_lines=len(rows),
+                catalogue_learned=(learned or {}).get("learned"),
+                catalogue_reachable=learned is not None,
                 imported_months=[f"{y}-{m:02d}" for y, m in take],
                 replaced_months=[f"{y}-{m:02d}" for y, m in replaced],
                 skipped_months=[f"{y}-{m:02d}" for y, m in file_periods if (y, m) not in keep])

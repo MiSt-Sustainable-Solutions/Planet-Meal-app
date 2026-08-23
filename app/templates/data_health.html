@@ -63,7 +63,40 @@
   </div>
 </section>
 
+{% if dh.matched_by %}
 <section class="light2">
+  <div class="inner">
+    <div class="sec-label">How each kilogram found its product</div>
+    <h2 class="sec-h2">Recognised, <em>or guessed at.</em></h2>
+    <p class="lede" style="margin-top:14px;">
+      A different question from the tier above. "By article number" and "by barcode" can both
+      land on a curated pin — what differs is how the product was <em>identified</em>. The
+      barcode share is the part that survives a change of wholesaler, and the part a second
+      client would inherit.
+    </p>
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>How</th><th>What that means</th>
+          <th class="num">% of weight</th><th class="num">Products</th>
+        </tr></thead>
+        <tbody>
+        {% for m in dh.matched_by %}
+        <tr>
+          <td class="name">{{ m.label }}</td>
+          <td class="muted" style="max-width:52ch;">{{ m.explain }}</td>
+          <td class="num">{{ m.pct_of_weight }}</td>
+          <td class="num">{{ "{:,}".format(m.products) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="light">
   <div class="inner">
     <div class="sec-label">The work queue</div>
     <h2 class="sec-h2">Ranked by <em>kilograms.</em></h2>
