@@ -8,8 +8,12 @@ data/uploads/
 # Excel lock files, created whenever someone has a workbook open
 ~$*
 
-# generated on demand by /upload/template — not a source file
-data/MiSt_purchase_template.xlsx
+# Sample and generated workbooks. These carry real Sligro article numbers, real
+# barcodes, and the client's own account numbers and outlet names -- which is what
+# makes them useful for testing and exactly why they must not be published. They
+# live on disk and in Drive; they do not belong in a repository, least of all a
+# public one.
+data/*.xlsx
 
 # python
 __pycache__/
