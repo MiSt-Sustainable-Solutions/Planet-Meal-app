@@ -30,7 +30,7 @@
   </div>
 </nav>
 
-{% if not api_up %}
+{% if not api_up and not stale %}
 <section class="tight light2" style="padding-block:16px;border-bottom:1px solid var(--mist);">
   <div class="inner" style="display:flex;gap:14px;align-items:flex-start;">
     <span class="dot error" style="margin-top:8px;"></span>
@@ -40,6 +40,28 @@
       <code>{{ catalogue_api }}</code> — start it with
       <code>python -m uvicorn api:app --port 8077</code> in the catalogue repo.</span>
     </div>
+  </div>
+</section>
+{% endif %}
+
+{% if stale and page in ('dashboard', 'health') %}
+<section class="tight light2" style="padding-block:16px;border-bottom:1px solid var(--mist);">
+  <div class="inner" style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
+    <span class="dot warning" style="margin-top:8px;"></span>
+    <div style="flex:1;min-width:280px;">
+      {% if stale.reachable %}
+      <strong>{% if stale.behind == 1 %}One decision has landed{% elif stale.behind %}{{ stale.behind }} decisions have landed{% else %}The catalogue has changed{% endif %} since these numbers were worked out.</strong>
+      <span class="muted">They were calculated on {{ stale.since[:10] }} against catalogue
+      <code>{{ stale.was }}</code>; it is now <code>{{ stale.now }}</code>{% if stale.note %} — {{ stale.note }}{% endif %}.
+      Nothing has been changed underneath you. Recalculating takes about half a minute.</span>
+      {% else %}
+      <strong>The shared catalogue cannot be reached, so these are saved numbers.</strong>
+      <span class="muted">Calculated on {{ stale.since[:10] }} against catalogue
+      <code>{{ stale.was }}</code>. They are real results, but any decision made since then
+      is not in them.</span>
+      {% endif %}
+    </div>
+    {% if stale.reachable %}<a class="btn-main" href="?refresh=1{% if selected_window %}&amp;window={{ selected_window }}{% endif %}">Recalculate</a>{% endif %}
   </div>
 </section>
 {% endif %}

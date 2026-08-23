@@ -19,12 +19,13 @@ import os
 import shutil
 import sys
 import tempfile
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
-                               RedirectResponse, StreamingResponse)
+                               RedirectResponse, Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -78,20 +79,30 @@ def relabel(result: dict) -> dict:
 
 def ctx(request: Request, page: str, **kw) -> dict:
     """Everything every template needs."""
+    # ONE call to the catalogue per page. /health answers both questions a page asks —
+    # is it up, and what version is it on — so asking twice was a wasted round trip on
+    # every single render.
+    health = catalogue.health()
     base = dict(request=request, page=page,
                 client_name=config.CLIENT_NAME, caterer_name=config.CATERER_NAME,
-                catalogue_api=config.CATALOGUE_API, api_up=catalogue.health() is not None,
-                tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label)
+                catalogue_api=config.CATALOGUE_API, api_up=health is not None,
+                tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
+                stale=analysis.staleness(live=(health or {}).get("catalogue")))
     base.update(kw)
     return base
 
 
 # --------------------------------------------------------------------------- dashboard
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, window: str | None = None):
+def dashboard(request: Request, window: str | None = None, refresh: int = 0):
+    """`?refresh=1` recalculates instead of serving the saved result.
+
+    Everything else reads the cache: the same window, the same purchase data and the same
+    catalogue version means the saved answer is still the right answer.
+    """
     try:
         selected = window or analysis.default_window()
-        result = analysis.run(window=selected)
+        result = analysis.run(window=selected, force=bool(refresh))
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             "dashboard.html", ctx(request, "dashboard", error=str(e),
@@ -100,7 +111,7 @@ def dashboard(request: Request, window: str | None = None):
     relabel(result)
     return templates.TemplateResponse("dashboard.html", ctx(
         request, "dashboard",
-        result=result, selected_window=selected,
+        result=result, selected_window=selected, stale=result.get("stale"),
         window_options=analysis.windows(),
         conf_bar=charts.confidence(result["headline"]["confidence"]["by_tier"]),
         trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
@@ -113,26 +124,98 @@ def dashboard(request: Request, window: str | None = None):
 
 
 @app.get("/data-health", response_class=HTMLResponse)
-def data_health(request: Request, window: str | None = None):
+def data_health(request: Request, window: str | None = None, refresh: int = 0,
+                curated: str | None = None, curate_error: str | None = None):
     try:
         selected = window or analysis.default_window()
-        result = analysis.run(window=selected, save=False)
+        result = analysis.run(window=selected, force=bool(refresh))
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             "data_health.html", ctx(request, "health", error=str(e), months=db.months()))
 
     relabel(result)
 
-    wq, wq_err = None, None
-    try:
-        label, y0, m0, y1, m1 = analysis.parse_window(selected)
-        wq = catalogue.work_queue(db.lines_for(y0, m0, y1, m1), label=label, limit=60)
-    except catalogue.CatalogueDown as e:
-        wq_err = str(e)
+    # The work queue arrives inside the same response as everything else, sliced from the
+    # same scored frame. This page used to post all 29,000 lines a SECOND time to fetch
+    # it, which doubled the wait for a list that was already computed.
+    wq = result.get("work_queue")
+    wq_err = None if wq else "the catalogue did not return a work queue for this window"
 
     return templates.TemplateResponse("data_health.html", ctx(
-        request, "health", result=result, months=db.months(),
-        work_queue=wq, work_queue_error=wq_err, selected_window=selected))
+        request, "health", result=result, months=db.months(), stale=result.get("stale"),
+        work_queue=wq, work_queue_error=wq_err, selected_window=selected,
+        curated=curated, curate_error=curate_error,
+        decisions=catalogue.decisions(limit=1)))
+
+
+# --------------------------------------------------------------------------- review loop
+def _review_products(window: str | None = None) -> tuple[list[dict], str]:
+    """This window's curation backlog, shaped for the catalogue's review sheet.
+
+    The weight and the current figure come from the analysis; the barcode comes from the
+    app's own product table, because that is where the client's supplier data lives.
+    """
+    selected = window or analysis.default_window()
+    result = analysis.run(window=selected)
+    queue = (result.get("work_queue") or {}).get("rows") or []
+    con = db.connect()
+    bars = {r["artikelnr"]: (r["ean"] or "") for r in con.execute(
+        "SELECT artikelnr, ean FROM product WHERE tenant=?", (config.TENANT,))}
+    con.close()
+    return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
+                 category=r["category"] or "",
+                 ean_ce=r.get("gtin") or bars.get(r["artikelnr"], ""),
+                 kg=r["food_kg"], co2=r.get("co2_per_kg") or 0.0,
+                 bucket=r.get("food_group"), footprint_src=r.get("source"),
+                 supplier="sligro")
+            for r in queue], selected
+
+
+@app.get("/review-sheet.xlsx")
+def review_sheet(window: str | None = None, limit: int = 300):
+    """Download the review sheet for this window. Heaviest unresolved products first."""
+    try:
+        products, selected = _review_products(window)
+        if not products:
+            raise HTTPException(400, "nothing is waiting for review in this window")
+        name = f"MiSt_review_{config.TENANT}_{selected}.xlsx"
+        data, rows = catalogue.review_sheet(products, filename=name, limit=limit)
+    except (analysis.WindowError, catalogue.CatalogueDown) as e:
+        raise HTTPException(503, str(e))
+    if not rows:
+        raise HTTPException(400, "every product in this window has already been decided")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/curate")
+async def curate(request: Request, file: UploadFile = File(...),
+                 check: str | None = Form(None)):
+    """Send an answered review sheet to the shared catalogue.
+
+    Deliberately its own action. Every other client sees the result, so it is never a side
+    effect of an upload or a page load.
+
+    "Check it first" parses and validates the whole sheet and reports exactly what WOULD be
+    filed, writing nothing. Worth doing: a decision here outranks every rule for every
+    client, and the only thing worse than a wrong answer is finding out afterwards.
+    """
+    raw = await file.read()
+    dry = bool(check)
+    try:
+        report = catalogue.curate(raw, filename=file.filename or "review.xlsx", dry_run=dry)
+    except catalogue.CatalogueDown as e:
+        return RedirectResponse(f"/data-health?curate_error={quote(str(e))}", status_code=303)
+    lead = ("Checked, nothing written yet — this sheet would file "
+            if dry else "Filed ")
+    msg = (f"{lead}{report['decisions']} decision(s)"
+           + (f"; {report['refused']} would be refused" if dry and report.get("refused")
+              else (f", {report['refused']} refused" if report.get("refused") else ""))
+           + f". {report.get('portable', 0)} carry a barcode, so they apply to the same "
+             "product from any wholesaler, for any client.")
+    return RedirectResponse(f"/data-health?curated={quote(msg)}", status_code=303)
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -302,7 +385,7 @@ def api_health():
 @app.get("/api/analysis")
 def api_analysis(window: str | None = None):
     try:
-        return analysis.run(window=window or analysis.default_window(), save=False)
+        return analysis.run(window=window or analysis.default_window())
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return JSONResponse({"error": str(e)}, status_code=409)
 
@@ -313,6 +396,12 @@ def api_run(run_id: str):
     if out is None:
         raise HTTPException(404, f"no analysis run {run_id}")
     return out
+
+
+@app.get("/api/catalogue-version")
+def api_catalogue_version():
+    """What the catalogue is on now, and whether the saved numbers are behind it."""
+    return {"live": catalogue.version(), "stale": analysis.staleness()}
 
 
 @app.get("/api/months")

@@ -35,15 +35,34 @@ def health() -> dict | None:
         return None
 
 
+def version() -> dict | None:
+    """Which version of the catalogue is live right now.
+
+    One cheap call, made before every analysis. If it matches the version a saved result
+    was calculated against, that result is still the right answer and nothing needs to be
+    recalculated — which is the difference between an instant page and a thirty-second
+    one.
+
+    Returns None if the catalogue cannot be reached. The caller must then serve a saved
+    result and SAY it is a saved result, never assume the version is unchanged.
+    """
+    try:
+        with _client() as c:
+            r = c.get("/catalogue/version", timeout=10)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
 def score(lines: list[dict], label: str = "analysis", profile: str | None = None,
-          top: int = 20) -> dict:
+          top: int = 20, queue: int = 60) -> dict:
     """Score purchase lines. -> the whole dashboard in one response.
 
     Raises CatalogueDown so the caller can show something honest instead of a stack trace.
     """
     if not lines:
         raise CatalogueDown("there are no purchase lines to score")
-    payload = {"lines": lines, "label": label, "top": top}
+    payload = {"lines": lines, "label": label, "top": top, "queue": queue}
     if profile:
         payload["profile"] = profile
     try:
@@ -101,6 +120,60 @@ def learn(products: list[dict], dry_run: bool = False) -> dict | None:
         with _client() as c:
             r = c.post("/catalogue/learn",
                        json={"products": products, "dry_run": dry_run}, timeout=180)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def review_sheet(products: list[dict], filename: str = "MiSt_review.xlsx",
+                 limit: int = 300) -> tuple[bytes, int]:
+    """Ask the catalogue for the review sheet. -> (xlsx bytes, how many rows).
+
+    The sheet is built by the catalogue, not here. It is full of reference codes, food
+    groups and footprint figures — the catalogue's knowledge, none of it this client's
+    business — and the endpoint that reads the answers back lives beside the code that
+    writes them, so the two halves can never drift out of step.
+    """
+    try:
+        with _client() as c:
+            r = c.post("/catalogue/review-sheet",
+                       json={"products": products, "limit": limit, "filename": filename},
+                       timeout=180)
+    except Exception as e:
+        raise CatalogueDown(
+            f"could not reach the catalogue to build the review sheet ({type(e).__name__})") from e
+    if r.status_code != 200:
+        raise CatalogueDown(f"the catalogue refused to build the sheet ({r.status_code})")
+    return r.content, int(r.headers.get("X-Review-Rows", 0))
+
+
+def curate(data: bytes, filename: str = "review.xlsx", dry_run: bool = False) -> dict:
+    """Send an answered review sheet back. THIS CHANGES THE SHARED CATALOGUE.
+
+    Every client sees the result, which is the point: a decision made once is made for
+    everyone. It is also why this is a deliberate action behind a button and not something
+    that happens as a side effect of anything else.
+    """
+    try:
+        with _client() as c:
+            r = c.post("/catalogue/curate",
+                       files={"file": (filename, data)},
+                       params={"dry_run": str(bool(dry_run)).lower()}, timeout=300)
+    except Exception as e:
+        raise CatalogueDown(
+            f"could not reach the catalogue to file the decisions ({type(e).__name__})") from e
+    if r.status_code != 200:
+        detail = r.json().get("detail") if r.headers.get(
+            "content-type", "").startswith("application/json") else r.text
+        raise CatalogueDown(f"the catalogue refused the sheet ({r.status_code}): {detail}")
+    return r.json()
+
+
+def decisions(limit: int = 20) -> dict | None:
+    """What the catalogue has been taught so far. None if it cannot be reached."""
+    try:
+        with _client() as c:
+            r = c.get("/catalogue/decisions", params={"limit": limit}, timeout=30)
         return r.json() if r.status_code == 200 else None
     except Exception:
         return None

@@ -230,6 +230,7 @@ def commit(uid: str, mode: str = "new_only", override: bool = False,
     con.execute("UPDATE upload SET committed_at=?, commit_mode=?, commit_note=? WHERE id=?",
                 (now, mode, note, uid))
     con.commit()
+    db.invalidate()   # the client's data just changed
     con.close()
 
     return dict(upload_id=uid, mode=mode, note=note, imported_lines=len(rows),

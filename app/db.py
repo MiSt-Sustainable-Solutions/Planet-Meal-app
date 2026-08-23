@@ -16,6 +16,7 @@ types, no AUTOINCREMENT, explicit primary keys.
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 
 import config
@@ -63,9 +64,26 @@ CREATE TABLE IF NOT EXISTS analysis_run(
   label TEXT, period_from TEXT, period_to TEXT, eat_profile TEXT,
   ran_at TEXT, lines INTEGER,
   food_kg REAL, co2_kg REAL, intensity REAL, eat_score REAL,
-  specific_pct REAL, result_json TEXT);
+  specific_pct REAL, result_json TEXT,
+  window_key TEXT, catalogue_version TEXT, data_fingerprint TEXT);
 CREATE INDEX IF NOT EXISTS ix_run ON analysis_run(tenant, ran_at);
 """
+
+# Runs only after MIGRATIONS, because an index cannot name a column the table does not
+# have yet -- and on an app that predates caching, it does not.
+POST_MIGRATION = """
+CREATE INDEX IF NOT EXISTS ix_run_cache
+  ON analysis_run(tenant, window_key, catalogue_version, data_fingerprint);
+"""
+
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS will not add a column
+# to a table that already exists, so an app that has been running since before caching
+# would keep its old five-column analysis_run and every insert would fail.
+MIGRATIONS = [
+    ("analysis_run", "window_key", "TEXT"),
+    ("analysis_run", "catalogue_version", "TEXT"),
+    ("analysis_run", "data_fingerprint", "TEXT"),
+]
 
 
 def connect() -> sqlite3.Connection:
@@ -78,30 +96,112 @@ def connect() -> sqlite3.Connection:
 def init() -> None:
     con = connect()
     con.executescript(SCHEMA)
+    for table, column, decl in MIGRATIONS:
+        have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        if column not in have:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    con.executescript(POST_MIGRATION)
     con.commit()
     con.close()
 
 
-# --------------------------------------------------------------------------- reads
-def months(tenant: str | None = None) -> list[dict]:
-    """Every month this client has data for, with the quality flag it arrived with.
+def window_fingerprint(y0: int, m0: int, y1: int, m1: int,
+                       tenant: str | None = None) -> str:
+    """A short hash of THIS CLIENT'S data for a window. Changes when the data changes.
 
-    This is the app's own answer to "what do we already have?" — the question the
-    overlap check asks, and the reason it does not need the catalogue API.
+    Half of the cache key. The catalogue's version answers "have the rules changed?"; this
+    answers "have the purchases changed?". Both must be unchanged for a saved result to
+    still be the right answer, and importing a month into the middle of a year moves this
+    even though the catalogue has not moved at all.
+
+    Counts and sums, not a row-by-row checksum: it is one indexed aggregate rather than a
+    scan of 29,000 rows, and any insert, delete or re-import moves it.
+    """
+    snap = snapshot(tenant)
+    lo, hi = y0 * 100 + m0, y1 * 100 + m1
+    parts = [f"{m['period']}:{m['lines']}:{m['kg']}:{m['spend_eur']}:{m['quality']}"
+             for m in snap["months"] if lo <= m["year"] * 100 + m["month"] <= hi]
+    # The product table feeds matching — a barcode arriving on a later upload changes the
+    # answer without touching a single purchase line.
+    parts.append(f"products:{snap['products']}:{snap['last_seen']}")
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+
+
+# --------------------------------------------------------------------------- reads
+#
+# One page asks "what months do we have?" four separate times: to pick the default window,
+# to parse it, to fingerprint it for the cache, and to build the window picker. That is
+# one GROUP BY over every purchase line, four times over.
+#
+# On a laptop with the database on a local disk that is a few milliseconds and nobody
+# notices. This database lives in a synced Google Drive folder, where the same query costs
+# about five seconds — so four of them were most of a twenty-second page.
+#
+# So it is read once and held. The guard is the database file's own modification time,
+# not a timer and not a flag someone has to remember to clear: one stat() call, and any
+# write from any process invalidates it. Getting cache invalidation wrong here would show
+# a client last week's months as though they were this week's.
+_SNAP: dict[str, tuple] = {}
+
+
+def _stamp() -> tuple:
+    """(size, mtime) of the database, including its write-ahead log if there is one."""
+    import os
+    out = []
+    for path in (config.APP_DB, config.APP_DB + "-wal"):
+        try:
+            st = os.stat(path)
+            out.append((st.st_size, st.st_mtime_ns))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def invalidate() -> None:
+    """Drop the held snapshot. Belt and braces — the file stamp already catches writes."""
+    _SNAP.clear()
+
+
+def snapshot(tenant: str | None = None) -> dict:
+    """Everything cheap-to-derive about this client's data, read once per change.
+
+    {months: [...], products: n, last_seen: str}
     """
     tenant = tenant or config.TENANT
+    stamp = _stamp()
+    held = _SNAP.get(tenant)
+    if held and held[0] == stamp:
+        return held[1]
+
     con = connect()
     rows = con.execute("""
         SELECT year, month, quality, COUNT(*) AS lines, SUM(omzet) AS spend,
                SUM(kg) AS kg, SUM(CASE WHEN kg_known=0 THEN 1 ELSE 0 END) AS piece_lines
         FROM purchase_line WHERE tenant=?
         GROUP BY year, month ORDER BY year, month""", (tenant,)).fetchall()
+    pr = con.execute("SELECT COUNT(*), MAX(last_seen) FROM product WHERE tenant=?",
+                     (tenant,)).fetchone()
     con.close()
-    return [dict(year=r["year"], month=r["month"], period=f"{r['year']}-{r['month']:02d}",
-                 quality=r["quality"], complete=(r["quality"] == "complete"),
-                 lines=r["lines"], spend_eur=round(r["spend"] or 0), kg=round(r["kg"] or 0),
-                 piece_lines=r["piece_lines"])
-            for r in rows]
+
+    out = dict(
+        months=[dict(year=r["year"], month=r["month"],
+                     period=f"{r['year']}-{r['month']:02d}",
+                     quality=r["quality"], complete=(r["quality"] == "complete"),
+                     lines=r["lines"], spend_eur=round(r["spend"] or 0),
+                     kg=round(r["kg"] or 0), piece_lines=r["piece_lines"])
+                for r in rows],
+        products=pr[0] or 0, last_seen=pr[1])
+    _SNAP[tenant] = (stamp, out)
+    return out
+
+
+def months(tenant: str | None = None) -> list[dict]:
+    """Every month this client has data for, with the quality flag it arrived with.
+
+    This is the app's own answer to "what do we already have?" — the question the
+    overlap check asks, and the reason it does not need the catalogue API.
+    """
+    return snapshot(tenant)["months"]
 
 
 def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> list[dict]:
