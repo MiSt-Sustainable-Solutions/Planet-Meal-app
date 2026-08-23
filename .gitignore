@@ -5,6 +5,12 @@ data/*.db-journal
 # client data received through the app — NEVER commit purchase files
 data/uploads/
 
+# Excel lock files, created whenever someone has a workbook open
+~$*
+
+# generated on demand by /upload/template — not a source file
+data/MiSt_purchase_template.xlsx
+
 # python
 __pycache__/
 *.pyc
