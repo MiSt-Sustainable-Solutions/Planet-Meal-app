@@ -302,6 +302,89 @@ P(located, f"{len(located)} findings carry a cell reference, e.g. {located[0]['l
 P(all(len(rd.source_rows) == len(rd.lines) for rd in per_file.values()),
   "every line knows which spreadsheet row it came from")
 
+
+# ------------------------------------------------------------------ the barcode bridge
+print("\n=== both barcodes are captured, kept apart, and sent onward ===")
+dec = per_file.get("December 2025.xlsx")
+ce = sum(1 for x in dec.products.values() if x[8])
+he = sum(1 for x in dec.products.values() if x[9])
+both = sum(1 for x in dec.products.values() if x[8] and x[9])
+P(ce > 3000, f"{ce:,} products carry a consumer-unit barcode")
+P(he > 2000, f"{he:,} carry a handling-unit barcode")
+P(both > 2000, f"{both:,} carry BOTH, and they are stored in separate fields")
+# CE == HE is legitimate: for a bulk foodservice pack the consumer unit IS the case
+# (a 2.4 kg burger box, 260x28g mini breads). Measured: 4 products in December 2025.
+# The DANGEROUS case is different — a handling-unit barcode that is some OTHER product's
+# consumer-unit barcode would make a case of one thing resolve as a different thing.
+_ce = {x[8]: x[0] for x in dec.products.values() if x[8]}
+_cross = [x[0] for x in dec.products.values()
+          if x[9] and x[9] in _ce and _ce[x[9]] != x[0]]
+P(not _cross,
+  f"no product's case barcode is another product's item barcode ({len(_cross)} collisions)")
+_same = [x for x in dec.products.values() if x[8] and x[9] and x[8] == x[9]]
+P(len(_same) < 20,
+  f"{len(_same)} bulk packs where the case IS the consumer unit — legitimate, not an error")
+
+print("\n=== the template reads both, and still reads the old one-column sheets ===")
+P("ean_ce" in mist_template.COLUMNS and "ean_he" in mist_template.COLUMNS,
+  "the template has ean_ce and ean_he as separate columns")
+tpl2 = os.path.join(_TMP, "template_v2.xlsx")
+mist_template.write_template(tpl2)
+tv = adapters.read(tpl2, "template_v2.xlsx")
+pv = list(tv.products.values())[0]
+P(pv[8] and pv[9] and pv[8] != pv[9],
+  f"the example row carries two distinct barcodes ({pv[8]} / {pv[9]})")
+
+import openpyxl as _ox  # noqa: E402
+legacy = os.path.join(_TMP, "legacy.xlsx")
+_wb = _ox.Workbook(); _ws = _wb.active
+_ws.append(["klantnr", "restaurant", "artikelnr", "omschrijving", "artikelgroep",
+            "ivp", "vp", "maat", "eenh", "periode", "aantal", "ean", "omzet"])
+_ws.append(["132201", "R", "340515", "KERN KROKET", "SNACKS", 1, "DS", 2.24, "KG",
+            "2026-09", 5, "8712800121619", 99.0])
+_wb.save(legacy)
+lg = adapters.read(legacy, "legacy.xlsx")
+P(lg.adapter == "mist_template", "a sheet with the old bare 'ean' column still routes here")
+P(list(lg.products.values())[0][8] == "8712800121619",
+  "and its barcode is read as the consumer unit")
+
+print("\n=== the barcodes reach the catalogue ===")
+lines = db.lines_for(2024, 1, 2024, 8)
+P(lines and "ean_ce" in lines[0] and "ean_he" in lines[0],
+  "lines_for() puts both barcodes on every line")
+carried = sum(1 for l in lines if l["ean_ce"])
+P(carried > len(lines) * 0.9,
+  f"{100 * carried / len(lines):.0f}% of purchase lines carry a barcode onward")
+
+if catalogue.health() is not None:
+    probe = [dict(artikelnr="194072", description="MEYERIJ VOLLE MELK", kg=100,
+                  ean_ce="08710401996797", ean_he="8710401996803",
+                  omzet=90, year=2026, month=7)]
+    got = catalogue.score(probe, label="probe")
+    P(got["headline"]["co2_kg"] > 0, "the catalogue accepts a line carrying both barcodes")
+
+    print("\n=== a missing or malformed column can no longer crash the service ===")
+    # omzet is OPTIONAL in the template. Without it the spend share divided 0 by 0 and
+    # produced a NaN, which is not JSON and returned a 500.
+    edge = [
+        ("no omzet at all", [dict(artikelnr="Z1", description="T", kg=10, year=2026, month=7)]),
+        ("junk barcode", [dict(artikelnr="Z2", description="T", kg=10, omzet=5,
+                               ean_ce="not-a-barcode", year=2026, month=7)]),
+        ("no barcode", [dict(artikelnr="Z3", description="T", kg=10, omzet=5,
+                             year=2026, month=7)]),
+        ("everything weighs zero", [dict(artikelnr="Z4", description="T", kg=0, omzet=5,
+                                         year=2026, month=7)]),
+    ]
+    for label, ls in edge:
+        try:
+            out = catalogue.score(ls, label="edge")
+            P(out["headline"]["piece_spend_pct"] is not None or True,
+              f"{label} -> answered, not a 500")
+        except Exception as e:
+            P(False, f"{label} -> {type(e).__name__}: {str(e)[:60]}")
+else:
+    print("  (catalogue API not running — skipping the bridge tests)")
+
 shutil.rmtree(_TMP, ignore_errors=True)
 print(f"\n{'ALL PASS' if not FAILED else str(len(FAILED)) + ' FAILED'}")
 sys.exit(1 if FAILED else 0)

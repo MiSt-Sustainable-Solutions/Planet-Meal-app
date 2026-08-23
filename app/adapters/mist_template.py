@@ -25,8 +25,22 @@ DESCRIPTION = ("Our standard sheet. Named columns, one row per product per perio
 
 REQUIRED = ["klantnr", "restaurant", "artikelnr", "omschrijving", "artikelgroep",
             "ivp", "vp", "maat", "eenh", "periode", "aantal"]
-OPTIONAL = ["ean", "omzet"]
-COLUMNS = REQUIRED + OPTIONAL
+# ean_ce is not formally required, because a client may not have it — but it is the most
+# valuable column in the sheet, so the template says so and the pre-flight reports coverage.
+OPTIONAL = ["ean_ce", "ean_he", "brand", "city", "supplier", "omzet"]
+COLUMNS = ["klantnr", "restaurant", "city", "artikelnr", "omschrijving", "brand",
+           "artikelgroep", "ivp", "vp", "maat", "eenh", "ean_ce", "ean_he", "supplier",
+           "periode", "aantal", "omzet"]
+
+# A bare "ean" column is accepted as the consumer-unit barcode, so sheets built against the
+# first version of this template keep working.
+ALIASES = {
+    "ean_ce": ["eance", "ean"],
+    "ean_he": ["eanhe"],
+    "brand": ["merknaam"],
+    "city": ["woonplaats"],
+    "supplier": ["leverancier", "leveranciernaam"],
+}
 
 HELP = {
     "klantnr": "Ordering account number.",
@@ -40,7 +54,15 @@ HELP = {
     "eenh": "Unit of Maat: KG, GR, LT, CL, ML, DL — or ST for pieces.",
     "periode": "YYYY-MM. One row per product per period.",
     "aantal": "Quantity purchased in that period.",
-    "ean": "Barcode of the consumer unit. Preferred — it is how products are matched.",
+    "city": "Town, if you have it. Optional.",
+    "brand": "Brand name, if you have it. Helps tell similar products apart. Optional.",
+    "ean_ce": ("Barcode of the CONSUMER unit — the item itself. The single most useful "
+               "column here. An article number belongs to your supplier; a barcode belongs "
+               "to the product, so it is what lets us recognise something already worked "
+               "out, even from a different wholesaler."),
+    "ean_he": ("Barcode of the HANDLING unit — the case or outer. A DIFFERENT number from "
+               "ean_ce. Keep them in their own columns; do not merge them."),
+    "supplier": "Who supplied it, if more than one. Optional.",
     "omzet": "Spend in EUR. Optional.",
 }
 
@@ -106,6 +128,11 @@ def read(path: str, filename: str | None = None, year: int | None = None):
 
     def cell(row, col):
         i = idx.get(_norm(col))
+        if i is None:
+            for alt in ALIASES.get(col, []):
+                i = idx.get(_norm(alt))
+                if i is not None:
+                    break
         return row[i] if i is not None and i < len(row) else None
 
     prod, lines, problems, source_rows = {}, [], [], []
@@ -141,14 +168,17 @@ def read(path: str, filename: str | None = None, year: int | None = None):
         eenh = str(cell(row, "eenh") or "").strip().upper()
         vp = str(cell(row, "vp") or "").strip().upper()
         ivp = parse_ivp(cell(row, "ivp"))
-        ean = str(cell(row, "ean") or "").strip()
+        ce = str(cell(row, "ean_ce") or "").strip()
+        he = str(cell(row, "ean_he") or "").strip()
         o = cell(row, "omzet")
 
         if art not in prod:
-            prod[art] = (art, str(cell(row, "omschrijving") or "").strip(), "",
+            prod[art] = (art, str(cell(row, "omschrijving") or "").strip(),
+                         str(cell(row, "brand") or "").strip(),
                          str(cell(row, "artikelgroep") or "").strip(),
                          str(cell(row, "ivp") or "").strip(), vp, maat, eenh,
-                         ean if ean.isdigit() and ean != "0" else "", "", "")
+                         ce if ce.isdigit() and ce != "0" else "",
+                         he if he.isdigit() and he != "0" else "", "")
 
         kg, known = mass_kg(a, ivp, maat, eenh, vp)
         lines.append((y, m, str(cell(row, "klantnr") or "").strip(),
@@ -186,10 +216,12 @@ def write_template(path: str) -> str:
         ws.column_dimensions[c.column_letter].width = max(12, len(col) + 4)
     ws.freeze_panes = "A3"
 
-    example = {"klantnr": "132201", "restaurant": "APPEL TU DELFT 3ME", "artikelnr": "340515",
-               "omschrijving": "KERN KROKET 20% VLEES 28X80G", "artikelgroep": "SNACKS",
-               "ivp": 1, "vp": "DS", "maat": 2.24, "eenh": "KG", "periode": "2025-03",
-               "aantal": 12, "ean": "8712800121619", "omzet": 214.80}
+    example = {"klantnr": "132201", "restaurant": "APPEL TU DELFT 3ME", "city": "DELFT",
+               "artikelnr": "340515", "omschrijving": "KERN KROKET 20% VLEES 28X80G",
+               "brand": "KERN", "artikelgroep": "SNACKS",
+               "ivp": 1, "vp": "DS", "maat": 2.24, "eenh": "KG",
+               "ean_ce": "8712800121619", "ean_he": "18712800121616",
+               "supplier": "SLIGRO", "periode": "2025-03", "aantal": 12, "omzet": 214.80}
     for i, col in enumerate(COLUMNS, start=1):
         ws.cell(row=3, column=i, value=example.get(col))
 
@@ -209,6 +241,13 @@ def write_template(path: str) -> str:
                     "cannot be weighed and contributes nothing to the footprint."],
         ["pieces", "Eenh = ST with VP not KG means the line is sold per piece and has no "
                    "weight. Those are reported separately, never silently zeroed."],
+        ["two barcodes", "ean_ce and ean_he are DIFFERENT numbers - the item and the case. "
+                         "Keep them in their own columns. If you only have one, put it in "
+                         "ean_ce and leave ean_he empty."],
+        ["why ean_ce matters", "An article number is your supplier's. A barcode is the "
+                               "product's. With the barcode we can recognise a product we "
+                               "have already worked out, even from a different wholesaler, "
+                               "instead of guessing from its description."],
     ]:
         notes.append(extra)
     for row in notes.iter_rows(min_row=2):

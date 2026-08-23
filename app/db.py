@@ -109,18 +109,23 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
     tenant = tenant or config.TENANT
     con = connect()
     rows = con.execute("""
-        SELECT l.artikelnr, p.description, p.category, l.restaurant, l.klantnr,
-               l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known
+        SELECT l.artikelnr, p.description, p.category, p.ean, p.ean_he,
+               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known
         FROM purchase_line l
         LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
         WHERE l.tenant=? AND (l.year*100+l.month) BETWEEN ? AND ?""",
         (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchall()
     con.close()
+    # The barcodes travel with the line. An article number belongs to the supplier; a
+    # barcode belongs to the product, so it is the only identifier that survives a change
+    # of wholesaler — and the only one that lets a decision made for one client be reused
+    # for another.
     return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
                  category=r["category"] or "", restaurant=r["restaurant"] or "",
                  klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
                  aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
-                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0)
+                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
+                 ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
             for r in rows]
 
 
