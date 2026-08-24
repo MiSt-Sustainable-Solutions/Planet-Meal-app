@@ -167,7 +167,8 @@ try:
     P(False, "a blocked upload must not commit without an override")
 except uploads.CommitError as e:
     P("blocked" in str(e) and "override" in str(e), "it refuses, and says how to force it")
-P(uploads.discard(fourth["upload_id"]) is True, "a staged upload can be discarded")
+P(uploads.discard(fourth["upload_id"], config.TENANT) is True,
+  "a staged upload can be discarded")
 
 print("\n=== quiet holiday months are not mistaken for broken ones ===")
 flagged = set()
@@ -193,7 +194,7 @@ else:
       "and FY2024's partial months raise an error caveat")
     P(abs(sum(x["co2_kg"] for x in out["by_month"]) - h["co2_kg"]) <= len(out["by_month"]),
       "the monthly breakdown sums to the headline")
-    P(out.get("run_id") and analysis.saved(out["run_id"]) is not None,
+    P(out.get("run_id") and analysis.saved(out["run_id"], config.TENANT) is not None,
       "the run is saved and can be read back")
     P(len(analysis.history()) >= 1, "and appears in the history")
     nutrition = {"kcal", "protein_g", "fat_g", "satfat_g", "carb_g", "sugar_g", "fibre_g"}

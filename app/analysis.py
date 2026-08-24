@@ -312,7 +312,7 @@ def _save(result: dict, label, y0, m0, y1, m1, nlines: int, tenant: str,
 
 
 def history(limit: int = 25, tenant: str | None = None) -> list[dict]:
-    tenant = tenant or config.TENANT
+    tenant = tenant or config.TENANT   # always scoped; there is no all-clients history
     con = db.connect()
     rows = con.execute(
         """SELECT id, label, period_from, period_to, eat_profile, ran_at, lines,
@@ -323,8 +323,21 @@ def history(limit: int = 25, tenant: str | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def saved(run_id: str) -> dict | None:
+def saved(run_id: str, tenant: str | None) -> dict | None:
+    """A saved analysis by id, restricted to one client. `tenant=None` means any.
+
+    `tenant` is REQUIRED and has no default on purpose. This is a lookup by an opaque
+    id, and an id is not a permission -- without the filter, changing one character in
+    a URL returns another client's entire analysis: their spend, their volumes, their
+    restaurants. A default of None would make forgetting it silent, so every caller is
+    forced to say which client it is asking for, and only an admin route may say "any".
+    """
     con = db.connect()
-    r = con.execute("SELECT result_json FROM analysis_run WHERE id=?", (run_id,)).fetchone()
+    if tenant is None:
+        r = con.execute("SELECT result_json FROM analysis_run WHERE id=?",
+                        (run_id,)).fetchone()
+    else:
+        r = con.execute("SELECT result_json FROM analysis_run WHERE id=? AND tenant=?",
+                        (run_id, tenant)).fetchone()
     con.close()
     return json.loads(r["result_json"]) if r else None

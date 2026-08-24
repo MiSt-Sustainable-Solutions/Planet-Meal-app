@@ -27,10 +27,12 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                RedirectResponse, Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.templating import Jinja2Templates
 
 import adapters
 import analysis
+import auth
 import catalogue
 import charts
 import config
@@ -42,6 +44,54 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="PLANETprocure", docs_url="/api/docs")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
+
+# Everything needs a login EXCEPT these. The list is short and explicit so that a route
+# added later is protected by default -- the failure mode of forgetting is "nobody can
+# reach it", not "everybody can".
+PUBLIC_PATHS = {"/login", "/logout", "/api/health", "/favicon.ico"}
+
+# Only an admin may reach these. Uploading and curating both change data that outlives
+# the person doing it -- an upload becomes a client's history, and a curated pin
+# outranks every rule for every client, forever. Neither belongs to a client account.
+ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin")
+
+
+@app.middleware("http")
+async def gate(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static") or path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    me = auth.current(request)
+    if me is None:
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "not signed in"}, status_code=401)
+        nxt = quote(path + ("?" + request.url.query if request.url.query else ""))
+        return RedirectResponse(f"/login?next={nxt}", status_code=303)
+
+    if any(path == a or path.startswith(a + "/") for a in ADMIN_PATHS) and not me.is_admin:
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "admin only"}, status_code=403)
+        return templates.TemplateResponse(
+            "denied.html", dict(request=request, me=me, page="", what=path,
+                                client_name=config.CLIENT_NAME,
+                                caterer_name=config.CATERER_NAME,
+                                catalogue_api=config.CATALOGUE_API, api_up=True,
+                                tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
+                                stale=None, tenants=[], viewing=None),
+            status_code=403)
+    return await call_next(request)
+
+
+# Added AFTER the gate, deliberately. Starlette runs the most recently added middleware
+# OUTERMOST, so this puts the session layer around the gate -- and the gate can only read
+# request.session because the session middleware has already run by then. Added before it,
+# the gate fires first, there is no session on the request, and every single page 500s.
+app.add_middleware(SessionMiddleware, secret_key=auth.session_secret(),
+                   session_cookie="planetprocure", same_site="lax",
+                   https_only=os.environ.get("MIST_ENV", "").lower().startswith("prod"),
+                   max_age=60 * 60 * 12)
+
 
 COMMIT_MODES = [
     dict(key="new_only", label="Only the new months", default=True,
@@ -62,6 +112,7 @@ COMMIT_MODES = [
 @app.on_event("startup")
 def _startup():
     db.init()
+    auth.init()
 
 
 def relabel(result: dict) -> dict:
@@ -77,19 +128,81 @@ def relabel(result: dict) -> dict:
     return result
 
 
+def me(request: Request) -> auth.Principal:
+    """Who is asking. Guaranteed present: the gate middleware runs before every route."""
+    p = auth.current(request)
+    if p is None:                      # only reachable if the gate is ever bypassed
+        raise HTTPException(401, "not signed in")
+    return p
+
+
 def ctx(request: Request, page: str, **kw) -> dict:
     """Everything every template needs."""
     # ONE call to the catalogue per page. /health answers both questions a page asks —
     # is it up, and what version is it on — so asking twice was a wasted round trip on
     # every single render.
     health = catalogue.health()
-    base = dict(request=request, page=page,
-                client_name=config.CLIENT_NAME, caterer_name=config.CATERER_NAME,
+    who = auth.current(request)
+    tenant = who.tenant if who else None
+    names = {t["tenant"]: t["display_name"] for t in auth.tenants()}
+    base = dict(request=request, page=page, me=who,
+                tenants=auth.tenants() if (who and who.is_admin) else [],
+                viewing=tenant,
+                client_name=names.get(tenant, config.CLIENT_NAME),
+                caterer_name=config.CATERER_NAME,
                 catalogue_api=config.CATALOGUE_API, api_up=health is not None,
                 tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
-                stale=analysis.staleness(live=(health or {}).get("catalogue")))
+                stale=analysis.staleness(tenant=tenant,
+                                         live=(health or {}).get("catalogue")))
     base.update(kw)
     return base
+
+
+# --------------------------------------------------------------------------- sign in
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request, next: str = "/", error: str | None = None):
+    if auth.current(request):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("login.html", dict(
+        request=request, next=next, error=error, setup=not auth.any_users()))
+
+
+@app.post("/login")
+def login(request: Request, username: str = Form(...), password: str = Form(...),
+          next: str = Form("/")):
+    user = auth.authenticate(username, password)
+    if not user:
+        # One message for both failures. Saying "no such user" tells an attacker which
+        # usernames exist, which is half of a password guess already done for them.
+        return templates.TemplateResponse("login.html", dict(
+            request=request, next=next, setup=not auth.any_users(),
+            error="That username and password do not match."), status_code=401)
+    auth.sign_in(request, user)
+    dest = next if next.startswith("/") and not next.startswith("//") else "/"
+    return RedirectResponse(dest, status_code=303)
+
+
+@app.get("/logout")
+def logout(request: Request):
+    auth.sign_out(request)
+    return RedirectResponse("/login", status_code=303)
+
+
+@app.post("/admin/viewing")
+def set_viewing(request: Request, tenant: str = Form(...), back: str = Form("/")):
+    """Admin only: switch which client you are looking at."""
+    if not auth.view_tenant(request, tenant):
+        raise HTTPException(403, "only an admin can switch client")
+    dest = back if back.startswith("/") and not back.startswith("//") else "/"
+    return RedirectResponse(dest, status_code=303)
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_home(request: Request):
+    """Who exists, and what each of them can see."""
+    return templates.TemplateResponse("admin.html", ctx(
+        request, "admin", users=auth.users(), all_tenants=auth.tenants(),
+        decisions=catalogue.decisions(limit=1)))
 
 
 # --------------------------------------------------------------------------- dashboard
@@ -100,19 +213,21 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0):
     Everything else reads the cache: the same window, the same purchase data and the same
     catalogue version means the saved answer is still the right answer.
     """
+    p = me(request)
     try:
-        selected = window or analysis.default_window()
-        result = analysis.run(window=selected, force=bool(refresh))
+        selected = window or analysis.default_window(p.tenant)
+        result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             "dashboard.html", ctx(request, "dashboard", error=str(e),
-                                  window_options=analysis.windows(), selected_window=window))
+                                  window_options=analysis.windows(p.tenant),
+                                  selected_window=window))
 
     relabel(result)
     return templates.TemplateResponse("dashboard.html", ctx(
         request, "dashboard",
         result=result, selected_window=selected, stale=result.get("stale"),
-        window_options=analysis.windows(),
+        window_options=analysis.windows(p.tenant),
         conf_bar=charts.confidence(result["headline"]["confidence"]["by_tier"]),
         trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
         rest_chart=charts.bars(result["by_restaurant"], "restaurant", "co2_kg",
@@ -126,12 +241,14 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0):
 @app.get("/data-health", response_class=HTMLResponse)
 def data_health(request: Request, window: str | None = None, refresh: int = 0,
                 curated: str | None = None, curate_error: str | None = None):
+    p = me(request)
     try:
-        selected = window or analysis.default_window()
-        result = analysis.run(window=selected, force=bool(refresh))
+        selected = window or analysis.default_window(p.tenant)
+        result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
-            "data_health.html", ctx(request, "health", error=str(e), months=db.months()))
+            "data_health.html", ctx(request, "health", error=str(e),
+                                    months=db.months(p.tenant)))
 
     relabel(result)
 
@@ -142,25 +259,26 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
     wq_err = None if wq else "the catalogue did not return a work queue for this window"
 
     return templates.TemplateResponse("data_health.html", ctx(
-        request, "health", result=result, months=db.months(), stale=result.get("stale"),
+        request, "health", result=result, months=db.months(p.tenant),
+        stale=result.get("stale"),
         work_queue=wq, work_queue_error=wq_err, selected_window=selected,
         curated=curated, curate_error=curate_error,
         decisions=catalogue.decisions(limit=1)))
 
 
 # --------------------------------------------------------------------------- review loop
-def _review_products(window: str | None = None) -> tuple[list[dict], str]:
+def _review_products(tenant: str, window: str | None = None) -> tuple[list[dict], str]:
     """This window's curation backlog, shaped for the catalogue's review sheet.
 
     The weight and the current figure come from the analysis; the barcode comes from the
     app's own product table, because that is where the client's supplier data lives.
     """
-    selected = window or analysis.default_window()
-    result = analysis.run(window=selected)
+    selected = window or analysis.default_window(tenant)
+    result = analysis.run(window=selected, tenant=tenant)
     queue = (result.get("work_queue") or {}).get("rows") or []
     con = db.connect()
     bars = {r["artikelnr"]: (r["ean"] or "") for r in con.execute(
-        "SELECT artikelnr, ean FROM product WHERE tenant=?", (config.TENANT,))}
+        "SELECT artikelnr, ean FROM product WHERE tenant=?", (tenant,))}
     con.close()
     return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
                  category=r["category"] or "",
@@ -172,13 +290,14 @@ def _review_products(window: str | None = None) -> tuple[list[dict], str]:
 
 
 @app.get("/review-sheet.xlsx")
-def review_sheet(window: str | None = None, limit: int = 300):
+def review_sheet(request: Request, window: str | None = None, limit: int = 300):
     """Download the review sheet for this window. Heaviest unresolved products first."""
+    p = me(request)
     try:
-        products, selected = _review_products(window)
+        products, selected = _review_products(p.tenant, window)
         if not products:
             raise HTTPException(400, "nothing is waiting for review in this window")
-        name = f"MiSt_review_{config.TENANT}_{selected}.xlsx"
+        name = f"MiSt_review_{p.tenant}_{selected}.xlsx"
         data, rows = catalogue.review_sheet(products, filename=name, limit=limit)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         raise HTTPException(503, str(e))
@@ -202,6 +321,7 @@ async def curate(request: Request, file: UploadFile = File(...),
     filed, writing nothing. Worth doing: a decision here outranks every rule for every
     client, and the only thing worse than a wrong answer is finding out afterwards.
     """
+    me(request)                       # admin only; the gate has already checked
     raw = await file.read()
     dry = bool(check)
     try:
@@ -220,16 +340,19 @@ async def curate(request: Request, file: UploadFile = File(...),
 
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request):
+    p = me(request)
     return templates.TemplateResponse("history.html", ctx(
-        request, "history", runs=analysis.history(), uploads=uploads.listing()))
+        request, "history", runs=analysis.history(tenant=p.tenant),
+        uploads=uploads.listing(tenant=p.tenant)))
 
 
 # --------------------------------------------------------------------------- upload
 @app.get("/upload", response_class=HTMLResponse)
 def upload_form(request: Request, error: str | None = None):
+    p = me(request)
     return templates.TemplateResponse("upload.html", ctx(
         request, "upload", error=error, adapters=adapters.listing(),
-        uploads=uploads.listing(limit=12)))
+        uploads=uploads.listing(limit=12, tenant=p.tenant)))
 
 
 @app.get("/upload/template")
@@ -244,6 +367,7 @@ def download_template():
 @app.post("/upload")
 async def upload_file(request: Request, file: UploadFile = File(...),
                       year: str | None = Form(None)):
+    p = me(request)
     suffix = os.path.splitext(file.filename or "upload.xlsx")[1] or ".xlsx"
     fd, tmp = tempfile.mkstemp(suffix=suffix)
     try:
@@ -251,11 +375,11 @@ async def upload_file(request: Request, file: UploadFile = File(...),
             shutil.copyfileobj(file.file, out)
         y = int(year) if year and str(year).strip().isdigit() else None
         try:
-            report = uploads.stage(tmp, file.filename, y)
+            report = uploads.stage(tmp, file.filename, y, tenant=p.tenant)
         except Exception as e:
             return templates.TemplateResponse("upload.html", ctx(
                 request, "upload", error=str(e), adapters=adapters.listing(),
-                uploads=uploads.listing(limit=12)), status_code=422)
+                uploads=uploads.listing(limit=12, tenant=p.tenant)), status_code=422)
     finally:
         try:
             os.unlink(tmp)
@@ -266,7 +390,8 @@ async def upload_file(request: Request, file: UploadFile = File(...),
 
 @app.get("/upload/{upload_id}", response_class=HTMLResponse)
 def upload_report(request: Request, upload_id: str, commit_error: str | None = None):
-    report = uploads.get(upload_id)
+    p = me(request)
+    report = uploads.get(upload_id, p.tenant)
     if report is None:
         raise HTTPException(404, f"no upload {upload_id}")
     return templates.TemplateResponse("preflight.html", ctx(
@@ -277,17 +402,19 @@ def upload_report(request: Request, upload_id: str, commit_error: str | None = N
 @app.post("/upload/{upload_id}/commit")
 def commit_upload(request: Request, upload_id: str,
                   mode: str = Form("new_only"), override: str | None = Form(None)):
+    p = me(request)
     try:
-        uploads.commit(upload_id, mode, bool(override))
+        uploads.commit(upload_id, mode, bool(override), tenant=p.tenant)
     except uploads.CommitError as e:
         return upload_report(request, upload_id, commit_error=str(e))
     return RedirectResponse(f"/upload/{upload_id}", status_code=303)
 
 
 @app.get("/upload/{upload_id}/discard")
-def discard_upload(upload_id: str):
+def discard_upload(request: Request, upload_id: str):
+    p = me(request)
     try:
-        uploads.discard(upload_id)
+        uploads.discard(upload_id, p.tenant)
     except uploads.CommitError:
         return RedirectResponse(f"/upload/{upload_id}", status_code=303)
     return RedirectResponse("/upload", status_code=303)
@@ -295,13 +422,15 @@ def discard_upload(upload_id: str):
 
 # --------------------------------------------------------------------------- export
 @app.get("/export.xlsx")
-def export_xlsx(window: str | None = None):
+def export_xlsx(request: Request, window: str | None = None):
     """The full analysis as a workbook, on demand."""
     from openpyxl import Workbook
+    p = me(request)
     from openpyxl.styles import Alignment, Font, PatternFill
 
     try:
-        result = analysis.run(window=window or analysis.default_window(), save=False, top=60)
+        result = analysis.run(window=window or analysis.default_window(p.tenant),
+                              save=False, top=60, tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         raise HTTPException(409, str(e))
 
@@ -370,7 +499,7 @@ def export_xlsx(window: str | None = None):
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    name = f"PLANETprocure_{config.TENANT}_{h['window'].replace(' ', '')}.xlsx"
+    name = f"PLANETprocure_{p.tenant}_{h['window'].replace(' ', '')}.xlsx"
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{name}"'})
@@ -383,27 +512,33 @@ def api_health():
 
 
 @app.get("/api/analysis")
-def api_analysis(window: str | None = None):
+def api_analysis(request: Request, window: str | None = None):
+    p = me(request)
     try:
-        return analysis.run(window=window or analysis.default_window())
+        return analysis.run(window=window or analysis.default_window(p.tenant),
+                            tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return JSONResponse({"error": str(e)}, status_code=409)
 
 
 @app.get("/api/run/{run_id}")
-def api_run(run_id: str):
-    out = analysis.saved(run_id)
+def api_run(request: Request, run_id: str):
+    p = me(request)
+    # An admin may read any client's saved run; a client only their own. Passing None
+    # here for a client would hand them somebody else's analysis for a guessed id.
+    out = analysis.saved(run_id, None if p.is_admin else p.tenant)
     if out is None:
         raise HTTPException(404, f"no analysis run {run_id}")
     return out
 
 
 @app.get("/api/catalogue-version")
-def api_catalogue_version():
+def api_catalogue_version(request: Request):
     """What the catalogue is on now, and whether the saved numbers are behind it."""
-    return {"live": catalogue.version(), "stale": analysis.staleness()}
+    p = me(request)
+    return {"live": catalogue.version(), "stale": analysis.staleness(tenant=p.tenant)}
 
 
 @app.get("/api/months")
-def api_months():
+def api_months(request: Request):
     return {"rows": db.months()}

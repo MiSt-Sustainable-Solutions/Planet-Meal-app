@@ -25,10 +25,45 @@
       <li><a href="/" {% if page=='dashboard' %}class="active"{% endif %}>Dashboard</a></li>
       <li><a href="/data-health" {% if page=='health' %}class="active"{% endif %}>Data health</a></li>
       <li><a href="/history" {% if page=='history' %}class="active"{% endif %}>History</a></li>
+      {% if me and me.is_admin %}
+      <li><a href="/admin" {% if page=='admin' %}class="active"{% endif %}>Accounts</a></li>
+      {% endif %}
+      {% if me %}
+      <li><a href="/logout" title="Signed in as {{ me.display_name }}">Sign out</a></li>
+      {% endif %}
+      {% if me and me.is_admin %}
       <li><a href="/upload" class="nav-cta">Upload a file</a></li>
+      {% endif %}
     </ul>
   </div>
 </nav>
+
+{% if me and me.is_admin %}
+<section class="tight" style="background:var(--ink);padding-block:12px;">
+  <div class="inner" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;">
+    <span style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--teal-light);">
+      MiSt admin
+    </span>
+    <span style="font-size:13px;color:rgba(242,248,243,.72);">Looking at</span>
+    <form method="post" action="/admin/viewing" style="display:flex;gap:10px;align-items:center;">
+      <input type="hidden" name="back" value="{{ request.url.path }}"/>
+      <select name="tenant" onchange="this.form.submit()"
+              style="font-family:var(--sans);font-size:13px;font-weight:700;color:var(--ink);
+                     background:var(--white);border:1px solid var(--mist);border-radius:6px;
+                     padding:7px 10px;cursor:pointer;">
+        {% for t in tenants %}
+        <option value="{{ t.tenant }}" {% if t.tenant == viewing %}selected{% endif %}>{{ t.display_name }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn-ghost" type="submit" style="color:var(--white);border-color:var(--mist);">Switch</button></noscript>
+    </form>
+    <span style="flex:1;"></span>
+    <span style="font-size:12.5px;color:rgba(242,248,243,.55);">
+      Signed in as {{ me.display_name }} &mdash; you can see every client
+    </span>
+  </div>
+</section>
+{% endif %}
 
 {% if not api_up and not stale %}
 <section class="tight light2" style="padding-block:16px;border-bottom:1px solid var(--mist);">
@@ -72,7 +107,7 @@
   <div class="footer-inner">
     <ul class="footer-links">
       <li><a href="/">Dashboard</a></li>
-      <li><a href="/upload">Upload</a></li>
+      {% if me and me.is_admin %}<li><a href="/upload">Upload</a></li>{% endif %}
       <li><a href="/data-health">Data health</a></li>
       <li><a href="/history">History</a></li>
     </ul>

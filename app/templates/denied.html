@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Not for this account{% endblock %}
+{% block body %}
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Not available</div>
+    <h2 class="sec-h2">That part is <em>MiSt's</em> side of the loop.</h2>
+    <p class="lede" style="margin-top:16px;">
+      Uploading purchase files and filing curation decisions are done by MiSt, not from a
+      client account. It is not a permissions technicality: an upload becomes your
+      reported history, and a curation decision outranks every rule for
+      <em>every</em> client, permanently. Both need to go through one pair of hands.
+    </p>
+    <p class="lede" style="margin-top:14px;">
+      You are signed in as <strong>{{ me.display_name }}</strong>. Everything your
+      organisation has is on the
+      <a href="/" style="color:var(--teal-ink);font-weight:700;">dashboard</a>,
+      the <a href="/data-health" style="color:var(--teal-ink);font-weight:700;">data health</a>
+      page and in <a href="/history" style="color:var(--teal-ink);font-weight:700;">history</a>.
+    </p>
+    <div style="margin-top:30px;"><a class="btn-main" href="/">Back to the dashboard</a></div>
+  </div>
+</section>
+{% endblock %}

@@ -144,6 +144,7 @@
 </section>
 
 <!-- ============================ the review loop ============================ -->
+{% if me and me.is_admin %}
 <section class="light2">
   <div class="inner">
     <div class="sec-label">Curation</div>
@@ -208,6 +209,7 @@
     </p>
   </div>
 </section>
+{% endif %}
 
 <section class="dark">
   <div class="inner">

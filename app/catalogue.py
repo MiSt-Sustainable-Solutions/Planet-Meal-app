@@ -22,8 +22,17 @@ class CatalogueDown(Exception):
     """The shared catalogue could not be reached or refused the request."""
 
 
-def _client() -> httpx.Client:
-    return httpx.Client(base_url=config.CATALOGUE_API, timeout=config.API_TIMEOUT)
+def _client(admin: bool = False) -> httpx.Client:
+    """A client for the catalogue. `admin=True` presents the stronger key.
+
+    The admin key is sent ONLY by the call that files curated decisions. Attaching it to
+    every request would make it the app's everyday credential, and then a leak of the
+    routine key would be a leak of the one that can rewrite the catalogue for everybody.
+    """
+    key = (config.CATALOGUE_ADMIN_KEY if admin else config.CATALOGUE_KEY)
+    headers = {"X-MiSt-Key": key} if key else {}
+    return httpx.Client(base_url=config.CATALOGUE_API, timeout=config.API_TIMEOUT,
+                        headers=headers)
 
 
 def health() -> dict | None:
@@ -155,7 +164,7 @@ def curate(data: bytes, filename: str = "review.xlsx", dry_run: bool = False) ->
     that happens as a side effect of anything else.
     """
     try:
-        with _client() as c:
+        with _client(admin=True) as c:
             r = c.post("/catalogue/curate",
                        files={"file": (filename, data)},
                        params={"dry_run": str(bool(dry_run)).lower()}, timeout=300)

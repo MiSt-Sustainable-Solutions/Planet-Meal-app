@@ -70,9 +70,19 @@ def stage(src_path: str, filename: str | None = None, year: int | None = None,
     return rep
 
 
-def get(uid: str) -> dict | None:
+def get(uid: str, tenant: str | None) -> dict | None:
+    """A staged upload by id, restricted to one client. `tenant=None` means any.
+
+    Required, like analysis.saved, and for the same reason: an upload id is a handle,
+    not a permission. Without the filter one client could read another's file report --
+    every product, every month, every euro of it.
+    """
     con = db.connect()
-    r = con.execute("SELECT * FROM upload WHERE id=?", (uid,)).fetchone()
+    if tenant is None:
+        r = con.execute("SELECT * FROM upload WHERE id=?", (uid,)).fetchone()
+    else:
+        r = con.execute("SELECT * FROM upload WHERE id=? AND tenant=?",
+                        (uid, tenant)).fetchone()
     con.close()
     if not r:
         return None
@@ -100,9 +110,19 @@ def listing(limit: int = 50, tenant: str | None = None) -> list[dict]:
             for r in rows]
 
 
-def discard(uid: str) -> bool:
+def discard(uid: str, tenant: str | None) -> bool:
+    """Throw away a staged upload. Scoped to a client; `tenant=None` means any.
+
+    Deleting is destructive and irreversible, so it is scoped for the same reason the
+    reads are: an id is a handle, not a permission. Without the filter one client could
+    delete another's staged file before they had a chance to look at it.
+    """
     con = db.connect()
-    r = con.execute("SELECT committed_at FROM upload WHERE id=?", (uid,)).fetchone()
+    if tenant is None:
+        r = con.execute("SELECT committed_at FROM upload WHERE id=?", (uid,)).fetchone()
+    else:
+        r = con.execute("SELECT committed_at FROM upload WHERE id=? AND tenant=?",
+                        (uid, tenant)).fetchone()
     if r is None:
         con.close()
         return False
@@ -126,7 +146,11 @@ def commit(uid: str, mode: str = "new_only", override: bool = False,
         raise CommitError(f"unknown mode {mode!r} — use new_only, replace or all")
 
     con = db.connect()
-    row = con.execute("SELECT * FROM upload WHERE id=?", (uid,)).fetchone()
+    # Scoped to the tenant doing the committing. Otherwise a caller could commit
+    # somebody else's staged file INTO THEIR OWN data -- not just a read of another
+    # client's numbers but a permanent corruption of two clients at once.
+    row = con.execute("SELECT * FROM upload WHERE id=? AND tenant=?",
+                      (uid, tenant)).fetchone()
     if not row:
         con.close()
         raise CommitError(f"no upload {uid}")
@@ -227,8 +251,8 @@ def commit(uid: str, mode: str = "new_only", override: bool = False,
             + (f"; replaced {len(replaced)} existing month(s)" if replaced else "")
             + (f"; skipped {len(file_periods) - len(take)} already-loaded month(s)"
                if len(take) < len(file_periods) else ""))
-    con.execute("UPDATE upload SET committed_at=?, commit_mode=?, commit_note=? WHERE id=?",
-                (now, mode, note, uid))
+    con.execute("UPDATE upload SET committed_at=?, commit_mode=?, commit_note=? "
+                "WHERE id=? AND tenant=?", (now, mode, note, uid, tenant))
     con.commit()
     db.invalidate()   # the client's data just changed
     con.close()

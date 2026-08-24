@@ -7,7 +7,12 @@ heading, a number or an italic. A human review catches that once; a test catches
 time.
 
     python test_design.py         (needs the app running on :8080)
+
+Every page is behind a login now, so this signs in first. Set MIST_TEST_USER and
+MIST_TEST_PASSWORD if the admin account is not called "mist" -- the pages checked here
+include the admin-only ones, so it has to be an admin.
 """
+import os
 import re
 import sys
 
@@ -16,6 +21,7 @@ import httpx
 BASE = "http://127.0.0.1:8080"
 PAGES = ["/", "/upload", "/data-health", "/history"]
 FAILED = []
+SESSION = httpx.Client(timeout=900, follow_redirects=True)
 
 
 def P(ok, msg):
@@ -25,14 +31,27 @@ def P(ok, msg):
 
 
 def fetch(path):
-    return httpx.get(BASE + path, timeout=900).text
+    return SESSION.get(BASE + path).text
 
 
 try:
-    css = httpx.get(BASE + "/static/mist.css", timeout=30).text
+    css = SESSION.get(BASE + "/static/mist.css", timeout=30).text
 except Exception as e:
     print(f"the app is not running on {BASE} ({type(e).__name__})")
     sys.exit(1)
+
+# Sign in. Checking the design of the login redirect instead of the actual pages would
+# pass happily and prove nothing.
+_u = os.environ.get("MIST_TEST_USER", "mist")
+_p = os.environ.get("MIST_TEST_PASSWORD", "")
+if not _p:
+    print("set MIST_TEST_PASSWORD (and MIST_TEST_USER if not 'mist') -- the pages are "
+          "behind a login now, and an admin account is needed to reach /upload.")
+    sys.exit(2)
+_r = SESSION.post(BASE + "/login", data={"username": _u, "password": _p, "next": "/"})
+if "/login" in str(_r.url) or "do not match" in _r.text:
+    print(f"could not sign in as {_u!r} -- check MIST_TEST_USER / MIST_TEST_PASSWORD")
+    sys.exit(2)
 
 print("=== the tokens are the design system's, unaltered ===")
 for name, value in [("--linen", "#E8F0EA"), ("--ink", "#1A4A2A"), ("--sage", "#3D6647"),

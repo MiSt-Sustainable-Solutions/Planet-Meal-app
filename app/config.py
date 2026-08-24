@@ -31,3 +31,15 @@ CATERER_NAME = os.environ.get("MIST_CATERER_NAME", "APPèL")
 
 # how long to wait on the catalogue API; scoring a full year is ~29k lines
 API_TIMEOUT = float(os.environ.get("MIST_API_TIMEOUT", "300"))
+
+# Keys for the catalogue's write endpoints. Reading needs neither.
+#
+#   CATALOGUE_KEY        lets this app teach the catalogue a product it has never seen.
+#                        Routine, happens on every import.
+#   CATALOGUE_ADMIN_KEY  lets it file curated decisions, which outrank every rule for
+#                        every client. Only a MiSt deployment should hold this, and only
+#                        an admin can reach the route that uses it.
+#
+# Empty locally, where the catalogue runs unprotected on 127.0.0.1.
+CATALOGUE_KEY = os.environ.get("MIST_CATALOGUE_KEY", "").strip()
+CATALOGUE_ADMIN_KEY = os.environ.get("MIST_CATALOGUE_ADMIN_KEY", "").strip()

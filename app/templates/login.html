@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sign in · PLANETprocure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/mist.css"/>
+<style>
+.signin-wrap{min-height:100vh;display:grid;place-items:center;padding:40px var(--pad);}
+.signin{width:100%;max-width:420px;}
+.signin .mark{font-family:var(--serif);font-size:22px;font-weight:700;color:var(--ink);letter-spacing:-.01em;}
+.signin .mark em{color:var(--teal);font-style:italic;}
+.signin h1{font-family:var(--serif);font-size:clamp(30px,5vw,42px);font-weight:700;color:var(--ink);
+  line-height:1.02;letter-spacing:-.025em;margin-top:26px;}
+.signin h1 em{color:var(--teal);font-style:italic;}
+.signin p.sub{font-size:14.5px;line-height:1.7;color:var(--sage);margin-top:14px;}
+.field{margin-top:20px;}
+.field label{display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--sage);margin-bottom:8px;}
+.field input{width:100%;font-family:var(--sans);font-size:15px;color:var(--ink);
+  background:var(--white);border:1px solid var(--mist);border-radius:8px;padding:12px 14px;
+  transition:border-color .18s,box-shadow .18s;}
+.field input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(45,158,117,.16);}
+.signin button{margin-top:26px;width:100%;justify-content:center;}
+.signin .err{margin-top:20px;background:rgba(176,58,46,.08);border:1px solid rgba(176,58,46,.3);
+  border-radius:8px;padding:12px 14px;font-size:13.5px;color:var(--err);line-height:1.6;}
+.signin .setup{margin-top:20px;background:var(--linen2);border-radius:8px;padding:14px 16px;
+  font-size:13px;color:var(--sage);line-height:1.65;}
+.signin .setup code{font-size:12px;}
+.signin .foot{margin-top:32px;font-size:12px;color:var(--mist);}
+</style>
+</head>
+<body>
+<div class="signin-wrap">
+  <div class="signin">
+    <div class="mark">PLANET<em>procure</em></div>
+    <h1>Sign <em>in.</em></h1>
+    <p class="sub">Each organisation has one account. Nobody sees anybody else&rsquo;s purchasing.</p>
+
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+    {% if setup %}
+    <div class="setup">
+      <strong>No accounts exist yet.</strong> Create the first one from the app folder:<br/>
+      <code>python auth.py add-user &lt;name&gt; --role admin</code><br/>
+      It will ask for a password. An admin can see every client; a client account is made
+      with <code>--role client --tenant &lt;id&gt;</code>.
+    </div>
+    {% endif %}
+
+    <form method="post" action="/login" autocomplete="on">
+      <input type="hidden" name="next" value="{{ next }}"/>
+      <div class="field">
+        <label for="u">Username</label>
+        <input id="u" name="username" autocomplete="username" autofocus required/>
+      </div>
+      <div class="field">
+        <label for="p">Password</label>
+        <input id="p" name="password" type="password" autocomplete="current-password" required/>
+      </div>
+      <button class="btn-main" type="submit">Sign in</button>
+    </form>
+
+    <div class="foot">KVK 88298078 &nbsp;·&nbsp; © 2026 MiSt Sustainable Solutions</div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block body %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">MiSt only</div>
+    <h2 class="sec-h2">Who can see <em>what.</em></h2>
+    <p class="lede" style="margin-top:14px;">
+      One account per organisation, not one per person. An admin account has no client of
+      its own &mdash; it sees all of them, and picks which one to look at from the bar above.
+    </p>
+
+    <div class="card scroll-x" style="margin-top:26px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Account</th><th>Role</th><th>Can see</th><th>Created</th><th>Last signed in</th>
+        </tr></thead>
+        <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="name">{{ u.display_name or u.username }}
+            <span class="muted">({{ u.username }})</span></td>
+          <td>
+            {% if u.role == 'admin' %}<span class="pill">admin</span>
+            {% else %}<span class="pill warn">client</span>{% endif %}
+          </td>
+          <td>{% if u.role == 'admin' %}<strong>every client</strong>
+              {% else %}{{ u.tenant }}{% endif %}</td>
+          <td class="muted">{{ (u.created_at or '')[:10] }}</td>
+          <td class="muted">{{ (u.last_seen or 'never')[:16]|replace('T',' ') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="lede" style="margin-top:22px;font-size:14px;">
+      Accounts are managed from the command line, deliberately &mdash; there is no
+      self-service sign-up, and a password is never typed into a web form that could be
+      logged. From the <code>app</code> folder:
+    </p>
+    <div class="card" style="margin-top:14px;">
+      <pre class="code-block" style="margin:0;white-space:pre-wrap;font-size:12.5px;line-height:1.8;">python auth.py list
+python auth.py add-tenant &lt;id&gt; --name "&lt;Client name&gt;" --caterer "&lt;Caterer&gt;"
+python auth.py add-user &lt;name&gt; --role client --tenant &lt;id&gt;
+python auth.py add-user &lt;name&gt; --role admin
+python auth.py set-password &lt;name&gt;</pre>
+    </div>
+  </div>
+</section>
+
+<section class="dark">
+  <div class="inner">
+    <div class="sec-label sl-teal">Clients</div>
+    <h2 class="sec-h2">Each one&rsquo;s data is <em>their own.</em></h2>
+    <p class="lede">
+      Every purchase line, upload and saved analysis carries the client it belongs to, and
+      every query is filtered by it. A client account cannot reach another client&rsquo;s
+      data even by guessing an internal id &mdash; the lookups check ownership, not just
+      the id.
+    </p>
+
+    <div class="cache-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:34px;">
+      {% for t in all_tenants %}
+      <div style="background:var(--ink2);border-radius:14px;padding:20px 22px;">
+        <div style="font-family:var(--serif);font-size:19px;font-weight:700;color:var(--white);">{{ t.display_name }}</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--teal-light);margin-top:8px;">{{ t.tenant }}</div>
+        {% if t.caterer %}<div style="font-size:13px;color:rgba(242,248,243,.7);margin-top:10px;">Caterer: {{ t.caterer }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if decisions %}
+    <p class="lede" style="margin-top:34px;">
+      The shared catalogue holds <strong>{{ "{:,}".format(decisions.decisions) }}</strong>
+      curated decisions, <strong>{{ decisions.portable_pct }}%</strong> of them stored
+      against a barcode &mdash; so they apply to the same product from any wholesaler, for
+      every client here and every client after them.
+    </p>
+    {% endif %}
+  </div>
+</section>
+
+{% endblock %}
