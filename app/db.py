@@ -17,9 +17,9 @@ types, no AUTOINCREMENT, explicit primary keys.
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 
 import config
+import store
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS product(
@@ -86,10 +86,15 @@ MIGRATIONS = [
 ]
 
 
-def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(config.APP_DB, timeout=30)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys=ON")
+def connect():
+    """The one place the app opens a database.
+
+    SQLite on a laptop, Postgres when DATABASE_URL is set. Because every read and write
+    in the app comes through here, that is the whole of the switch -- nothing else in the
+    app knows or cares which backend it got.
+    """
+    con = store.connect(config.APP_DB, rows=True)
+    con.execute("PRAGMA foreign_keys=ON")   # a SQLite hint; ignored on Postgres
     return con
 
 
@@ -97,7 +102,10 @@ def init() -> None:
     con = connect()
     con.executescript(SCHEMA)
     for table, column, decl in MIGRATIONS:
-        have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        # store.columns() rather than PRAGMA: PRAGMA is SQLite-only, and on Postgres it
+        # would answer "no columns", so every migration would try to add a column that is
+        # already there.
+        have = store.columns(con, table)
         if column not in have:
             con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     con.executescript(POST_MIGRATION)
@@ -175,7 +183,15 @@ def snapshot(tenant: str | None = None) -> dict:
 
     con = connect()
     rows = con.execute("""
-        SELECT year, month, quality, COUNT(*) AS lines, SUM(omzet) AS spend,
+        SELECT year, month,
+               -- A month is partial if ANY of it is. SQLite would happily return a
+               -- column that is not in the GROUP BY, picking an arbitrary row's value;
+               -- Postgres refuses, which is the better behaviour and forces the rule to
+               -- be stated. Written out rather than MIN(quality) so it does not depend
+               -- on 'PARTIAL' happening to sort before 'complete'.
+               CASE WHEN SUM(CASE WHEN quality = 'complete' THEN 0 ELSE 1 END) > 0
+                    THEN 'PARTIAL' ELSE 'complete' END AS quality,
+               COUNT(*) AS lines, SUM(omzet) AS spend,
                SUM(kg) AS kg, SUM(CASE WHEN kg_known=0 THEN 1 ELSE 0 END) AS piece_lines
         FROM purchase_line WHERE tenant=?
         GROUP BY year, month ORDER BY year, month""", (tenant,)).fetchall()
@@ -240,7 +256,11 @@ def piece_items(y0: int, m0: int, y1: int, m1: int, limit: int = 100,
         FROM purchase_line l
         LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
         WHERE l.tenant=? AND l.kg_known=0 AND (l.year*100+l.month) BETWEEN ? AND ?
-        GROUP BY l.artikelnr ORDER BY spend DESC""",
+        -- every product column here is determined by artikelnr (it is the product
+        -- table's key), so naming them changes nothing except that Postgres will
+        -- accept it. SQLite allowed the shorter form and picked a value at random.
+        GROUP BY l.artikelnr, p.description, p.category, p.vp, p.eenh
+        ORDER BY spend DESC""",
         (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchall()
     total = con.execute("""SELECT SUM(omzet) FROM purchase_line
         WHERE tenant=? AND (year*100+month) BETWEEN ? AND ?""",

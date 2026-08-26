@@ -37,6 +37,7 @@ from dataclasses import dataclass
 
 import config
 import db
+import store
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS app_user(
@@ -92,9 +93,11 @@ def init() -> None:
     con = db.connect()
     con.executescript(SCHEMA)
     # The tenant this deployment started with, so an existing install keeps working.
-    con.execute("INSERT OR IGNORE INTO tenant VALUES (?,?,?,?)",
-                (config.TENANT, config.CLIENT_NAME, config.CATERER_NAME,
-                 dt.datetime.now().isoformat(timespec="seconds")))
+    # Conflict column named explicitly -- see store.upsert for why it is never inferred.
+    store.upsert(con, "tenant", ["tenant", "display_name", "caterer", "created_at"],
+                 [(config.TENANT, config.CLIENT_NAME, config.CATERER_NAME,
+                   dt.datetime.now().isoformat(timespec="seconds"))],
+                 conflict=["tenant"], update=False)
     con.commit()
     con.close()
 
@@ -109,9 +112,10 @@ def tenants() -> list[dict]:
 
 def add_tenant(tenant: str, display_name: str, caterer: str = "") -> None:
     con = db.connect()
-    con.execute("INSERT OR REPLACE INTO tenant VALUES (?,?,?,?)",
-                (tenant, display_name, caterer,
-                 dt.datetime.now().isoformat(timespec="seconds")))
+    store.upsert(con, "tenant", ["tenant", "display_name", "caterer", "created_at"],
+                 [(tenant, display_name, caterer,
+                   dt.datetime.now().isoformat(timespec="seconds"))],
+                 conflict=["tenant"])
     con.commit()
     con.close()
 

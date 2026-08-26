@@ -149,7 +149,7 @@ def _lookup(tenant: str, wkey: str, fingerprint: str,
     if etag:
         sql.append("AND catalogue_version=?")
         args.append(etag)
-    sql.append("ORDER BY ran_at DESC, rowid DESC LIMIT 1")
+    sql.append("ORDER BY ran_at DESC, id DESC LIMIT 1")
     con = db.connect()
     row = con.execute(" ".join(sql), args).fetchone()
     con.close()
@@ -194,7 +194,7 @@ def staleness(tenant: str | None = None, live: dict | None = None) -> dict | Non
     row = con.execute(
         """SELECT catalogue_version, ran_at, label FROM analysis_run
            WHERE tenant=? AND catalogue_version IS NOT NULL
-           ORDER BY ran_at DESC, rowid DESC LIMIT 1""", (tenant,)).fetchone()
+           ORDER BY ran_at DESC, id DESC LIMIT 1""", (tenant,)).fetchone()
     con.close()
     if not row or row["catalogue_version"] == live["etag"]:
         return None
@@ -317,7 +317,7 @@ def history(limit: int = 25, tenant: str | None = None) -> list[dict]:
     rows = con.execute(
         """SELECT id, label, period_from, period_to, eat_profile, ran_at, lines,
                   food_kg, co2_kg, intensity, eat_score, specific_pct, catalogue_version
-           FROM analysis_run WHERE tenant=? ORDER BY ran_at DESC, rowid DESC LIMIT ?""",
+           FROM analysis_run WHERE tenant=? ORDER BY ran_at DESC, id DESC LIMIT ?""",
         (tenant, limit)).fetchall()
     con.close()
     return [dict(r) for r in rows]

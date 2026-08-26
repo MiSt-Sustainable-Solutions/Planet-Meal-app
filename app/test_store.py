@@ -65,6 +65,19 @@ def run_suite(label: str, url: str | None, sqlite_path: str | None):
     got = con.execute("SELECT note FROM t_store WHERE a='q'").fetchone()
     P(got[0] == "really?", "a ? inside a string literal survives translation")
 
+    # ---- an apostrophe in a COMMENT must not swallow the placeholders ----
+    # This is not hypothetical: a comment reading "an arbitrary row's value" broke every
+    # query below it, and the error pointed at the parameter count rather than the comment.
+    got = con.execute("""
+        SELECT n FROM t_store
+        -- pick the row's value for a given key
+        WHERE a = ? AND b = ?""", ("x", "1")).fetchone()
+    P(got[0] == 10, "an apostrophe inside a -- comment does not eat the placeholders")
+
+    got = con.execute("SELECT n FROM t_store /* it's fine */ WHERE a=? AND b=?",
+                      ("x", "1")).fetchone()
+    P(got[0] == 10, "nor inside a /* block comment */")
+
     # ---- upsert: replace ----
     store.upsert(con, "t_store", ["a", "b", "n", "note"],
                  [("x", "1", 99, "replaced")], conflict=["a", "b"])

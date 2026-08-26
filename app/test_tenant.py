@@ -38,6 +38,7 @@ import analysis    # noqa: E402
 import auth        # noqa: E402
 import catalogue   # noqa: E402
 import db          # noqa: E402
+import store       # noqa: E402
 import main        # noqa: E402
 
 FAILED = []
@@ -50,6 +51,26 @@ def P(ok, msg):
 
 
 # --------------------------------------------------------------------------- fixture
+
+def _fresh_database():
+    """Start from nothing, on either backend.
+
+    On SQLite each run gets its own temporary file, so this is a no-op. On Postgres the
+    tests share one database, and leftovers from the previous run would collide -- a test
+    that only passes on an empty database is a test that passes once.
+    """
+    import store
+    if not store.IS_POSTGRES:
+        return
+    con = store.connect()
+    for t in ("analysis_run", "upload_line", "upload_product", "upload",
+              "purchase_line", "product", "app_user", "tenant"):
+        con.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+    con.commit()
+    con.close()
+
+
+_fresh_database()
 db.init()
 auth.init()
 
@@ -71,10 +92,11 @@ for tenant, spec in CLIENTS.items():
 con = db.connect()
 for tenant, spec in CLIENTS.items():
     for art, desc, cat, ean in PRODUCTS:
-        con.execute("INSERT OR REPLACE INTO product (tenant, artikelnr, description, "
-                    "category, ean, ean_he, first_seen, last_seen) "
-                    "VALUES (?,?,?,?,?,'','2025-01','2025-06')",
-                    (tenant, art, desc, cat, ean))
+        store.upsert(con, "product",
+                     ["tenant", "artikelnr", "description", "category", "ean",
+                      "ean_he", "first_seen", "last_seen"],
+                     [(tenant, art, desc, cat, ean, "", "2025-01", "2025-06")],
+                     conflict=["tenant", "artikelnr"])
         for month in range(1, 7):
             con.execute("INSERT INTO purchase_line (tenant, year, month, klantnr, "
                         "restaurant, city, artikelnr, aantal, omzet, kg, kg_known, "

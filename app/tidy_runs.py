@@ -38,7 +38,7 @@ def main(apply: bool) -> int:
     con = db.connect()
     rows = con.execute(
         f"SELECT id, ran_at, {', '.join(SAME)} FROM analysis_run "
-        "ORDER BY ran_at ASC, rowid ASC").fetchall()
+        "ORDER BY ran_at ASC, id ASC").fetchall()
 
     groups: dict[tuple, list] = {}
     for r in rows:

@@ -38,29 +38,77 @@ _OR_REPLACE = re.compile(r"\bINSERT\s+OR\s+(REPLACE|IGNORE)\b", re.I)
 
 
 class Placeholders:
-    """`?` -> `%s`, but never inside a string literal.
+    """`?` -> `%s`, but never inside a string literal or a comment.
 
-    'what?' is text and must survive; the ? outside quotes is a parameter. Getting this
-    wrong would corrupt data rather than fail, so it walks the string instead of using a
-    regular expression.
+    'what?' is text and must survive; the ? outside quotes is a parameter.
+
+    COMMENTS MATTER, and not obviously. A `--` comment containing an apostrophe -- as in
+    "an arbitrary row's value" -- would otherwise open a quote that never closes, and
+    every placeholder after it in the query would be treated as literal text. The symptom
+    is "the query has 0 placeholders but 1 parameters were passed", a long way from the
+    comment that caused it. This walks the string rather than using a regular expression
+    precisely because these cases have to be handled explicitly.
     """
 
     @staticmethod
     def convert(sql: str) -> str:
-        out, quote = [], None
-        for ch in sql:
+        out = []
+        i, n = 0, len(sql)
+        quote = None
+        while i < n:
+            ch = sql[i]
             if quote:
                 out.append(ch)
                 if ch == quote:
                     quote = None
+                i += 1
+            elif ch == "-" and sql.startswith("--", i):
+                end = sql.find(chr(10), i)
+                end = n if end == -1 else end
+                out.append(sql[i:end])          # a line comment, copied verbatim
+                i = end
+            elif ch == "/" and sql.startswith("/*", i):
+                end = sql.find("*/", i + 2)
+                end = n if end == -1 else end + 2
+                out.append(sql[i:end])          # a block comment, copied verbatim
+                i = end
             elif ch in ("'", '"'):
                 quote = ch
                 out.append(ch)
+                i += 1
             elif ch == "?":
                 out.append("%s")
+                i += 1
             else:
                 out.append(ch)
+                i += 1
         return "".join(out)
+
+
+class Row(dict):
+    """A row that answers to both a column name and a position, like sqlite3.Row.
+
+    The codebase uses r["artikelnr"] in some places and r[0] in others, and both are
+    reasonable. psycopg offers one or the other, so this offers both -- otherwise every
+    positional read would have to be hunted down and rewritten, and the ones missed would
+    fail at runtime on Postgres only.
+    """
+
+    __slots__ = ("_values",)
+
+    def __init__(self, columns, values):
+        super().__init__(zip(columns, values))
+        self._values = tuple(values)
+
+    def __getitem__(self, key):
+        if isinstance(key, (int, slice)):
+            return self._values[key]
+        return super().__getitem__(key)
+
+
+def _row_factory(cursor):
+    cols = [d.name for d in (cursor.description or [])]
+    return lambda values: Row(cols, values)
 
 
 class Cursor:
@@ -117,6 +165,10 @@ class Connection:
         self.row_factory = None
 
     def cursor(self) -> Cursor:
+        # row_factory mirrors sqlite3: unset gives plain tuples, set gives rows that
+        # answer to a column name as well as a position.
+        if self.row_factory is not None:
+            return Cursor(self._raw.cursor(row_factory=_row_factory))
         return Cursor(self._raw.cursor())
 
     def execute(self, sql: str, args: Sequence = ()) -> Cursor:
@@ -148,18 +200,51 @@ class Connection:
         self.close()
 
 
-def connect(sqlite_path: str | None = None, url: str | None = None):
+def connect(sqlite_path: str | None = None, url: str | None = None, rows: bool = False):
     """A connection to whichever backend is configured.
 
     `sqlite_path` is used only when there is no DATABASE_URL, so a caller can keep passing
-    the path it always passed and stop thinking about it.
+    the path it always passed and stop thinking about it. `rows=True` asks for rows that
+    answer to a column name, which is sqlite3.Row on one backend and store.Row on the
+    other -- set here so no caller has to branch on which backend it got.
     """
     target = (url or DATABASE_URL).strip()
     if not target:
         con = sqlite3.connect(sqlite_path, timeout=30)
+        if rows:
+            con.row_factory = sqlite3.Row
         return con
     import psycopg
-    return Connection(psycopg.connect(target, autocommit=False))
+    con = Connection(psycopg.connect(target, autocommit=False))
+    if rows:
+        con.row_factory = True
+    return con
+
+
+def columns(con, table: str) -> set[str]:
+    """The column names of a table, on either backend.
+
+    PRAGMA table_info is SQLite-only and this layer drops PRAGMA on Postgres, so a
+    migration that asked "does this column exist yet?" would get an empty answer, decide
+    every column was missing, and try to add columns that are already there. That fails
+    loudly rather than silently, but it fails on the first deploy -- which is the worst
+    time to find out.
+    """
+    if IS_POSTGRES:
+        got = con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table,)).fetchall()
+        return {r[0] for r in got}
+    return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+
+
+def table_exists(con, table: str) -> bool:
+    if IS_POSTGRES:
+        return bool(con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = %s",
+            (table,)).fetchone())
+    return bool(con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone())
 
 
 # --------------------------------------------------------------------------- upsert

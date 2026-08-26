@@ -50,6 +50,26 @@ def runs() -> int:
 
 
 # --------------------------------------------------------------------------- fixture
+
+def _fresh_database():
+    """Start from nothing, on either backend.
+
+    On SQLite each run gets its own temporary file, so this is a no-op. On Postgres the
+    tests share one database, and leftovers from the previous run would collide -- a test
+    that only passes on an empty database is a test that passes once.
+    """
+    import store
+    if not store.IS_POSTGRES:
+        return
+    con = store.connect()
+    for t in ("analysis_run", "upload_line", "upload_product", "upload",
+              "purchase_line", "product", "app_user", "tenant"):
+        con.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+    con.commit()
+    con.close()
+
+
+_fresh_database()
 db.init()
 
 # A handful of real Sligro articles, enough to score in a second or two. Real article

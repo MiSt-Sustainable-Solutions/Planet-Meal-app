@@ -99,7 +99,7 @@ def listing(limit: int = 50, tenant: str | None = None) -> list[dict]:
     rows = con.execute(
         """SELECT id, filename, adapter, uploaded_at, periods, lines, products, spend_eur,
                   verdict, committed_at, commit_mode
-           FROM upload WHERE tenant=? ORDER BY uploaded_at DESC, rowid DESC LIMIT ?""",
+           FROM upload WHERE tenant=? ORDER BY uploaded_at DESC, id DESC LIMIT ?""",
         (tenant, limit)).fetchall()
     con.close()
     return [dict(upload_id=r["id"], filename=r["filename"], adapter=r["adapter"],
