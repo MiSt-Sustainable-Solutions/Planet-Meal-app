@@ -1,8 +1,17 @@
-fastapi>=0.110
-uvicorn[standard]>=0.27
-jinja2>=3.1
-python-multipart>=0.0.9
-httpx>=0.26
-openpyxl>=3.1
-itsdangerous>=2.1        # signs the session cookie
-psycopg[binary]>=3.2     # Postgres on Railway; unused when DATABASE_URL is unset
+# What the app needs to SERVE. Everything here is imported at runtime by a request.
+#
+# UPPER BOUNDS ARE NOT DECORATION. These were open-ended, so the laptop tested against
+# starlette 0.50 and Railway installed 1.6.0 -- a major version that had removed the
+# TemplateResponse signature the app was using. Every page 500'd while the health check
+# stayed green, because health returns JSON and never renders a template. The bound is
+# the difference between "the tests passed" and "the tests passed on the code that
+# actually ran". Raise them deliberately, then run the suite.
+fastapi>=0.128,<0.129
+starlette>=0.50,<0.51      # pinned explicitly: fastapi's own range is wider than tested
+uvicorn[standard]>=0.40,<0.41
+jinja2>=3.1,<4
+python-multipart>=0.0.26,<0.1
+httpx>=0.28,<0.29
+openpyxl>=3.1,<4
+itsdangerous>=2.2,<3       # signs the session cookie
+psycopg[binary]>=3.3,<4    # Postgres on Railway; unused when DATABASE_URL is unset

@@ -74,12 +74,12 @@ async def gate(request: Request, call_next):
             return JSONResponse({"detail": "admin only"}, status_code=403)
         denied_client, denied_caterer = auth.tenant_names(me.tenant)
         return templates.TemplateResponse(
-            "denied.html", dict(request=request, me=me, page="", what=path,
-                                client_name=denied_client,
-                                caterer_name=denied_caterer,
-                                catalogue_api=config.CATALOGUE_API, api_up=True,
-                                tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
-                                stale=None, tenants=[], viewing=None),
+            request, "denied.html", dict(request=request, me=me, page="", what=path,
+                                         client_name=denied_client,
+                                         caterer_name=denied_caterer,
+                                         catalogue_api=config.CATALOGUE_API, api_up=True,
+                                         tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
+                                         stale=None, tenants=[], viewing=None),
             status_code=403)
     return await call_next(request)
 
@@ -165,7 +165,7 @@ def ctx(request: Request, page: str, **kw) -> dict:
 def login_form(request: Request, next: str = "/", error: str | None = None):
     if auth.current(request):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", dict(
+    return templates.TemplateResponse(request, "login.html", dict(
         request=request, next=next, error=error, setup=not auth.any_users()))
 
 
@@ -176,7 +176,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     if not user:
         # One message for both failures. Saying "no such user" tells an attacker which
         # usernames exist, which is half of a password guess already done for them.
-        return templates.TemplateResponse("login.html", dict(
+        return templates.TemplateResponse(request, "login.html", dict(
             request=request, next=next, setup=not auth.any_users(),
             error="That username and password do not match."), status_code=401)
     auth.sign_in(request, user)
@@ -202,7 +202,7 @@ def set_viewing(request: Request, tenant: str = Form(...), back: str = Form("/")
 @app.get("/admin", response_class=HTMLResponse)
 def admin_home(request: Request):
     """Who exists, and what each of them can see."""
-    return templates.TemplateResponse("admin.html", ctx(
+    return templates.TemplateResponse(request, "admin.html", ctx(
         request, "admin", users=auth.users(), all_tenants=auth.tenants(),
         decisions=catalogue.decisions(limit=1)))
 
@@ -221,12 +221,12 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0):
         result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
-            "dashboard.html", ctx(request, "dashboard", error=str(e),
-                                  window_options=analysis.windows(p.tenant),
-                                  selected_window=window))
+            request, "dashboard.html", ctx(request, "dashboard", error=str(e),
+                                           window_options=analysis.windows(p.tenant),
+                                           selected_window=window))
 
     relabel(result)
-    return templates.TemplateResponse("dashboard.html", ctx(
+    return templates.TemplateResponse(request, "dashboard.html", ctx(
         request, "dashboard",
         result=result, selected_window=selected, stale=result.get("stale"),
         window_options=analysis.windows(p.tenant),
@@ -249,8 +249,8 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
         result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
-            "data_health.html", ctx(request, "health", error=str(e),
-                                    months=db.months(p.tenant)))
+            request, "data_health.html", ctx(request, "health", error=str(e),
+                                             months=db.months(p.tenant)))
 
     relabel(result)
 
@@ -260,7 +260,7 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
     wq = result.get("work_queue")
     wq_err = None if wq else "the catalogue did not return a work queue for this window"
 
-    return templates.TemplateResponse("data_health.html", ctx(
+    return templates.TemplateResponse(request, "data_health.html", ctx(
         request, "health", result=result, months=db.months(p.tenant),
         stale=result.get("stale"),
         work_queue=wq, work_queue_error=wq_err, selected_window=selected,
@@ -343,7 +343,7 @@ async def curate(request: Request, file: UploadFile = File(...),
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request):
     p = me(request)
-    return templates.TemplateResponse("history.html", ctx(
+    return templates.TemplateResponse(request, "history.html", ctx(
         request, "history", runs=analysis.history(tenant=p.tenant),
         uploads=uploads.listing(tenant=p.tenant)))
 
@@ -352,7 +352,7 @@ def history(request: Request):
 @app.get("/upload", response_class=HTMLResponse)
 def upload_form(request: Request, error: str | None = None):
     p = me(request)
-    return templates.TemplateResponse("upload.html", ctx(
+    return templates.TemplateResponse(request, "upload.html", ctx(
         request, "upload", error=error, adapters=adapters.listing(),
         uploads=uploads.listing(limit=12, tenant=p.tenant)))
 
@@ -379,7 +379,7 @@ async def upload_file(request: Request, file: UploadFile = File(...),
         try:
             report = uploads.stage(tmp, file.filename, y, tenant=p.tenant)
         except Exception as e:
-            return templates.TemplateResponse("upload.html", ctx(
+            return templates.TemplateResponse(request, "upload.html", ctx(
                 request, "upload", error=str(e), adapters=adapters.listing(),
                 uploads=uploads.listing(limit=12, tenant=p.tenant)), status_code=422)
     finally:
@@ -396,7 +396,7 @@ def upload_report(request: Request, upload_id: str, commit_error: str | None = N
     report = uploads.get(upload_id, p.tenant)
     if report is None:
         raise HTTPException(404, f"no upload {upload_id}")
-    return templates.TemplateResponse("preflight.html", ctx(
+    return templates.TemplateResponse(request, "preflight.html", ctx(
         request, "upload", report=report, commit_modes=COMMIT_MODES,
         commit_error=commit_error))
 
