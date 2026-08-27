@@ -118,6 +118,23 @@ def run_suite(label: str, url: str | None, sqlite_path: str | None):
     except Exception as e:
         P(False, f"PRAGMA raised {type(e).__name__}")
 
+    # ---- a missing table must not take the service down ----
+    # A freshly deployed catalogue is EMPTY until the first publish, so /health has to
+    # answer during that window. It did not: the guard caught sqlite3.OperationalError
+    # only, Postgres raises UndefinedTable, and the health check failed the deploy before
+    # anything could be published into it. The rollback matters as much as the catch --
+    # Postgres aborts the whole transaction on a failed statement.
+    try:
+        con.execute("SELECT COUNT(*) FROM definitely_not_a_table")
+        P(False, "querying a missing table should have raised")
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        after = con.execute("SELECT COUNT(*) FROM t_store").fetchone()[0]
+        P(after == 4, "after a missing-table error, the connection still works")
+
     counts = con.execute("SELECT a, COUNT(*) FROM t_store GROUP BY a ORDER BY a").fetchall()
     con.execute("DROP TABLE t_store")
     con.commit()

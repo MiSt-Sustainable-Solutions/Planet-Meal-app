@@ -72,10 +72,11 @@ async def gate(request: Request, call_next):
     if any(path == a or path.startswith(a + "/") for a in ADMIN_PATHS) and not me.is_admin:
         if path.startswith("/api/"):
             return JSONResponse({"detail": "admin only"}, status_code=403)
+        denied_client, denied_caterer = auth.tenant_names(me.tenant)
         return templates.TemplateResponse(
             "denied.html", dict(request=request, me=me, page="", what=path,
-                                client_name=config.CLIENT_NAME,
-                                caterer_name=config.CATERER_NAME,
+                                client_name=denied_client,
+                                caterer_name=denied_caterer,
                                 catalogue_api=config.CATALOGUE_API, api_up=True,
                                 tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
                                 stale=None, tenants=[], viewing=None),
@@ -144,12 +145,13 @@ def ctx(request: Request, page: str, **kw) -> dict:
     health = catalogue.health()
     who = auth.current(request)
     tenant = who.tenant if who else None
-    names = {t["tenant"]: t["display_name"] for t in auth.tenants()}
+    all_tenants = auth.tenants()
+    client_name, caterer_name = auth.tenant_names(tenant, all_tenants)
     base = dict(request=request, page=page, me=who,
-                tenants=auth.tenants() if (who and who.is_admin) else [],
+                tenants=all_tenants if (who and who.is_admin) else [],
                 viewing=tenant,
-                client_name=names.get(tenant, config.CLIENT_NAME),
-                caterer_name=config.CATERER_NAME,
+                client_name=client_name,
+                caterer_name=caterer_name,
                 catalogue_api=config.CATALOGUE_API, api_up=health is not None,
                 tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
                 stale=analysis.staleness(tenant=tenant,
@@ -508,7 +510,16 @@ def export_xlsx(request: Request, window: str | None = None):
 # --------------------------------------------------------------------------- json
 @app.get("/api/health")
 def api_health():
-    return {"app": "ok", "catalogue": catalogue.health(), "data": db.stats()}
+    """Is the app up, and can it reach the catalogue. Nothing about any client.
+
+    This route is in PUBLIC_PATHS because Railway has to reach it before anyone can sign
+    in. It used to return db.stats() as well -- and db.stats() with no tenant falls back
+    to config.TENANT, so an endpoint that needs no login was reporting one specific
+    client's line count, product count, restaurant count and total spend in euros to
+    anyone who asked for it. A health check answers whether the service is alive. It has
+    no business knowing who the customers are.
+    """
+    return {"app": "ok", "catalogue": catalogue.health()}
 
 
 @app.get("/api/analysis")

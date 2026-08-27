@@ -77,8 +77,10 @@ auth.init()
 # Deliberately different volumes, so one client's number could never be mistaken for the
 # other's if it leaked.
 CLIENTS = {
-    "alpha": dict(name="Alpha University", kg=100.0, eur=500.0),
-    "beta":  dict(name="Beta College",     kg=900.0, eur=4500.0),
+    "alpha": dict(name="Alpha University", caterer="Alpha Catering",
+                  kg=100.0, eur=500.0),
+    "beta":  dict(name="Beta College",     caterer="Beta Food Services",
+                  kg=900.0, eur=4500.0),
 }
 PRODUCTS = [("194072", "MEYERIJ VOLLE MELK", "ZUIVEL HOUDBAAR", "8710401996797"),
             ("186099", "MEYERIJ BIOLOGISCHE VOLLE MELK 1L", "ZUIVEL HOUDBAAR", "")]
@@ -87,7 +89,7 @@ PRODUCTS = [("194072", "MEYERIJ VOLLE MELK", "ZUIVEL HOUDBAAR", "8710401996797")
 # writer in while another connection holds an open write transaction, and add_tenant
 # opens its own.
 for tenant, spec in CLIENTS.items():
-    auth.add_tenant(tenant, spec["name"])
+    auth.add_tenant(tenant, spec["name"], spec["caterer"])
 
 con = db.connect()
 for tenant, spec in CLIENTS.items():
@@ -144,6 +146,15 @@ for path in ("/api/analysis", "/api/months", "/api/catalogue-version"):
     P(anon.get(path).status_code == 401, f"{path:24} -> 401, not data")
 P(anon.get("/api/health").status_code == 200,
   "/api/health stays open, so a monitor can check the app is alive")
+# ...but open means open. It once returned db.stats(), which with no tenant falls back to
+# MIST_TENANT -- so the one route that needs no password was publishing a named client's
+# line count, restaurant count and total spend to anyone who asked.
+_h = anon.get("/api/health").json()
+P(set(_h) == {"app", "catalogue"},
+  f"/api/health carries no client data (keys: {', '.join(sorted(_h))})")
+_flat = json.dumps(_h)
+P(not any(k in _flat for k in ("spend", "lines", "restaurants", "products", "analyses")),
+  "and nothing that counts a client's rows leaks into it")
 
 print("\n=== a wrong password says nothing useful ===")
 bad = TestClient(main.app, follow_redirects=False)
@@ -219,6 +230,27 @@ r = A.post("/admin/viewing", data={"tenant": "beta", "back": "/"})
 P(r.status_code == 403, "posting to the picker directly is refused")
 P(A.get("/api/analysis").json()["headline"]["food_kg"] == 1200,
   "and their view is unchanged — still their own data")
+
+print("\n=== each client is called by its own name ===")
+# The name and the caterer used to come from an environment variable, which is fixed for
+# the whole deployment. With one client that looks right; with two it is wrong for at
+# least one of them -- Beta College would have been greeted as TU Delft, catered by
+# APPèL. They live on the tenant row now, so this checks the page actually says so.
+for tenant, spec in CLIENTS.items():
+    c = client_for(f"{tenant}user", f"{tenant}-password-1")
+    body = c.get("/").text
+    other = [v for t, v in CLIENTS.items() if t != tenant][0]
+    P(spec["name"] in body, f"{spec['name']:18} sees its own name")
+    P(spec["caterer"] in body, f"{spec['name']:18} sees its own caterer")
+    P(other["name"] not in body and other["caterer"] not in body,
+      f"{spec['name']:18} is never shown {other['name']}'s")
+    # The chip in the header, not the whole page. "TU Delft" appears elsewhere on it
+    # legitimately: the EAT profile is labelled "TU Delft method, MiSt reconstruction",
+    # and Alpha genuinely is being scored against a method reconstructed from TU Delft's
+    # manual. Naming the method's origin is the honesty rule working, not a leak. What
+    # must never happen is Alpha being CALLED TU Delft.
+    P(f'<span class="tenant">{spec["name"]}</span>' in body,
+      f"{spec['name']:18} is named in the header, not the deployment's seed client")
 
 print("\n=== signing out actually signs out ===")
 A.get("/logout")

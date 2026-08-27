@@ -110,6 +110,21 @@ def tenants() -> list[dict]:
     return rows
 
 
+def tenant_names(tenant: str | None, rows: list[dict] | None = None) -> tuple[str, str]:
+    """-> (client name, caterer) for a tenant, from the tenant row.
+
+    These belong to the CLIENT, not to the deployment. One deployment serves several
+    clients, so reading them from an environment variable would show every client the
+    first client's name. The config values are only the seed for the tenant created on a
+    fresh install, and are the fallback for an admin who is viewing no tenant at all.
+    """
+    for t in (tenants() if rows is None else rows):
+        if t["tenant"] == tenant:
+            return (t["display_name"] or config.CLIENT_NAME,
+                    t["caterer"] or config.CATERER_NAME)
+    return config.CLIENT_NAME, config.CATERER_NAME
+
+
 def add_tenant(tenant: str, display_name: str, caterer: str = "") -> None:
     con = db.connect()
     store.upsert(con, "tenant", ["tenant", "display_name", "caterer", "created_at"],

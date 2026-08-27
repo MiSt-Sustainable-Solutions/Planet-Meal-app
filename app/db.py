@@ -285,6 +285,13 @@ def known_articles(tenant: str | None = None) -> set[str]:
 
 
 def stats(tenant: str | None = None) -> dict:
+    """Row counts and spend for ONE client. Never call this without saying which.
+
+    The default exists for the single-tenant scripts that predate multi-tenancy. It is a
+    trap on any route: it does not fail, it quietly answers about whichever client
+    MIST_TENANT happens to name. That is how /api/health came to publish TU Delft's spend
+    to the open internet.
+    """
     tenant = tenant or config.TENANT
     con = connect()
     r = con.execute("""SELECT COUNT(*) AS lines, COUNT(DISTINCT artikelnr) AS products,
