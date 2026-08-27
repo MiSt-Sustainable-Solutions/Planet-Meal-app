@@ -145,6 +145,23 @@ class Cursor:
     def fetchall(self):
         return self._cur.fetchall()
 
+    def fetchmany(self, size: int | None = None):
+        return self._cur.fetchmany(size) if size is not None else self._cur.fetchmany()
+
+    def close(self):
+        # pandas.read_sql closes the cursor it was handed. Without this the whole
+        # analysis dies on Postgres with an AttributeError, several frames from the
+        # query that actually mattered.
+        self._cur.close()
+
+    @property
+    def arraysize(self):
+        return getattr(self._cur, "arraysize", 1)
+
+    @arraysize.setter
+    def arraysize(self, n):
+        self._cur.arraysize = n
+
     def __iter__(self):
         return iter(self._cur)
 
