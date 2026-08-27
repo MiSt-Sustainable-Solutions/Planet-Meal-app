@@ -48,6 +48,13 @@
       <code>python auth.py add-user &lt;name&gt; --role admin</code><br/>
       It will ask for a password. An admin can see every client; a client account is made
       with <code>--role client --tenant &lt;id&gt;</code>.
+      <br/><br/>
+      On a deployed server there is no shell to run that in, so run it on your own
+      machine with the server&rsquo;s database pointed at:<br/>
+      <code>DATABASE_URL=&lt;the public Postgres URL&gt; python auth.py add-user &lt;name&gt; --role admin</code><br/>
+      It writes the account into the server&rsquo;s database, not your local one. The
+      password is typed at a prompt rather than passed as an argument, so it never
+      reaches your shell history.
     </div>
     {% endif %}
 

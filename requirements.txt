@@ -5,3 +5,4 @@ python-multipart>=0.0.9
 httpx>=0.26
 openpyxl>=3.1
 itsdangerous>=2.1        # signs the session cookie
+psycopg[binary]>=3.2     # Postgres on Railway; unused when DATABASE_URL is unset
