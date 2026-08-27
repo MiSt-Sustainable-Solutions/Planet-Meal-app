@@ -19,6 +19,7 @@ import os
 import shutil
 import sys
 import tempfile
+from contextlib import asynccontextmanager
 from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,8 +41,28 @@ import db
 import uploads
 from adapters import mist_template
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Runs once before the first request is served.
+
+    This was @app.on_event("startup"), which FastAPI deprecated and will remove -- the
+    same class of defect as the TemplateResponse signature that took every page down,
+    caught the same way: by running the suite with deprecation warnings promoted to
+    errors rather than waiting for a major version to arrive.
+
+    Worth doing early because of what it does. It creates the schema and seeds the first
+    tenant. A startup hook that silently stopped running would not fail at boot -- the
+    app would come up, pass its health check, and fall over on the first query against a
+    database with no tables in it.
+    """
+    db.init()
+    auth.init()
+    yield
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-app = FastAPI(title="PLANETprocure", docs_url="/api/docs")
+app = FastAPI(title="PLANETprocure", docs_url="/api/docs", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 
@@ -108,12 +129,6 @@ COMMIT_MODES = [
                       "is exactly how a cumulative file double-counts."),
          effect="Only valid when nothing overlaps."),
 ]
-
-
-@app.on_event("startup")
-def _startup():
-    db.init()
-    auth.init()
 
 
 def relabel(result: dict) -> dict:
