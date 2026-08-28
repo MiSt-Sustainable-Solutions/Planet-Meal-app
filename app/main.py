@@ -427,14 +427,32 @@ def commit_upload(request: Request, upload_id: str,
     return RedirectResponse(f"/upload/{upload_id}", status_code=303)
 
 
-@app.get("/upload/{upload_id}/discard")
+@app.post("/upload/{upload_id}/discard")
 def discard_upload(request: Request, upload_id: str):
+    """Throw away a staged upload.
+
+    POST, not GET. It was a GET, reached from a link, which meant anything that follows
+    links on a page -- a browser prefetching, a scanner, somebody's accelerator
+    extension -- could delete a staged file without a person ever clicking it. A request
+    that destroys something should never be one a machine can make by looking around.
+    """
     p = me(request)
     try:
         uploads.discard(upload_id, p.tenant)
     except uploads.CommitError:
         return RedirectResponse(f"/upload/{upload_id}", status_code=303)
     return RedirectResponse("/upload", status_code=303)
+
+
+@app.post("/upload/{upload_id}/uncommit")
+def uncommit_upload(request: Request, upload_id: str):
+    """Take a committed import back out. Leaves the file staged, ready to re-commit."""
+    p = me(request)
+    try:
+        uploads.uncommit(upload_id, p.tenant)
+    except uploads.CommitError as e:
+        return upload_report(request, upload_id, commit_error=str(e))
+    return RedirectResponse(f"/upload/{upload_id}", status_code=303)
 
 
 # --------------------------------------------------------------------------- export

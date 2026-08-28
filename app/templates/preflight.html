@@ -167,7 +167,18 @@
         Committed {{ report.committed_at }} in <strong>{{ report.commit_mode }}</strong> mode —
         {{ report.commit_note }}
       </p>
-      <p style="margin-top:24px;"><a class="btn-main" href="/">See the dashboard</a></p>
+      <div style="display:flex;gap:20px;align-items:center;margin-top:24px;flex-wrap:wrap;">
+        <a class="btn-main" href="/">See the dashboard</a>
+        <form method="post" action="/upload/{{ report.upload_id }}/uncommit"
+              style="display:inline;"
+              onsubmit="return confirm('Take this import back out of the data?\n\nThe purchase lines it added are removed and the file returns to staged, so you can import it again or discard it. Nothing else is touched.');">
+          <button class="btn-ghost" type="submit">Undo this import</button>
+        </form>
+      </div>
+      <p class="muted" style="margin-top:14px;max-width:66ch;font-size:14px;">
+        Undoing removes only the lines this file added — every purchase line records the
+        import it came from, so other months stay exactly as they are.
+      </p>
 
     {% else %}
       <h2 class="sec-h2">Your call.</h2>
@@ -210,10 +221,13 @@
 
         <div style="display:flex;gap:20px;align-items:center;margin-top:26px;flex-wrap:wrap;">
           <button class="btn-main" type="submit">Import into {{ client_name }}'s data</button>
-          <a class="btn-ghost" href="/upload/{{ report.upload_id }}/discard">Discard this file</a>
+          <button class="btn-ghost" type="submit" form="discard-form">Discard this file</button>
           <a class="btn-ghost" href="/upload">Upload a different file</a>
         </div>
       </form>
+
+      <form method="post" action="/upload/{{ report.upload_id }}/discard" id="discard-form"
+            onsubmit="return confirm('Discard this file? The staged lines and the pre-flight report are deleted. Nothing that has been imported is affected.');"></form>
 
       {% if commit_error %}
       <div class="card" style="margin-top:24px;border-color:var(--danger);">

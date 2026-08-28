@@ -137,6 +137,53 @@ def discard(uid: str, tenant: str | None) -> bool:
     return True
 
 
+def uncommit(uid: str, tenant: str | None) -> dict:
+    """Take a committed import back out of a client's history.
+
+    The counterpart to commit(), and the reason it can exist at all is that every
+    purchase line records the upload it came from. So this removes exactly the rows that
+    one import added -- not a month range, not a date window, the rows themselves. A
+    file imported in `new_only` mode alongside three others leaves those three untouched.
+
+    It UNDOES THE IMPORT, it does not delete the file. The upload goes back to staged,
+    with its parsed lines and its pre-flight report intact, so it can be committed again
+    in a different mode or discarded. Two small reversible steps rather than one large
+    irreversible one -- which matters, because the usual reason to reach for this is
+    that something has already gone wrong once.
+
+    What it deliberately leaves behind:
+
+      * `product` rows. They are identity, not measurement -- a description and a
+        barcode -- and other uploads reference the same articles. Deleting them would
+        break imports that had nothing to do with this mistake.
+      * saved analyses. They record what was reported and when. An analysis that was
+        genuinely shown to somebody is not made untrue by a later correction, and
+        rewriting that history would be worse than leaving it. The next run gets a new
+        data fingerprint and recalculates on its own.
+    """
+    con = db.connect()
+    row = con.execute("SELECT * FROM upload WHERE id=? AND tenant=?",
+                      (uid, tenant)).fetchone()
+    if not row:
+        con.close()
+        raise CommitError(f"no upload {uid}")
+    if not row["committed_at"]:
+        con.close()
+        raise CommitError("this upload was never committed, so there is nothing to undo. "
+                          "Discard it instead.")
+
+    n = con.execute("SELECT COUNT(*) FROM purchase_line WHERE tenant=? AND source_upload=?",
+                    (tenant, uid)).fetchone()[0]
+    con.execute("DELETE FROM purchase_line WHERE tenant=? AND source_upload=?",
+                (tenant, uid))
+    con.execute("UPDATE upload SET committed_at=NULL, commit_mode=NULL, commit_note=NULL "
+                "WHERE id=? AND tenant=?", (uid, tenant))
+    con.commit()
+    db.invalidate()
+    con.close()
+    return dict(upload_id=uid, removed_lines=n, filename=row["filename"])
+
+
 # --------------------------------------------------------------------------- commit
 def commit(uid: str, mode: str = "new_only", override: bool = False,
            tenant: str | None = None) -> dict:
