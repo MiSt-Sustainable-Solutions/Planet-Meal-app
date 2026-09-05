@@ -55,6 +55,21 @@ CREATE TABLE IF NOT EXISTS tenant(
   display_name TEXT,
   caterer TEXT,
   created_at TEXT);
+
+-- One-time links, for setting a password without anyone else ever handling it.
+--
+-- The token is stored HASHED, for the same reason a password is: a copy of this
+-- database should not hand somebody live access to an account. What is written here
+-- cannot be turned back into a working link.
+CREATE TABLE IF NOT EXISTS account_token(
+  token_hash TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  kind TEXT NOT NULL,            -- 'invite' on a new account, 'reset' on an existing one
+  created_at TEXT,
+  created_by TEXT,
+  expires_at TEXT,
+  used_at TEXT,
+  note TEXT);
 """
 
 ROLES = ("admin", "client")
@@ -73,6 +88,12 @@ def hash_password(password: str) -> str:
     dk = hashlib.scrypt(password.encode("utf-8"), salt=salt,
                         n=_N, r=_R, p=_P, dklen=_DKLEN)
     return f"scrypt${salt.hex()}${dk.hex()}"
+
+
+# An account that exists but has never had a password set. Deliberately not an empty
+# string: verify_password splits on "$" and needs three parts, so this can never match
+# anything a person could type. An invited account holds this until the link is used.
+NO_PASSWORD = "!"
 
 
 def verify_password(password: str, stored: str) -> bool:
@@ -136,9 +157,14 @@ def add_tenant(tenant: str, display_name: str, caterer: str = "") -> None:
 
 
 # --------------------------------------------------------------------------- users
-def create_user(username: str, password: str, role: str,
+def create_user(username: str, password: str | None, role: str,
                 tenant: str | None = None, display_name: str = "") -> dict:
-    """Create a login. An admin has no tenant; a client must have one."""
+    """Create a login. An admin has no tenant; a client must have one.
+
+    `password=None` creates an account that CANNOT be signed into at all, waiting for
+    its owner to set one through an invite link. That is the normal path now: nobody
+    should ever type a password that is not their own, so an admin never chooses one.
+    """
     if role not in ROLES:
         raise ValueError(f"role must be one of {', '.join(ROLES)}")
     if role == "client" and not tenant:
@@ -149,7 +175,8 @@ def create_user(username: str, password: str, role: str,
     try:
         con.execute("INSERT INTO app_user VALUES (?,?,?,?,?,?,NULL,0)",
                     (username.strip().lower(), role, tenant,
-                     display_name or username, hash_password(password),
+                     display_name or username,
+                     NO_PASSWORD if password is None else hash_password(password),
                      dt.datetime.now().isoformat(timespec="seconds")))
         con.commit()
     except sqlite3.IntegrityError:
@@ -169,9 +196,157 @@ def set_password(username: str, password: str) -> None:
         raise ValueError(f"no user called {username!r}")
 
 
+# --------------------------------------------------------------------------- links
+#
+# There is no mail server, and there does not need to be one. Every client here is
+# onboarded by a person at MiSt, so the app makes a one-time link and MiSt hands it over
+# the way they already talk to that client. That removes SMTP, a sending domain,
+# deliverability and spam handling from the picture entirely -- and at this scale it is
+# safer than email, not weaker: no mailbox to compromise, and no link sitting in an inbox
+# for a year.
+#
+# The consequence to keep in mind: a link is a bearer credential. Whoever holds it can set
+# that account's password. So it is single-use, it expires, and it is stored hashed.
+
+INVITE_DAYS = 7          # a new client may not get to it the same day
+RESET_HOURS = 24         # a reset is answering a request someone just made
+
+
+def _hash_token(raw: str) -> str:
+    """SHA-256, not scrypt. A 32-byte random token has nothing to brute force -- the
+    slow hashing that protects a human-chosen password buys nothing here, and would make
+    every link check needlessly expensive."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _now() -> dt.datetime:
+    return dt.datetime.now()
+
+
+def make_link(username: str, kind: str = "invite", by: str = "", note: str = "") -> str:
+    """Create a one-time link for `username` and return the RAW token.
+
+    Returned once and never recoverable: only its hash is stored. If it is lost, make
+    another one -- which also invalidates nothing, because a link is only spent when it
+    is used.
+    """
+    if kind not in ("invite", "reset"):
+        raise ValueError("kind must be 'invite' or 'reset'")
+    username = (username or "").strip().lower()
+    con = db.connect()
+    if not con.execute("SELECT 1 FROM app_user WHERE username=?", (username,)).fetchone():
+        con.close()
+        raise ValueError(f"no user called {username!r}")
+    raw = secrets.token_urlsafe(32)
+    life = dt.timedelta(days=INVITE_DAYS) if kind == "invite" else dt.timedelta(hours=RESET_HOURS)
+    con.execute("INSERT INTO account_token VALUES (?,?,?,?,?,?,NULL,?)",
+                (_hash_token(raw), username, kind,
+                 _now().isoformat(timespec="seconds"), by,
+                 (_now() + life).isoformat(timespec="seconds"), note))
+    con.commit()
+    con.close()
+    return raw
+
+
+def check_link(raw: str) -> dict | None:
+    """-> {username, kind, expires_at} if this link can still be used, else None."""
+    if not raw:
+        return None
+    con = db.connect()
+    r = con.execute("SELECT * FROM account_token WHERE token_hash=?",
+                    (_hash_token(raw),)).fetchone()
+    con.close()
+    if not r or r["used_at"]:
+        return None
+    try:
+        if dt.datetime.fromisoformat(r["expires_at"]) < _now():
+            return None
+    except (TypeError, ValueError):
+        return None
+    return dict(username=r["username"], kind=r["kind"], expires_at=r["expires_at"])
+
+
+def use_link(raw: str, password: str) -> dict:
+    """Set the password this link is for, and spend the link. Raises if it is not valid.
+
+    The spend and the password change happen in one transaction. Half of this succeeding
+    would either leave a live link on a changed account or a spent link on an unchanged
+    one, and both are worse than failing.
+    """
+    info = check_link(raw)
+    if not info:
+        raise ValueError("this link has already been used, or it has expired")
+    hashed = hash_password(password)          # raises on a password that is too short
+    con = db.connect()
+    con.execute("UPDATE app_user SET pwd_hash=? WHERE username=?",
+                (hashed, info["username"]))
+    con.execute("UPDATE account_token SET used_at=? WHERE token_hash=?",
+                (_now().isoformat(timespec="seconds"), _hash_token(raw)))
+    # Any other outstanding link for this account is now void. Someone who asked twice
+    # should not leave a spare key lying around.
+    con.execute("UPDATE account_token SET used_at=? WHERE username=? AND used_at IS NULL",
+                (_now().isoformat(timespec="seconds"), info["username"]))
+    con.commit()
+    con.close()
+    return info
+
+
+def links(username: str | None = None) -> list[dict]:
+    """Outstanding links, newest first. Never returns a token -- there is none to return."""
+    con = db.connect()
+    sql = ("SELECT username, kind, created_at, created_by, expires_at, note, token_hash "
+           "FROM account_token WHERE used_at IS NULL")
+    args = ()
+    if username:
+        sql += " AND username=?"
+        args = (username.strip().lower(),)
+    rows = [dict(r) for r in con.execute(sql + " ORDER BY created_at DESC", args)]
+    con.close()
+    now = _now()
+    out = []
+    for r in rows:
+        try:
+            r["expired"] = dt.datetime.fromisoformat(r["expires_at"]) < now
+        except (TypeError, ValueError):
+            r["expired"] = True
+        r["ref"] = r.pop("token_hash")[:12]     # enough to revoke by, useless as a key
+        out.append(r)
+    return out
+
+
+def revoke_link(ref: str) -> bool:
+    """Kill an outstanding link by the short reference shown in the admin page."""
+    con = db.connect()
+    n = con.execute(
+        "UPDATE account_token SET used_at=? WHERE used_at IS NULL AND token_hash LIKE ?",
+        (_now().isoformat(timespec="seconds"), (ref or "") + "%")).rowcount
+    con.commit()
+    con.close()
+    return bool(n)
+
+
+def has_password(username: str) -> bool:
+    con = db.connect()
+    r = con.execute("SELECT pwd_hash FROM app_user WHERE username=?",
+                    ((username or "").strip().lower(),)).fetchone()
+    con.close()
+    return bool(r) and r["pwd_hash"] != NO_PASSWORD
+
+
+def change_password(username: str, old: str, new: str) -> None:
+    """A person changing their OWN password, signed in. Requires the old one."""
+    if not authenticate(username, old):
+        raise ValueError("that is not your current password")
+    set_password(username, new)
+
+
 def delete_user(username: str) -> None:
     con = db.connect()
-    con.execute("DELETE FROM app_user WHERE username=?", (username.strip().lower(),))
+    u = username.strip().lower()
+    con.execute("DELETE FROM app_user WHERE username=?", (u,))
+    # and any outstanding link, which would otherwise be a live key to a recreated
+    # account with the same name.
+    con.execute("DELETE FROM account_token WHERE username=?", (u,))
     con.commit()
     con.close()
 

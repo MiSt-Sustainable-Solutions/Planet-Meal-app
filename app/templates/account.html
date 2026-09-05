@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Your account{% endblock %}
+{% block body %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Your account</div>
+    <h1 class="page-h1">Signed in as <em>{{ me.display_name }}.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:62ch;">
+      {% if me.is_admin %}
+        An admin account. It has no client of its own &mdash; it sees every client, one at
+        a time, from the picker at the top.
+      {% else %}
+        This account belongs to {{ client_name }}. It can only ever see
+        {{ client_name }}&rsquo;s purchasing, and no other client can see yours.
+      {% endif %}
+    </p>
+
+    <div class="card" style="margin-top:30px;max-width:520px;">
+      <h2 class="sec-h2" style="font-size:22px;margin:0 0 6px;">Change your <em>password.</em></h2>
+      <p class="muted" style="font-size:14px;margin-bottom:22px;">
+        You need your current one. If you have forgotten it, ask MiSt for a link instead
+        &mdash; nobody there can read your password, but they can issue a new link.
+      </p>
+
+      {% if done %}
+      <div class="finding" style="border:none;padding:0 0 18px;">
+        <span class="dot ok"></span>
+        <div><div class="msg">Changed. Your old password stopped working straight away.</div></div>
+      </div>
+      {% endif %}
+      {% if error %}
+      <div class="finding" style="border:none;padding:0 0 18px;">
+        <span class="dot error"></span>
+        <div><div class="msg">{{ error }}</div></div>
+      </div>
+      {% endif %}
+
+      <form method="post" action="/account" autocomplete="on">
+        <div class="field" style="margin-bottom:16px;">
+          <label for="c" style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Current password</label>
+          <input id="c" name="current" type="password" autocomplete="current-password" required
+                 style="width:100%;font-family:var(--sans);font-size:15px;color:var(--ink);
+                 background:var(--white);border:1px solid var(--mist);border-radius:8px;padding:12px 14px;"/>
+        </div>
+        <div class="field" style="margin-bottom:16px;">
+          <label for="p" style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">New password</label>
+          <input id="p" name="password" type="password" autocomplete="new-password" minlength="8" required
+                 style="width:100%;font-family:var(--sans);font-size:15px;color:var(--ink);
+                 background:var(--white);border:1px solid var(--mist);border-radius:8px;padding:12px 14px;"/>
+        </div>
+        <div class="field" style="margin-bottom:22px;">
+          <label for="a" style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Type it again</label>
+          <input id="a" name="again" type="password" autocomplete="new-password" minlength="8" required
+                 style="width:100%;font-family:var(--sans);font-size:15px;color:var(--ink);
+                 background:var(--white);border:1px solid var(--mist);border-radius:8px;padding:12px 14px;"/>
+        </div>
+        <button class="btn-main" type="submit">Change it</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

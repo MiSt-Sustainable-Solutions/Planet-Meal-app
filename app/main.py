@@ -71,6 +71,11 @@ templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 # reach it", not "everybody can".
 PUBLIC_PATHS = {"/login", "/logout", "/api/health", "/favicon.ico"}
 
+# Reached by someone who has no account yet, or who has forgotten their password, so it
+# cannot sit behind the login. The link itself is the credential: 32 random bytes, single
+# use, expiring, and stored only as a hash.
+PUBLIC_PREFIXES = ("/static", "/set-password")
+
 # Only an admin may reach these. Uploading and curating both change data that outlives
 # the person doing it -- an upload becomes a client's history, and a curated pin
 # outranks every rule for every client, forever. Neither belongs to a client account.
@@ -80,7 +85,7 @@ ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin")
 @app.middleware("http")
 async def gate(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static") or path in PUBLIC_PATHS:
+    if path.startswith(PUBLIC_PREFIXES) or path in PUBLIC_PATHS:
         return await call_next(request)
 
     me = auth.current(request)
@@ -177,11 +182,13 @@ def ctx(request: Request, page: str, **kw) -> dict:
 
 # --------------------------------------------------------------------------- sign in
 @app.get("/login", response_class=HTMLResponse)
-def login_form(request: Request, next: str = "/", error: str | None = None):
+def login_form(request: Request, next: str = "/", error: str | None = None,
+               set: int = 0):
     if auth.current(request):
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(request, "login.html", dict(
-        request=request, next=next, error=error, setup=not auth.any_users()))
+        request=request, next=next, error=error, setup=not auth.any_users(),
+        set=bool(set)))
 
 
 @app.post("/login")
@@ -192,7 +199,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         # One message for both failures. Saying "no such user" tells an attacker which
         # usernames exist, which is half of a password guess already done for them.
         return templates.TemplateResponse(request, "login.html", dict(
-            request=request, next=next, setup=not auth.any_users(),
+            request=request, next=next, setup=not auth.any_users(), set=False,
             error="That username and password do not match."), status_code=401)
     auth.sign_in(request, user)
     dest = next if next.startswith("/") and not next.startswith("//") else "/"
@@ -215,11 +222,21 @@ def set_viewing(request: Request, tenant: str = Form(...), back: str = Form("/")
 
 
 @app.get("/admin", response_class=HTMLResponse)
-def admin_home(request: Request):
-    """Who exists, and what each of them can see."""
+def admin_home(request: Request, error: str | None = None,
+               new_link: str | None = None, new_user: str | None = None):
+    """Who exists, and what each of them can see.
+
+    `new_link` is shown exactly once, right after it is made. It is never stored in a
+    form a person could go back to, and it cannot be recovered afterwards -- only its
+    hash is kept. Losing it costs nothing: make another.
+    """
+    base = str(request.base_url).rstrip("/")
     return templates.TemplateResponse(request, "admin.html", ctx(
         request, "admin", users=auth.users(), all_tenants=auth.tenants(),
-        decisions=catalogue.decisions(limit=1)))
+        decisions=catalogue.decisions(limit=1),
+        error=error, outstanding=auth.links(),
+        new_link=(f"{base}/set-password/{new_link}" if new_link else None),
+        new_user=new_user))
 
 
 # --------------------------------------------------------------------------- dashboard
@@ -361,6 +378,120 @@ def history(request: Request):
     return templates.TemplateResponse(request, "history.html", ctx(
         request, "history", runs=analysis.history(tenant=p.tenant),
         uploads=uploads.listing(tenant=p.tenant)))
+
+
+# --------------------------------------------------------------------------- accounts
+def _slug(name: str) -> str:
+    """A tenant id from a client's name. Lowercase, letters and digits only.
+
+    Derived rather than typed, because it is written into every purchase line that
+    client will ever have and a typo in it is permanent.
+    """
+    out = "".join(c for c in (name or "").lower() if c.isalnum())
+    return out[:24] or "client"
+
+
+def _next_username(tenant: str) -> str:
+    """tudelft1, tudelft2, ... One login per PERSON, all pointing at one client."""
+    existing = {u["username"] for u in auth.users()}
+    n = 1
+    while f"{tenant}{n}" in existing:
+        n += 1
+    return f"{tenant}{n}"
+
+
+@app.post("/admin/accounts")
+def create_account(request: Request, client_name: str = Form(...),
+                   note: str = Form(""), tenant: str = Form("")):
+    """Create a client and its first login, or another login for an existing client.
+
+    No password field, deliberately. The account is created with no password at all --
+    it cannot be signed into -- and the person it belongs to sets one through a
+    one-time link. Nobody at MiSt ever types, sees or handles a password that is not
+    their own, which is the same principle that used to be served by keeping this on
+    the command line.
+    """
+    p = me(request)
+    try:
+        if tenant:
+            row = next((t for t in auth.tenants() if t["tenant"] == tenant), None)
+            if not row:
+                raise ValueError(f"no client called {tenant!r}")
+            tid, display = row["tenant"], row["display_name"]
+        else:
+            tid = _slug(client_name)
+            display = client_name.strip()
+            if not display:
+                raise ValueError("a client needs a name")
+            if any(t["tenant"] == tid for t in auth.tenants()):
+                raise ValueError(f"a client with the id {tid!r} already exists — "
+                                 "add another login to it instead")
+            auth.add_tenant(tid, display, "")
+        username = _next_username(tid)
+        auth.create_user(username, None, "client", tid, display)
+        raw = auth.make_link(username, "invite", by=p.username, note=note)
+    except ValueError as e:
+        return admin_home(request, error=str(e))
+    return admin_home(request, new_link=raw, new_user=username)
+
+
+@app.post("/admin/accounts/link")
+def reissue_link(request: Request, username: str = Form(...), note: str = Form("")):
+    """A fresh link for an existing account — the answer to 'I forgot my password'."""
+    p = me(request)
+    try:
+        kind = "invite" if not auth.has_password(username) else "reset"
+        raw = auth.make_link(username, kind, by=p.username, note=note)
+    except ValueError as e:
+        return admin_home(request, error=str(e))
+    return admin_home(request, new_link=raw, new_user=username)
+
+
+@app.post("/admin/accounts/revoke")
+def revoke_link(request: Request, ref: str = Form(...)):
+    me(request)
+    auth.revoke_link(ref)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.get("/set-password/{token}", response_class=HTMLResponse)
+def set_password_form(request: Request, token: str, error: str | None = None):
+    """Public. The link IS the credential, so there is nothing else to prove."""
+    info = auth.check_link(token)
+    return templates.TemplateResponse(request, "set_password.html", dict(
+        request=request, token=token, info=info, error=error))
+
+
+@app.post("/set-password/{token}")
+def set_password_submit(request: Request, token: str,
+                        password: str = Form(...), again: str = Form(...)):
+    if password != again:
+        return set_password_form(request, token, error="Those two do not match.")
+    try:
+        auth.use_link(token, password)
+    except ValueError as e:
+        return set_password_form(request, token, error=str(e))
+    return RedirectResponse("/login?set=1", status_code=303)
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request, error: str | None = None, done: int = 0):
+    return templates.TemplateResponse(request, "account.html", ctx(
+        request, "account", error=error, done=bool(done)))
+
+
+@app.post("/account")
+def account_change(request: Request, current: str = Form(...),
+                   password: str = Form(...), again: str = Form(...)):
+    """Changing your OWN password. The only place a password is typed by its owner."""
+    p = me(request)
+    if password != again:
+        return account_page(request, error="Those two do not match.")
+    try:
+        auth.change_password(p.username, current, password)
+    except ValueError as e:
+        return account_page(request, error=str(e))
+    return RedirectResponse("/account?done=1", status_code=303)
 
 
 # --------------------------------------------------------------------------- upload

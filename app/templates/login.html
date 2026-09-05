@@ -40,6 +40,10 @@
     <h1>Sign <em>in.</em></h1>
     <p class="sub">Each organisation has one account. Nobody sees anybody else&rsquo;s purchasing.</p>
 
+    {% if set %}<div class="setup" style="border-left:3px solid var(--teal);">
+      <strong>Password set.</strong> Sign in with it below.
+    </div>{% endif %}
+
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
 
     {% if setup %}
@@ -70,6 +74,13 @@
       </div>
       <button class="btn-main" type="submit">Sign in</button>
     </form>
+
+    <div class="setup" style="margin-top:22px;">
+      <strong>Forgotten your password?</strong> There is nothing to reset here &mdash;
+      no password is stored in a form anyone can read, and MiSt cannot see yours either.
+      Email <a href="mailto:info@mistsustainablesolutions.com">info@mistsustainablesolutions.com</a>
+      and you will get a one-time link to choose a new one.
+    </div>
 
     <div class="foot">KVK 88298078 &nbsp;·&nbsp; © 2026 MiSt Sustainable Solutions</div>
   </div>

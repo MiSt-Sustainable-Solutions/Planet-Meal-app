@@ -7,14 +7,15 @@
     <div class="sec-label">MiSt only</div>
     <h2 class="sec-h2">Who can see <em>what.</em></h2>
     <p class="lede" style="margin-top:14px;">
-      One account per organisation, not one per person. An admin account has no client of
-      its own &mdash; it sees all of them, and picks which one to look at from the bar above.
+      A client can have as many logins as it has people &mdash; they all see the same data,
+      and a reset on one does not lock out the others. An admin account has no client of
+      its own: it sees all of them, and picks which to look at from the bar above.
     </p>
 
     <div class="card scroll-x" style="margin-top:26px;">
       <table class="tbl">
         <thead><tr>
-          <th>Account</th><th>Role</th><th>Can see</th><th>Created</th><th>Last signed in</th>
+          <th>Account</th><th>Role</th><th>Can see</th><th>Created</th><th>Last signed in</th><th></th>
         </tr></thead>
         <tbody>
         {% for u in users %}
@@ -29,24 +30,136 @@
               {% else %}{{ u.tenant }}{% endif %}</td>
           <td class="muted">{{ (u.created_at or '')[:10] }}</td>
           <td class="muted">{{ (u.last_seen or 'never')[:16]|replace('T',' ') }}</td>
+          <td>
+            <form method="post" action="/admin/accounts/link" style="display:inline;">
+              <input type="hidden" name="username" value="{{ u.username }}"/>
+              <button class="btn-ghost" type="submit">Send a link</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
 
-    <p class="lede" style="margin-top:22px;font-size:14px;">
-      Accounts are managed from the command line, deliberately &mdash; there is no
-      self-service sign-up, and a password is never typed into a web form that could be
-      logged. From the <code>app</code> folder:
+    <p class="lede" style="margin-top:22px;font-size:14.5px;max-width:66ch;">
+      There is no self-service sign-up, and no password is ever chosen by anyone but its
+      owner. Creating an account makes a login that cannot be signed into, plus a
+      <strong>one-time link</strong>. Send that link to the person; they choose their own
+      password. Nobody here ever sees it.
     </p>
-    <div class="card" style="margin-top:14px;">
-      <pre class="code-block" style="margin:0;white-space:pre-wrap;font-size:12.5px;line-height:1.8;">python auth.py list
-python auth.py add-tenant &lt;id&gt; --name "&lt;Client name&gt;" --caterer "&lt;Caterer&gt;"
-python auth.py add-user &lt;name&gt; --role client --tenant &lt;id&gt;
-python auth.py add-user &lt;name&gt; --role admin
-python auth.py set-password &lt;name&gt;</pre>
+
+    {% if error %}
+    <div class="card" style="margin-top:20px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">could not do that</div><div class="msg">{{ error }}</div></div>
+      </div>
     </div>
+    {% endif %}
+
+    {% if new_link %}
+    <div class="card" style="margin-top:20px;border-color:var(--teal);">
+      <div class="sec-label" style="margin:0 0 10px;">Send this to {{ new_user }}</div>
+      <p class="muted" style="font-size:14px;margin-bottom:14px;">
+        Shown once. It is stored only as a hash, so it cannot be looked up again &mdash;
+        if it gets lost, just make another one.
+      </p>
+      <input readonly value="{{ new_link }}" onclick="this.select()"
+             style="width:100%;font-family:var(--mono,monospace);font-size:12.5px;
+             color:var(--ink);background:var(--linen2);border:1px solid var(--mist);
+             border-radius:8px;padding:12px 14px;"/>
+    </div>
+    {% endif %}
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+                gap:22px;margin-top:26px;">
+
+      <div class="card">
+        <h3 class="h3" style="font-size:18px;margin:0 0 6px;">A new client</h3>
+        <p class="muted" style="font-size:13.5px;margin-bottom:18px;">
+          Creates the organisation and its first login.
+        </p>
+        <form method="post" action="/admin/accounts">
+          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Client name</label>
+          <input name="client_name" required placeholder="TU Delft"
+                 style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
+                 background:var(--white);border:1px solid var(--mist);border-radius:8px;
+                 padding:11px 13px;margin-bottom:16px;"/>
+          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Note (only MiSt sees this)</label>
+          <input name="note" placeholder="who this is for, why"
+                 style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
+                 background:var(--white);border:1px solid var(--mist);border-radius:8px;
+                 padding:11px 13px;margin-bottom:20px;"/>
+          <button class="btn-main" type="submit">Create and make a link</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3 class="h3" style="font-size:18px;margin:0 0 6px;">Another login</h3>
+        <p class="muted" style="font-size:13.5px;margin-bottom:18px;">
+          For a client that already exists &mdash; a second person at the same
+          organisation. They see the same data; the logins are separate so a reset does
+          not lock everyone out.
+        </p>
+        <form method="post" action="/admin/accounts">
+          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Client</label>
+          <select name="tenant" required
+                  style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
+                  background:var(--white);border:1px solid var(--mist);border-radius:8px;
+                  padding:11px 13px;margin-bottom:16px;">
+            {% for t in all_tenants %}
+            <option value="{{ t.tenant }}">{{ t.display_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="client_name" value="-"/>
+          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Note (only MiSt sees this)</label>
+          <input name="note" placeholder="who this login is for"
+                 style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
+                 background:var(--white);border:1px solid var(--mist);border-radius:8px;
+                 padding:11px 13px;margin-bottom:20px;"/>
+          <button class="btn-main" type="submit">Add a login and make a link</button>
+        </form>
+      </div>
+    </div>
+
+    {% if outstanding %}
+    <h3 class="h3" style="font-size:18px;margin:38px 0 6px;">Links not used yet</h3>
+    <p class="muted" style="font-size:13.5px;margin-bottom:16px;">
+      A link is a key: whoever holds it can set that account&rsquo;s password. Revoke one
+      you sent to the wrong place.
+    </p>
+    <div class="card scroll-x">
+      <table class="tbl">
+        <thead><tr><th>Account</th><th>Kind</th><th>Made</th><th>By</th><th>Note</th>
+          <th>Expires</th><th></th></tr></thead>
+        <tbody>
+        {% for l in outstanding %}
+        <tr>
+          <td class="name">{{ l.username }}</td>
+          <td><span class="pill {{ 'warn' if l.kind == 'reset' else 'soft' }}">{{ l.kind }}</span></td>
+          <td class="muted">{{ (l.created_at or '')[:16]|replace('T',' ') }}</td>
+          <td class="muted">{{ l.created_by }}</td>
+          <td class="muted">{{ l.note }}</td>
+          <td class="muted">{% if l.expired %}<span class="pill bad">expired</span>
+              {% else %}{{ (l.expires_at or '')[:16]|replace('T',' ') }}{% endif %}</td>
+          <td>
+            <form method="post" action="/admin/accounts/revoke" style="display:inline;"
+                  onsubmit="return confirm('Revoke this link? Whoever has it will not be able to use it.');">
+              <input type="hidden" name="ref" value="{{ l.ref }}"/>
+              <button class="btn-ghost" type="submit">Revoke</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 </section>
 

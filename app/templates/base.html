@@ -29,7 +29,9 @@
       <li><a href="/admin" {% if page=='admin' %}class="active"{% endif %}>Accounts</a></li>
       {% endif %}
       {% if me %}
-      <li><a href="/logout" title="Signed in as {{ me.display_name }}">Sign out</a></li>
+      <li><a href="/account" {% if page=='account' %}class="active"{% endif %}
+             title="Signed in as {{ me.display_name }}">{{ me.display_name }}</a></li>
+      <li><a href="/logout">Sign out</a></li>
       {% endif %}
       {% if me and me.is_admin %}
       <li><a href="/upload" class="nav-cta">Upload a file</a></li>
