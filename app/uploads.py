@@ -166,16 +166,23 @@ def listing(limit: int = 50, tenant: str | None = None) -> list[dict]:
     tenant = tenant or config.TENANT
     con = db.connect()
     rows = con.execute(
-        """SELECT id, filename, adapter, uploaded_at, periods, lines, products, spend_eur,
-                  verdict, selected, archived_at
-           FROM upload WHERE tenant=? ORDER BY uploaded_at DESC, id DESC LIMIT ?""",
+        """SELECT u.id, u.filename, u.adapter, u.uploaded_at, u.periods, u.lines,
+                  u.products, u.spend_eur, u.verdict, u.selected, u.archived_at,
+                  -- What this file actually contributes. A file can be counted and still
+                  -- contribute nothing -- one staged before the app stored lines on
+                  -- arrival, for instance -- and without this on screen that looks like
+                  -- the app ignoring you rather than the file being empty.
+                  (SELECT COUNT(*) FROM purchase_line p
+                    WHERE p.source_upload = u.id AND p.tenant = u.tenant) AS held
+           FROM upload u WHERE u.tenant=? ORDER BY u.uploaded_at DESC, u.id DESC LIMIT ?""",
         (tenant, limit)).fetchall()
     con.close()
     return [dict(upload_id=r["id"], filename=r["filename"], adapter=r["adapter"],
                  uploaded_at=r["uploaded_at"], periods=json.loads(r["periods"] or "[]"),
                  lines=r["lines"], products=r["products"], spend_eur=r["spend_eur"],
                  verdict=r["verdict"], selected=bool(r["selected"]),
-                 archived_at=r["archived_at"], archived=bool(r["archived_at"]))
+                 archived_at=r["archived_at"], archived=bool(r["archived_at"]),
+                 held=r["held"] or 0)
             for r in rows]
 
 

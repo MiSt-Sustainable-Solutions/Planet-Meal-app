@@ -40,8 +40,10 @@
 
     <div class="grid g4" style="margin-top:30px;">
       <div class="card"><div class="stat">
-        <div class="k">Files</div><div class="v">{{ uploads|length }}</div>
-        <div class="sub">received in total</div>
+        <div class="k">Files</div>
+        <div class="v">{{ uploads|rejectattr('archived')|list|length }}</div>
+        <div class="sub">{% set a = uploads|selectattr('archived')|list|length %}
+          {% if a %}{{ a }} more archived{% else %}received in total{% endif %}</div>
       </div></div>
       <div class="card"><div class="stat">
         <div class="k">Counted</div>
@@ -72,19 +74,20 @@
           <input type="file" name="file" id="file" accept=".xlsx,.xlsm,.xls" required/>
           <div class="h3">Choose a file, or drag it here</div>
           <p class="muted" style="margin-top:10px;">
-            A Sligro export, or the MiSt template. <code>.xlsx</code>
+            The MiSt template, or a Sligro export. <code>.xlsx</code>
           </p>
           <p class="muted" id="chosen" style="margin-top:14px;font-weight:700;color:var(--teal-ink);"></p>
         </label>
+        {#
+          The year box is gone. It existed because a Sligro export carries its year only
+          in the filename, so a renamed one lost it -- an odd thing to ask a person about
+          a file they have not opened. The MiSt template has a required `periode` column
+          and says which months it covers itself; a Sligro file still takes its year from
+          the filename, and says so plainly if it cannot.
+        #}
         <div style="display:flex;gap:20px;align-items:center;margin-top:20px;flex-wrap:wrap;">
           <button class="btn-main" type="submit" id="go">Check this file</button>
-          <label class="muted" style="display:flex;gap:8px;align-items:center;font-size:13px;">
-            Year (only if a Sligro file was renamed)
-            <input type="number" name="year" min="2000" max="2100" placeholder="—"
-                   style="width:96px;font-family:var(--sans);font-size:13px;padding:8px 10px;
-                          border:1px solid var(--mist);border-radius:6px;background:var(--white);color:var(--ink);"/>
-          </label>
-          <a class="btn-ghost" href="/upload/template">Download the template</a>
+          <a class="btn-ghost" href="/upload/template">Download the MiSt template</a>
         </div>
       </form>
     </div>
@@ -142,12 +145,12 @@
     <div class="card scroll-x" style="margin-top:22px;">
       <table class="tbl">
         <thead><tr>
-          <th>File</th><th>Months</th><th class="num">Lines</th><th class="num">Spend</th>
-          <th>Checked</th><th>State</th><th>Received</th>
+          <th>File</th><th>Months</th><th class="num">Lines</th>
+          <th class="num">In the numbers</th><th>Checked</th><th>State</th><th>Received</th>
           {% if me.is_admin %}<th></th>{% endif %}
         </tr></thead>
         <tbody>
-        {% for u in uploads %}
+        {% for u in uploads if not u.archived %}
         <tr>
           <td class="name">{{ u.filename|truncate(34) }}
             <div class="muted" style="font-size:12px;">read as {{ u.adapter }}</div></td>
@@ -159,15 +162,17 @@
             </div>
           </td>
           <td class="num">{{ "{:,}".format(u.lines) }}</td>
-          <td class="num">{% if u.spend_eur %}&euro;{{ "{:,.0f}".format(u.spend_eur) }}{% else %}&mdash;{% endif %}</td>
+          <td class="num">
+            {% if u.held %}{{ "{:,}".format(u.held) }}
+            {% else %}<span class="muted" title="This file holds no purchase lines, so counting it changes nothing.">none</span>{% endif %}
+          </td>
           <td>
             <span class="pill {{ 'soft' if u.verdict=='go' else ('warn' if u.verdict=='go_with_warnings' else 'bad') }}">
               {{ u.verdict|replace('_',' ') }}
             </span>
           </td>
           <td>
-            {% if u.archived %}<span class="pill bad">archived</span>
-            {% elif u.selected %}<span class="pill soft">counted</span>
+            {% if u.selected %}<span class="pill soft">counted</span>
             {% else %}<span class="pill warn">not counted</span>{% endif %}
           </td>
           <td class="muted">{{ (u.uploaded_at or '')[:10] }}</td>
@@ -175,15 +180,6 @@
           <td>
             <div class="acts-cell">
               <a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a>
-              {% if u.archived %}
-              <form method="post" action="/upload/{{ u.upload_id }}/restore" style="display:inline;">
-                <button class="btn-ghost" type="submit">Restore</button>
-              </form>
-              <form method="post" action="/upload/{{ u.upload_id }}/destroy" style="display:inline;"
-                    onsubmit="return confirm('Delete this file for good? Its purchase lines go with it, and this cannot be undone.');">
-                <button class="btn-ghost" type="submit" style="color:var(--danger);">Delete</button>
-              </form>
-              {% else %}
               <form method="post" action="/upload/{{ u.upload_id }}/select" style="display:inline;">
                 <input type="hidden" name="on" value="{{ 0 if u.selected else 1 }}"/>
                 <button class="btn-ghost" type="submit">
@@ -194,7 +190,6 @@
                     onsubmit="return confirm('Archive this file? It stops counting, but nothing is destroyed and you can restore it.');">
                 <button class="btn-ghost" type="submit">Archive</button>
               </form>
-              {% endif %}
             </div>
           </td>
           {% endif %}
@@ -220,11 +215,69 @@
   </div>
 </section>
 
+{% set archived = uploads | selectattr('archived') | list %}
+{% if archived %}
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">Archive</div>
+    <h2 class="sec-h2">Out of the way, <em>not gone.</em></h2>
+    <p class="lede" style="margin-top:14px;max-width:62ch;font-size:16px;">
+      {{ archived|length }} file{{ '' if archived|length == 1 else 's' }} archived. Nothing
+      here counts towards anything, and nothing here has been destroyed &mdash; every line
+      is still on record. Restoring puts one back where it was.
+    </p>
+    <div class="card scroll-x" style="margin-top:22px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>File</th><th>Months</th><th class="num">Lines held</th><th>Archived</th>
+          {% if me.is_admin %}<th></th>{% endif %}
+        </tr></thead>
+        <tbody>
+        {% for u in archived %}
+        <tr>
+          <td class="name">{{ u.filename|truncate(34) }}</td>
+          <td><div class="months">
+            {% for m in u.periods %}<span class="m">{{ m }}</span>{% endfor %}
+          </div></td>
+          <td class="num">{{ "{:,}".format(u.held) }}</td>
+          <td class="muted">{{ (u.archived_at or '')[:10] }}</td>
+          {% if me.is_admin %}
+          <td>
+            <div class="acts-cell">
+              <a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a>
+              <form method="post" action="/upload/{{ u.upload_id }}/restore" style="display:inline;">
+                <button class="btn-ghost" type="submit">Restore</button>
+              </form>
+              <form method="post" action="/upload/{{ u.upload_id }}/destroy" style="display:inline;"
+                    onsubmit="return confirm('Delete this file for good? Its purchase lines go with it, and this cannot be undone.');">
+                <button class="btn-ghost" type="submit" style="color:var(--danger);">Delete for good</button>
+              </form>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% if me.is_admin %}
 <section class="dark tight">
   <div class="inner">
     <div class="sec-label sl-teal">What we accept</div>
-    <div class="grid g2" style="margin-top:6px;">
+    <h2 class="sec-h2">The MiSt <em>template.</em></h2>
+    <p class="lede" style="max-width:62ch;">
+      One sheet, named columns, one row per product per period &mdash; so a single month
+      and a whole year are the same shape, just more rows. The <code>periode</code> column
+      is what says which months a file covers, which is why it comes first.
+    </p>
+    <p style="margin-top:22px;">
+      <a class="btn-main" href="/upload/template">Download the template</a>
+    </p>
+    <div class="grid g2" style="margin-top:34px;">
       {% for a in adapters %}
       <div class="card">
         <div class="h3">{{ a.label }}</div>

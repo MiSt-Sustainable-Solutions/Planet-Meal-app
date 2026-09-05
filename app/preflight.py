@@ -3,7 +3,10 @@ The pre-flight report: what this file looks like, BEFORE anyone trusts a number 
 
 Every check returns a finding with a severity, and the worst one decides the verdict:
 
-    blocked            something here would produce a wrong number. Do not analyse.
+    blocked            something here would make the numbers wrong if this file were
+                       counted. Nothing is prevented -- the file is stored either way and
+                       counts for nothing until somebody selects it -- but a person should
+                       read these before they do.
     go_with_warnings   analysable, but the reader must be told what is soft about it.
     go                 nothing found worth saying.
 
@@ -91,21 +94,33 @@ def check_duplicate_rows(r) -> list[dict]:
 
 # --------------------------------------------------------------------------- the app's data
 def check_overlap(r, tenant: str | None = None) -> list[dict]:
-    """Does this file re-supply months we already hold? The double-count guard."""
+    """Which of these months are already counted from another file.
+
+    This used to be the double-count guard and an ERROR, because a file was poured into
+    one merged history and the same month arriving twice was counted twice. That cannot
+    happen now: a month is counted from exactly one selected file, so overlap is a
+    perfectly ordinary thing -- a corrected re-export, a fuller version of a partial one,
+    a second site.
+
+    So it reports rather than refuses. What a person needs to know is which months would
+    be contested if they counted this file, and that the Files page is where they say
+    which file wins.
+    """
     have = {m["period"] for m in db.months(tenant)}
     clash = [p for p in r.periods if p in have]
     fresh = [p for p in r.periods if p not in have]
     if not clash:
         return [_f("overlap", "ok",
-                   "None of these months are already loaded. Nothing can double-count.",
+                   "None of these months are counted from another file yet.",
                    new_months=fresh)]
-    return [_f("overlap", "error",
-               f"{len(clash)} of the {len(r.periods)} months in this file are already "
-               f"loaded ({', '.join(clash[:6])}{'...' if len(clash) > 6 else ''}). "
-               "Loading this as-is would count them twice. Choose whether to import only "
-               "the new months, or to replace the existing ones"
-               + (f" — new here: {', '.join(fresh)}." if fresh else ", of which this file "
-                  "has none."),
+    return [_f("overlap", "info",
+               f"{len(clash)} of the {len(r.periods)} months here are already counted "
+               f"from another file ({', '.join(clash[:6])}"
+               f"{'...' if len(clash) > 6 else ''}). Counting this one as well does not "
+               "double them: each month is counted from a single file, and Files shows "
+               "which — and lets you switch it"
+               + (f". New here: {', '.join(fresh)}." if fresh
+                  else ", and this file adds no months of its own."),
                already_loaded=clash, new_months=fresh)]
 
 
@@ -150,19 +165,40 @@ def check_volume(r, tenant: str | None = None) -> list[dict]:
             return peers[len(peers) // 2], f"the same month in earlier years"
         return fallback, fallback_basis
 
-    partial, thin, bases = [], [], set()
+    partial, thin, holiday_low, bases = [], [], [], set()
     for (y, m), eur in sorted(by_period.items()):
         yard, basis_used = yardstick_for(m)
         bases.add(basis_used)
         ratio = eur / yard if yard else 1.0
         label = f"{y}-{m:02d}"
-        if ratio < PARTIAL_RATIO:
+        if ratio < PARTIAL_RATIO and m in HOLIDAY_MONTHS:
+            # The ambiguous case, and the one this has to be careful about. A Dutch
+            # university canteen in July really does buy a quarter of what it buys in
+            # term time -- and a truncated export looks exactly the same from here.
+            #
+            # The holiday exemption used to cover only the milder THIN rule, so December
+            # 2025 -- the file the verified 194,389 kg comes from -- was marked blocked
+            # because July sat at 24.9% of the median. Raising an error the reader must
+            # clear, on the one file we know is right, is crying wolf.
+            holiday_low.append((label, eur, yard))
+        elif ratio < PARTIAL_RATIO:
             partial.append((label, eur, yard))
         elif ratio < THIN_RATIO and m not in HOLIDAY_MONTHS:
             thin.append((label, eur, yard))
     basis = " and ".join(sorted(bases))
 
     out = []
+    if holiday_low:
+        out.append(_f("holiday_months", "warning",
+                      f"{len(holiday_low)} summer month(s) hold well under a normal "
+                      f"month's spend ("
+                      + ", ".join(f"{p} at EUR {e:,.0f} against EUR {v:,.0f}"
+                                  for p, e, v in holiday_low[:6])
+                      + f"). Compared against {basis}. For a university canteen that is "
+                      "what July and August look like; it is also what a truncated export "
+                      "looks like. Only you can tell the two apart, so this is said rather "
+                      "than decided.",
+                      months=[p for p, _, _ in holiday_low]))
     if partial:
         out.append(_f("partial_months", "error",
                       f"{len(partial)} month(s) hold a small fraction of a normal month's "
@@ -304,8 +340,11 @@ def report(r, tenant: str | None = None) -> dict:
     warnings = [f for f in findings if f["severity"] == "warning"]
 
     if verdict == "blocked":
-        summary = (f"Do not analyse this file yet — {len(errors)} thing(s) here would "
-                   "produce a wrong number.")
+        # Nothing here stops anybody: the file is already stored and counts for nothing
+        # until somebody says otherwise. So this says what is true rather than issuing an
+        # instruction the app does not enforce.
+        summary = (f"{len(errors)} thing(s) here would make the numbers wrong. Read them "
+                   "before you count this file.")
     elif verdict == "go_with_warnings":
         summary = (f"This file can be analysed, with {len(warnings)} caveat(s) the reader "
                    "must be told about.")

@@ -38,11 +38,141 @@
   </div>
 </section>
 
+<style>
+.fold-find{display:block;}
+.fold-find > summary{
+  list-style:none;cursor:pointer;display:grid;
+  grid-template-columns:auto 1fr auto;gap:0 14px;align-items:start;
+}
+.fold-find > summary::-webkit-details-marker{display:none;}
+.fold-find > summary:focus-visible{outline:2px solid var(--teal-light);outline-offset:3px;}
+.fold-find .mk{align-self:center;font-size:18px;line-height:1;color:rgba(242,248,243,.45);}
+.fold-find .mk::before{content:"+";}
+.fold-find[open] .mk::before{content:"−";}
+.fold-find > summary:hover .mk{color:var(--teal-light);}
+.fold-find > summary:hover .code{color:var(--white);}
+.fold-find .detail{margin-left:26px;}
+</style>
+
 <section class="dark">
   <div class="inner">
     <div class="sec-label sl-teal">Every check, and what it found</div>
 
+    {#
+      A finding is a headline you read and a body you open. The page used to print every
+      table for every check at once, which on a real Sligro export is several screens of
+      rows nobody asked for -- and the one finding that mattered was somewhere in it.
+
+      <details> again: no JavaScript, and it cannot disagree with itself about what is
+      open. Errors start open, because a check that says the number will be wrong is not
+      something to go looking for.
+    #}
+    {% macro detail_tables(f) %}
+      {% if f.rows %}
+      <table>
+        <thead><tr><th>Row</th><th>Article</th><th>Problem</th></tr></thead>
+        <tbody>
+        {% for r in f.rows[:12] %}
+        <tr>
+          <td><span class="loc">{{ r.cell if r.cell else 'row ' ~ r.row }}</span></td>
+          <td class="k">{{ r.artikelnr }}</td>
+          <td>{{ r.problem }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if f.rows|length > 12 %}<div style="margin-top:6px;">…and {{ f.rows|length - 12 }} more</div>{% endif %}
+      {% endif %}
+
+      {% if f.examples %}
+      {#
+        Two shapes of example, and which one arrives depends on the check. The old version
+        picked by asking the FIRST example whether it had a period, then rendered a
+        three-column fallback whose fields the duplicates check never emits -- a table of
+        dashes. A stored report written by older code fell straight into it.
+
+        So each shape is asked for by name, and anything that matches neither is printed
+        as itself rather than as empty cells. An honest "I do not know how to show this"
+        beats a row of em-dashes that looks like missing data.
+      #}
+      {% set e0 = f.examples[0] %}
+      {% if e0.period is defined %}
+      <table>
+        <thead><tr><th>Product</th><th>Article</th><th>Period</th><th>Account</th>
+          <th>Times</th><th>Where</th></tr></thead>
+        <tbody>
+        {% for e in f.examples[:12] %}
+        <tr>
+          <td class="k">{{ (e.description or e.artikelnr)|truncate(32) }}</td>
+          <td>{{ e.artikelnr }}</td>
+          <td>{{ e.period }}</td>
+          <td>{{ e.account }}</td>
+          <td>{{ e.times }}×</td>
+          <td>{% if e.rows %}<span class="loc">rows {{ e.rows }}</span>{% else %}&mdash;{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% elif e0.spend_eur is defined %}
+      <table>
+        <thead><tr><th>Product</th><th>Article</th><th class="num">Spend €</th></tr></thead>
+        <tbody>
+        {% for e in f.examples[:12] %}
+        <tr>
+          <td class="k">{{ (e.description or e.artikelnr or '—')|truncate(38) }}</td>
+          <td>{{ e.artikelnr }}</td>
+          <td class="num">{{ "{:,.0f}".format(e.spend_eur) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="margin-bottom:8px;">
+        This check was run by an older version of the app and its examples are in a shape
+        this page no longer knows how to lay out. Re-read the file to get them back.
+      </div>
+      {% for e in f.examples[:6] %}
+      <div class="loc" style="display:block;margin-bottom:4px;">
+        {% for k, v in e.items() %}{{ k }}={{ v }}{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% endfor %}
+      {% endif %}
+      {% if f.examples|length > 12 %}<div style="margin-top:6px;">…and {{ f.examples|length - 12 }} more</div>{% endif %}
+      {% endif %}
+
+      {% if f.unknown %}<div>{{ f.unknown|join(' · ') }}</div>{% endif %}
+
+      {% if f.already_loaded %}
+      <div>
+        <strong style="color:var(--white);">Already counted:</strong> {{ f.already_loaded|join(' · ') }}<br/>
+        <strong style="color:var(--white);">New in this file:</strong>
+        {{ f.new_months|join(' · ') if f.new_months else 'none' }}
+      </div>
+      {% endif %}
+
+      {% if f.months and not f.already_loaded %}
+      <div>{{ f.months|join(' · ') }}</div>
+      {% endif %}
+    {% endmacro %}
+
     {% macro finding(f) %}
+    {% set has_detail = f.rows or f.examples or f.unknown or f.already_loaded or f.months %}
+    {% if has_detail %}
+    <details class="find fold-find" {% if f.severity == 'error' %}open{% endif %}>
+      <summary>
+        <span class="dot {{ f.severity }}" title="{{ f.severity }}"></span>
+        <div>
+          <div class="hd">
+            <span class="code">{{ f.code|replace('_',' ') }}</span>
+            {% if f.location %}<span class="loc">cell {{ f.location }}</span>{% endif %}
+          </div>
+          <div class="msg">{{ f.message }}</div>
+        </div>
+        <span class="mk" aria-hidden="true"></span>
+      </summary>
+      <div class="detail">{{ detail_tables(f) }}</div>
+    </details>
+    {% else %}
     <div class="find">
       <span class="dot {{ f.severity }}" title="{{ f.severity }}"></span>
       <div>
@@ -51,69 +181,9 @@
           {% if f.location %}<span class="loc">cell {{ f.location }}</span>{% endif %}
         </div>
         <div class="msg">{{ f.message }}</div>
-
-        {% if f.rows %}
-        <div class="detail">
-          <table>
-            <thead><tr><th>Row</th><th>Article</th><th>Problem</th></tr></thead>
-            <tbody>
-            {% for r in f.rows[:8] %}
-            <tr>
-              <td><span class="loc">{{ r.cell if r.cell else 'row ' ~ r.row }}</span></td>
-              <td class="k">{{ r.artikelnr }}</td>
-              <td>{{ r.problem }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-          {% if f.rows|length > 8 %}<div style="margin-top:6px;">…and {{ f.rows|length - 8 }} more</div>{% endif %}
-        </div>
-        {% endif %}
-
-        {% if f.examples %}
-        <div class="detail">
-          <table>
-            <thead><tr>
-              {% if f.examples[0].period is defined %}<th>Where</th><th>Product</th><th>Period</th><th>Account</th><th>Times</th>
-              {% else %}<th>Product</th><th>Article</th><th>Spend €</th>{% endif %}
-            </tr></thead>
-            <tbody>
-            {% for e in f.examples[:8] %}
-            <tr>
-              {% if e.period is defined %}
-                <td>{% if e.rows %}<span class="loc">rows {{ e.rows }}</span>{% else %}—{% endif %}</td>
-                <td class="k">{{ (e.description or e.artikelnr)|truncate(34) }}</td>
-                <td>{{ e.period }}</td>
-                <td>{{ e.account }}</td>
-                <td>{{ e.times }}×</td>
-              {% else %}
-                <td class="k">{{ (e.description or '—')|truncate(40) }}</td>
-                <td>{{ e.artikelnr }}</td>
-                <td>{% if e.spend_eur is defined %}{{ "{:,}".format(e.spend_eur) }}{% endif %}</td>
-              {% endif %}
-            </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-          {% if f.examples|length > 8 %}<div style="margin-top:6px;">…and {{ f.examples|length - 8 }} more</div>{% endif %}
-        </div>
-        {% endif %}
-
-        {% if f.unknown %}<div class="detail">{{ f.unknown|join(' · ') }}</div>{% endif %}
-
-        {% if f.already_loaded %}
-        <div class="detail">
-          <strong style="color:var(--white);">Already loaded:</strong> {{ f.already_loaded|join(' · ') }}<br/>
-          <strong style="color:var(--white);">New in this file:</strong>
-          {{ f.new_months|join(' · ') if f.new_months else 'none' }}
-        </div>
-        {% endif %}
-
-        {% if f.months and not f.already_loaded %}
-        <div class="detail">{{ f.months|join(' · ') }}</div>
-        {% endif %}
       </div>
     </div>
+    {% endif %}
     {% endmacro %}
 
     {% set errors   = report.findings|selectattr('severity','equalto','error')|list %}

@@ -28,9 +28,12 @@ REQUIRED = ["klantnr", "restaurant", "artikelnr", "omschrijving", "artikelgroep"
 # ean_ce is not formally required, because a client may not have it — but it is the most
 # valuable column in the sheet, so the template says so and the pre-flight reports coverage.
 OPTIONAL = ["ean_ce", "ean_he", "brand", "city", "supplier", "omzet"]
-COLUMNS = ["klantnr", "restaurant", "city", "artikelnr", "omschrijving", "brand",
-           "artikelgroep", "ivp", "vp", "maat", "eenh", "ean_ce", "ean_he", "supplier",
-           "periode", "aantal", "omzet"]
+# periode leads, because it is what says which months the sheet is for. The adapter
+# matches by name and ignores order, so this only decides what a person sees first when
+# they open it -- and at column fifteen of seventeen it was being missed.
+COLUMNS = ["periode", "klantnr", "restaurant", "city", "artikelnr", "omschrijving",
+           "brand", "artikelgroep", "ivp", "vp", "maat", "eenh", "ean_ce", "ean_he",
+           "supplier", "aantal", "omzet"]
 
 # A bare "ean" column is accepted as the consumer-unit barcode, so sheets built against the
 # first version of this template keep working.
@@ -52,7 +55,9 @@ HELP = {
     "vp": "Packaging type (Verpakking). 'KG' means the line is sold by weight.",
     "maat": "Pack size. With IVP=1 this is the whole case; with IVP>1 it is per unit.",
     "eenh": "Unit of Maat: KG, GR, LT, CL, ML, DL — or ST for pieces.",
-    "periode": "YYYY-MM. One row per product per period.",
+    "periode": ("YYYY-MM, and REQUIRED. This is what says which months the sheet covers. "
+                "One row per product per period -- so a single month and a whole year are "
+                "the same shape, just more rows. 2025-03 means March 2025."),
     "aantal": "Quantity purchased in that period.",
     "city": "Town, if you have it. Optional.",
     "brand": "Brand name, if you have it. Helps tell similar products apart. Optional.",

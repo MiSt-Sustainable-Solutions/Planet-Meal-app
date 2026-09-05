@@ -33,7 +33,18 @@ def parse_window(window: str | None = None, frm: str | None = None, to: str | No
     """-> (label, y0, m0, y1, m1). 'FY2025', 'all', or from/to as YYYY-MM."""
     months = db.months(tenant)
     if not months:
-        raise WindowError("no purchase data yet — upload a file first")
+        import uploads
+        held = uploads.listing(limit=200, tenant=tenant)
+        live = [u for u in held if not u["archived"]]
+        if any(u["held"] for u in live):
+            raise WindowError(
+                "No file is being counted. There are files here with data in them — "
+                "choose which ones make up the numbers on the Files page.")
+        if live:
+            raise WindowError(
+                "The files here hold no purchase lines yet. Open one to see what was "
+                "read from it, or add the export you want counted.")
+        raise WindowError("No files yet. Add one and choose to count it.")
     first, last = months[0], months[-1]
 
     if frm or to:
