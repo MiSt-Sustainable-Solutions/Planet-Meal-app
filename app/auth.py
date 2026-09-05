@@ -385,7 +385,11 @@ def authenticate(username: str, password: str) -> dict | None:
     con.close()
     return dict(username=r["username"], role=r["role"], tenant=r["tenant"],
                 display_name=r["display_name"] or r["username"],
-                must_change=bool(r["must_change"]))
+                must_change=bool(r["must_change"]),
+                # The value from BEFORE this sign-in stamped a new one. Handed back here
+                # because a moment later it is gone: "last signed in" read from the table
+                # after signing in always says "just now", which tells nobody anything.
+                previous_seen=r["last_seen"])
 
 
 # --------------------------------------------------------------------------- session
@@ -397,6 +401,7 @@ class Principal:
     display_name: str
     _own_tenant: str | None      # a client's own tenant; None for an admin
     _viewing: str | None         # the tenant an admin has selected
+    previous_seen: str = ""      # when this account signed in BEFORE this visit
 
     @property
     def is_admin(self) -> bool:
@@ -425,8 +430,15 @@ SESSION_USER = "u"
 SESSION_VIEWING = "v"
 
 
+SESSION_PREV = "p"
+
+
 def sign_in(request, user: dict) -> None:
     request.session[SESSION_USER] = user["username"]
+    # Carried in the session for the life of this visit. The person who knows whether
+    # that sign-in was really them is the account owner, not us -- so it is shown to
+    # them, on every page, and it is the whole of the safety feature.
+    request.session[SESSION_PREV] = user.get("previous_seen") or ""
     if user["role"] == "admin":
         # Start an admin on the first client rather than on nothing, so the dashboard
         # has something to show the moment they log in.
@@ -458,7 +470,8 @@ def current(request) -> Principal | None:
         viewing = ts[0]["tenant"] if ts else None
     return Principal(username=r["username"], role=r["role"],
                      display_name=r["display_name"] or r["username"],
-                     _own_tenant=r["tenant"], _viewing=viewing)
+                     _own_tenant=r["tenant"], _viewing=viewing,
+                     previous_seen=request.session.get(SESSION_PREV) or "")
 
 
 def view_tenant(request, tenant: str | None) -> bool:
@@ -495,7 +508,7 @@ def session_secret() -> str:
 # --------------------------------------------------------------------------- CLI
 def _cli() -> int:
     import argparse
-    ap = argparse.ArgumentParser(description="manage PLANETprocure logins")
+    ap = argparse.ArgumentParser(description="manage PLANETmeal logins")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     a = sub.add_parser("add-user", help="create a login")

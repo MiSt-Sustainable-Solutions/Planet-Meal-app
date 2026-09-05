@@ -1,5 +1,5 @@
 """
-PLANETprocure — the web app.
+PLANETmeal — the web app.
 
 Server-rendered pages, no build step, no external JavaScript. The design system is plain
 HTML and CSS and is copied rather than re-implemented, which is the only way its rules
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-app = FastAPI(title="PLANETprocure", docs_url="/api/docs", lifespan=lifespan)
+app = FastAPI(title="PLANETmeal", docs_url="/api/docs", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 
@@ -103,7 +103,8 @@ async def gate(request: Request, call_next):
             request, "denied.html", dict(request=request, me=me, page="", what=path,
                                          client_name=denied_client,
                                          caterer_name=denied_caterer,
-                                         catalogue_api=config.CATALOGUE_API, api_up=True,
+                                         support_emails=config.support_emails(),
+                                catalogue_api=config.CATALOGUE_API, api_up=True,
                                          tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
                                          stale=None, tenants=[], viewing=None),
             status_code=403)
@@ -172,6 +173,7 @@ def ctx(request: Request, page: str, **kw) -> dict:
                 viewing=tenant,
                 client_name=client_name,
                 caterer_name=caterer_name,
+                support_emails=config.support_emails(),
                 catalogue_api=config.CATALOGUE_API, api_up=health is not None,
                 tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
                 stale=analysis.staleness(tenant=tenant,
@@ -188,7 +190,7 @@ def login_form(request: Request, next: str = "/", error: str | None = None,
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(request, "login.html", dict(
         request=request, next=next, error=error, setup=not auth.any_users(),
-        set=bool(set)))
+        set=bool(set), support_emails=config.support_emails()))
 
 
 @app.post("/login")
@@ -200,6 +202,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         # usernames exist, which is half of a password guess already done for them.
         return templates.TemplateResponse(request, "login.html", dict(
             request=request, next=next, setup=not auth.any_users(), set=False,
+            support_emails=config.support_emails(),
             error="That username and password do not match."), status_code=401)
     auth.sign_in(request, user)
     dest = next if next.startswith("/") and not next.startswith("//") else "/"
@@ -223,7 +226,8 @@ def set_viewing(request: Request, tenant: str = Form(...), back: str = Form("/")
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_home(request: Request, error: str | None = None,
-               new_link: str | None = None, new_user: str | None = None):
+               new_link: str | None = None, new_user: str | None = None,
+               pw_error: str | None = None, done: int = 0):
     """Who exists, and what each of them can see.
 
     `new_link` is shown exactly once, right after it is made. It is never stored in a
@@ -235,6 +239,7 @@ def admin_home(request: Request, error: str | None = None,
         request, "admin", users=auth.users(), all_tenants=auth.tenants(),
         decisions=catalogue.decisions(limit=1),
         error=error, outstanding=auth.links(),
+        pw_error=pw_error, done=bool(done),
         new_link=(f"{base}/set-password/{new_link}" if new_link else None),
         new_user=new_user))
 
@@ -482,16 +487,26 @@ def account_page(request: Request, error: str | None = None, done: int = 0):
 
 @app.post("/account")
 def account_change(request: Request, current: str = Form(...),
-                   password: str = Form(...), again: str = Form(...)):
-    """Changing your OWN password. The only place a password is typed by its owner."""
+                   password: str = Form(...), again: str = Form(...),
+                   back: str = Form("")):
+    """Changing your OWN password. The only place a password is typed by its owner.
+
+    `back` exists because the same form is on two pages -- an admin changes theirs from
+    the Accounts page, a client from theirs -- and landing on the wrong one afterwards
+    would be its own small confusion. Only ever '/admin', never an arbitrary URL: an
+    open redirect is a phishing tool, and this one would be handed out by a page people
+    are told to trust.
+    """
     p = me(request)
+    home = "/admin" if (back == "/admin" and p.is_admin) else "/account"
+    fail = (lambda msg: admin_home(request, pw_error=msg)) if home == "/admin"         else (lambda msg: account_page(request, error=msg))
     if password != again:
-        return account_page(request, error="Those two do not match.")
+        return fail("Those two do not match.")
     try:
         auth.change_password(p.username, current, password)
     except ValueError as e:
-        return account_page(request, error=str(e))
-    return RedirectResponse("/account?done=1", status_code=303)
+        return fail(str(e))
+    return RedirectResponse(f"{home}?done=1", status_code=303)
 
 
 # --------------------------------------------------------------------------- upload
@@ -665,7 +680,7 @@ def export_xlsx(request: Request, window: str | None = None):
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    name = f"PLANETprocure_{p.tenant}_{h['window'].replace(' ', '')}.xlsx"
+    name = f"PLANETmeal_{p.tenant}_{h['window'].replace(' ', '')}.xlsx"
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{name}"'})

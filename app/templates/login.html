@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Sign in · PLANETprocure</title>
+<title>Sign in · PLANETmeal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet"/>
@@ -36,9 +36,9 @@
 <body>
 <div class="signin-wrap">
   <div class="signin">
-    <div class="mark">PLANET<em>procure</em></div>
+    <div class="mark">PLANET<em>meal</em></div>
     <h1>Sign <em>in.</em></h1>
-    <p class="sub">Each organisation has one account. Nobody sees anybody else&rsquo;s purchasing.</p>
+    <p class="sub">Each organisation has its own logins. Nobody sees anybody else&rsquo;s purchasing.</p>
 
     {% if set %}<div class="setup" style="border-left:3px solid var(--teal);">
       <strong>Password set.</strong> Sign in with it below.
@@ -76,10 +76,11 @@
     </form>
 
     <div class="setup" style="margin-top:22px;">
-      <strong>Forgotten your password?</strong> There is nothing to reset here &mdash;
-      no password is stored in a form anyone can read, and MiSt cannot see yours either.
-      Email <a href="mailto:info@mistsustainablesolutions.com">info@mistsustainablesolutions.com</a>
-      and you will get a one-time link to choose a new one.
+      <strong>Forgotten your password?</strong>
+      {% if support_emails %}Email
+        {% for e in support_emails %}<a href="mailto:{{ e }}">{{ e }}</a>{% if not loop.last %} or {% endif %}{% endfor %}
+        and you will get a one-time link to choose a new one.
+      {% else %}Ask MiSt for a one-time link to choose a new one.{% endif %}
     </div>
 
     <div class="foot">KVK 88298078 &nbsp;·&nbsp; © 2026 MiSt Sustainable Solutions</div>

@@ -162,6 +162,38 @@ P(r.status_code == 303, "the right one is accepted")
 P(auth.authenticate(uname, "new-password-1") is not None, "and the new password works")
 P(auth.authenticate(uname, "third-password-1") is None, "the old one stops immediately")
 
+print("\n=== a person is told when they last signed in ===")
+# The only safety feature here, and it is shown to the account owner rather than kept
+# for MiSt -- they are the one who knows whether that sign-in was them.
+#
+# The trap it has to avoid: last_seen is stamped DURING sign-in, so reading it from the
+# table afterwards always says "just now", which tells nobody anything. The value shown
+# has to be the one from before this visit.
+auth.create_user("watcher", "watcher-password-1", "client", tid, "Watcher")
+w1 = signed_in("watcher", "watcher-password-1")
+body = w1.get("/history").text
+P("first time this account has signed in" in body,
+  "the first ever sign-in says so instead of inventing a date")
+P("You last signed in on" not in body, "and shows no date at all")
+
+# backdate it, so 'the previous sign-in' and 'now' cannot be confused
+con = db.connect()
+con.execute("UPDATE app_user SET last_seen='2020-01-02T03:04:05' WHERE username='watcher'")
+con.commit()
+con.close()
+
+w2 = signed_in("watcher", "watcher-password-1")
+body = w2.get("/history").text
+P("2020-01-02" in body and "03:04" in body,
+  "the second visit shows the PREVIOUS sign-in, not this one")
+P("mistsustainablesolutions.com" in body,
+  "and says who to ask if it was not them")
+
+con = db.connect()
+now = con.execute("SELECT last_seen FROM app_user WHERE username='watcher'").fetchone()[0]
+con.close()
+P(not now.startswith("2020"), f"while the table has moved on to {now[:10]}")
+
 print("\n=== deleting an account takes its links with it ===")
 spare = auth.make_link(uname, "reset", by="boss")
 P(auth.check_link(spare) is not None, "a link is outstanding")

@@ -19,8 +19,9 @@
     <div class="card" style="margin-top:30px;max-width:520px;">
       <h2 class="sec-h2" style="font-size:22px;margin:0 0 6px;">Change your <em>password.</em></h2>
       <p class="muted" style="font-size:14px;margin-bottom:22px;">
-        You need your current one. If you have forgotten it, ask MiSt for a link instead
-        &mdash; nobody there can read your password, but they can issue a new link.
+        You need your current one. If you have forgotten it, email
+        {% for e in support_emails %}<a href="mailto:{{ e }}">{{ e }}</a>{% if not loop.last %} or {% endif %}{% endfor %}
+        and you will get a one-time link instead.
       </p>
 
       {% if done %}

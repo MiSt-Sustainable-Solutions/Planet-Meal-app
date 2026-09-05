@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>{% block title %}PLANETprocure{% endblock %} · MiSt</title>
+<title>{% block title %}PLANETmeal{% endblock %} · MiSt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet"/>
@@ -14,8 +14,8 @@
 
 <nav id="nav">
   <div class="nav-inner">
-    <a href="/" class="nav-brand" aria-label="PLANETprocure home">
-      <span class="mark">PLANET<em>procure</em></span>
+    <a href="/" class="nav-brand" aria-label="PLANETmeal home">
+      <span class="mark">PLANET<em>meal</em></span>
       <span class="tenant">{{ client_name }}</span>
     </a>
     <button class="nav-toggle" id="navToggle" aria-label="Menu" aria-expanded="false">
@@ -25,12 +25,17 @@
       <li><a href="/" {% if page=='dashboard' %}class="active"{% endif %}>Dashboard</a></li>
       <li><a href="/data-health" {% if page=='health' %}class="active"{% endif %}>Data health</a></li>
       <li><a href="/history" {% if page=='history' %}class="active"{% endif %}>History</a></li>
-      {% if me and me.is_admin %}
-      <li><a href="/admin" {% if page=='admin' %}class="active"{% endif %}>Accounts</a></li>
-      {% endif %}
       {% if me %}
+      {# One item, named for what is behind it rather than for who is signed in. An admin
+         manages everyone's accounts and their own password in one place; a client has
+         only their own, so the label is singular. #}
+      {% if me.is_admin %}
+      <li><a href="/admin" {% if page in ('admin','account') %}class="active"{% endif %}
+             title="Signed in as {{ me.display_name }}">Accounts</a></li>
+      {% else %}
       <li><a href="/account" {% if page=='account' %}class="active"{% endif %}
-             title="Signed in as {{ me.display_name }}">{{ me.display_name }}</a></li>
+             title="Signed in as {{ me.display_name }}">Account</a></li>
+      {% endif %}
       <li><a href="/logout">Sign out</a></li>
       {% endif %}
       {% if me and me.is_admin %}
@@ -115,6 +120,28 @@
     </ul>
     <span class="footer-copy">KVK 88298078 &nbsp;·&nbsp; © 2026 MiSt Sustainable Solutions</span>
   </div>
+
+  {#
+    The one safety line, and it is shown to the account OWNER rather than kept for MiSt.
+    The person who can tell whether that sign-in was really them is the owner and nobody
+    else: we do not know their working hours and they do. Quiet on purpose -- it is only
+    interesting on the day it is wrong.
+  #}
+  {% if me %}
+  <div class="footer-inner" style="border-top:1px solid rgba(143,184,154,.18);
+       margin-top:18px;padding-top:16px;">
+    <span class="footer-copy">
+      {% if me.previous_seen %}
+        You last signed in on {{ me.previous_seen[:10] }} at {{ me.previous_seen[11:16] }}.
+        If that was not you, ask
+        {% for e in support_emails %}{{ e }}{% if not loop.last %} or {% endif %}{% endfor %}
+        for a new link &mdash; setting a password retires the old one straight away.
+      {% else %}
+        This is the first time this account has signed in.
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
 </footer>
 
 <script>

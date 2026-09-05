@@ -39,6 +39,20 @@ TENANT = os.environ.get("MIST_TENANT", "tudelft")
 CLIENT_NAME = os.environ.get("MIST_CLIENT_NAME", "TU Delft")
 CATERER_NAME = os.environ.get("MIST_CATERER_NAME", "APPèL")
 
+# Who a client writes to when they cannot get in. There is no self-service reset by
+# design -- no mail server, and nobody at MiSt can read a password anyway -- so this is
+# the whole recovery path and it has to be a real, monitored address. Left empty the
+# login page still says to contact MiSt, just without naming an inbox.
+SUPPORT_EMAIL = os.environ.get(
+    "MIST_SUPPORT_EMAIL",
+    "mrigank@mistsustainablesolutions.com,shreyas@mistsustainablesolutions.com").strip()
+
+
+def support_emails() -> list[str]:
+    """The addresses shown to someone locked out. Comma-separated, so either of us can
+    answer and neither is a single point of failure for the only recovery path there is."""
+    return [e.strip() for e in SUPPORT_EMAIL.split(",") if e.strip()]
+
 # how long to wait on the catalogue API; scoring a full year is ~29k lines
 API_TIMEOUT = float(os.environ.get("MIST_API_TIMEOUT", "300"))
 

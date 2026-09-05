@@ -2,55 +2,97 @@
 {% block title %}Accounts{% endblock %}
 {% block body %}
 
+{#
+  Three shapes, and the shape says what the thing is.
+
+  A STAT is a fact you read without clicking. An ACTION is a card in a row of cards,
+  because the three of them are peers and a person is choosing between them -- as
+  full-width bars they read as a sequence to work through, which is the wrong signal.
+  A TABLE is full width, because a table needs the width.
+
+  Everything foldable is <details>: no JavaScript, keyboard and screen-reader behaviour
+  for free, and it cannot get out of step with itself.
+#}
+<style>
+/* The fold is where a person acts, so it takes the green ground and the fields inside it
+   take the white. The surface recedes; the thing you type into comes forward. */
+.fold{padding:0;background:var(--linen2);border-color:rgba(61,102,71,.15);
+  transition:border-color .16s ease;}
+.fold > summary{
+  list-style:none;cursor:pointer;padding:clamp(18px,2vw,24px);
+  display:grid;grid-template-columns:1fr auto;gap:7px 18px;align-items:start;
+}
+.fold > summary::-webkit-details-marker{display:none;}
+.fold > summary:focus-visible{outline:2px solid var(--teal);outline-offset:-3px;border-radius:14px;}
+
+/* Placed explicitly. Left to auto-placement the marker takes column one and shoves the
+   title across to the right, which is exactly what it did. */
+.fold .t{grid-column:1;grid-row:1;font-family:var(--serif);font-size:18px;font-weight:700;
+  color:var(--ink);line-height:1.3;letter-spacing:-.01em;}
+.fold .s{grid-column:1;grid-row:2;font-size:13px;color:var(--sage);line-height:1.55;}
+/* The span carries a literal "+" so it still reads as an affordance with no CSS at all;
+   font-size:0 hides that text node and the pseudo-element supplies the glyph, which is
+   what lets it become a minus when the fold is open. Written as real characters rather
+   than \00002B / \002212 escapes on purpose -- escapes here have been eaten twice. */
+.fold .mk{grid-column:2;grid-row:1;font-size:0;line-height:1.25;color:var(--mist);
+  font-weight:400;transition:color .16s ease;}
+.fold .mk::before{content:"+";font-size:20px;}
+.fold[open] .mk::before{content:"−";}
+.fold > summary:hover .t,.fold > summary:hover .mk{color:var(--teal);}
+.fold[open]{border-color:rgba(45,158,117,.4);}
+.fold[open] .mk{color:var(--teal);}
+.fold .pad{padding:0 clamp(18px,2vw,24px) clamp(18px,2vw,24px);}
+.fold .pad > :first-child{margin-top:0;}
+
+.acts{align-items:start;}
+.acts .fold{height:100%;}
+
+.lbl{display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--sage);margin-bottom:8px;}
+.inp{width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
+  background:var(--white);border:1px solid var(--mist);border-radius:8px;
+  padding:11px 13px;margin-bottom:16px;}
+.inp:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(45,158,117,.16);}
+.linkbox{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;}
+.linkbox input{flex:1;min-width:220px;font-family:var(--mono,ui-monospace,monospace);
+  font-size:12.5px;color:var(--ink);background:var(--white);border:1px solid var(--mist);
+  border-radius:8px;padding:12px 14px;}
+</style>
+
 <section class="light">
   <div class="inner">
     <div class="sec-label">MiSt only</div>
     <h2 class="sec-h2">Who can see <em>what.</em></h2>
-    <p class="lede" style="margin-top:14px;">
-      A client can have as many logins as it has people &mdash; they all see the same data,
-      and a reset on one does not lock out the others. An admin account has no client of
-      its own: it sees all of them, and picks which to look at from the bar above.
-    </p>
-
-    <div class="card scroll-x" style="margin-top:26px;">
-      <table class="tbl">
-        <thead><tr>
-          <th>Account</th><th>Role</th><th>Can see</th><th>Created</th><th>Last signed in</th><th></th>
-        </tr></thead>
-        <tbody>
-        {% for u in users %}
-        <tr>
-          <td class="name">{{ u.display_name or u.username }}
-            <span class="muted">({{ u.username }})</span></td>
-          <td>
-            {% if u.role == 'admin' %}<span class="pill">admin</span>
-            {% else %}<span class="pill warn">client</span>{% endif %}
-          </td>
-          <td>{% if u.role == 'admin' %}<strong>every client</strong>
-              {% else %}{{ u.tenant }}{% endif %}</td>
-          <td class="muted">{{ (u.created_at or '')[:10] }}</td>
-          <td class="muted">{{ (u.last_seen or 'never')[:16]|replace('T',' ') }}</td>
-          <td>
-            <form method="post" action="/admin/accounts/link" style="display:inline;">
-              <input type="hidden" name="username" value="{{ u.username }}"/>
-              <button class="btn-ghost" type="submit">Send a link</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <p class="lede" style="margin-top:22px;font-size:14.5px;max-width:66ch;">
-      There is no self-service sign-up, and no password is ever chosen by anyone but its
-      owner. Creating an account makes a login that cannot be signed into, plus a
-      <strong>one-time link</strong>. Send that link to the person; they choose their own
+    <p class="lede" style="margin-top:16px;max-width:64ch;">
+      No password is ever chosen by anyone but its owner. Creating an account makes a login
+      that cannot be signed into, plus a one-time link. Send the link; they choose their own
       password. Nobody here ever sees it.
     </p>
 
+    <!-- ------------------------------------------------------------ the state -->
+    <div class="grid g4" style="margin-top:30px;">
+      <div class="card"><div class="stat">
+        <div class="k">Logins</div><div class="v">{{ users|length }}</div>
+        <div class="sub">{{ users|selectattr('role','equalto','admin')|list|length }} admin</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Clients</div><div class="v">{{ all_tenants|length }}</div>
+        <div class="sub">each sees only its own</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Links open</div><div class="v">{{ outstanding|length }}</div>
+        <div class="sub">{% if outstanding %}not used yet{% else %}nothing outstanding{% endif %}</div>
+      </div></div>
+      {% if decisions %}
+      <div class="card"><div class="stat">
+        <div class="k">Curated</div><div class="v">{{ "{:,}".format(decisions.decisions) }}</div>
+        <div class="sub">{{ decisions.portable_pct }}% by barcode</div>
+      </div></div>
+      {% endif %}
+    </div>
+
     {% if error %}
-    <div class="card" style="margin-top:20px;border-color:var(--danger);">
+    <div class="card" style="margin-top:22px;border-color:var(--danger);">
       <div class="finding" style="border:none;padding:0;">
         <span class="dot error"></span>
         <div><div class="code">could not do that</div><div class="msg">{{ error }}</div></div>
@@ -59,139 +101,223 @@
     {% endif %}
 
     {% if new_link %}
-    <div class="card" style="margin-top:20px;border-color:var(--teal);">
-      <div class="sec-label" style="margin:0 0 10px;">Send this to {{ new_user }}</div>
-      <p class="muted" style="font-size:14px;margin-bottom:14px;">
-        Shown once. It is stored only as a hash, so it cannot be looked up again &mdash;
-        if it gets lost, just make another one.
+    <div class="card" style="margin-top:22px;border-color:var(--teal);border-width:2px;">
+      <div class="sec-label" style="margin:0 0 8px;">Send this to {{ new_user }}</div>
+      <p class="muted" style="font-size:14px;margin-bottom:14px;max-width:60ch;">
+        Shown once. Only a hash of it is stored, so it cannot be looked up again &mdash; if
+        it is lost, just make another.
       </p>
-      <input readonly value="{{ new_link }}" onclick="this.select()"
-             style="width:100%;font-family:var(--mono,monospace);font-size:12.5px;
-             color:var(--ink);background:var(--linen2);border:1px solid var(--mist);
-             border-radius:8px;padding:12px 14px;"/>
+      <div class="linkbox">
+        <input id="newlink" readonly value="{{ new_link }}" onclick="this.select()"/>
+        <button class="btn-main" type="button" id="copylink" style="white-space:nowrap;">Copy</button>
+      </div>
     </div>
+    <script>
+      (function () {
+        var b = document.getElementById("copylink"), i = document.getElementById("newlink");
+        if (!b || !i) { return; }
+        b.addEventListener("click", function () {
+          var done = function () {
+            b.textContent = "Copied";
+            setTimeout(function () { b.textContent = "Copy"; }, 1800);
+          };
+          i.focus(); i.select(); i.setSelectionRange(0, 99999);
+          // execCommand is the fallback that matters: navigator.clipboard needs a secure
+          // context, and this page is often served over plain http on a laptop.
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(i.value).then(done, function () {
+              try { document.execCommand("copy"); done(); } catch (e) {}
+            });
+          } else {
+            try { document.execCommand("copy"); done(); } catch (e) {}
+          }
+        });
+      })();
+    </script>
     {% endif %}
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-                gap:22px;margin-top:26px;">
+    <!-- ------------------------------------------------------------ the actions -->
+    <div class="grid g3 acts" style="margin-top:22px;">
 
-      <div class="card">
-        <h3 class="h3" style="font-size:18px;margin:0 0 6px;">A new client</h3>
-        <p class="muted" style="font-size:13.5px;margin-bottom:18px;">
-          Creates the organisation and its first login.
-        </p>
-        <form method="post" action="/admin/accounts">
-          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
-            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Client name</label>
-          <input name="client_name" required placeholder="TU Delft"
-                 style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
-                 background:var(--white);border:1px solid var(--mist);border-radius:8px;
-                 padding:11px 13px;margin-bottom:16px;"/>
-          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
-            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Note (only MiSt sees this)</label>
-          <input name="note" placeholder="who this is for, why"
-                 style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
-                 background:var(--white);border:1px solid var(--mist);border-radius:8px;
-                 padding:11px 13px;margin-bottom:20px;"/>
-          <button class="btn-main" type="submit">Create and make a link</button>
-        </form>
-      </div>
+      <details class="card fold">
+        <summary>
+          <span class="t">Add a client</span>
+          <span class="mk" aria-hidden="true">+</span>
+          <span class="s">A new organisation and its first login.</span>
+        </summary>
+        <div class="pad">
+          <form method="post" action="/admin/accounts">
+            <label class="lbl" for="cn">Client name</label>
+            <input class="inp" id="cn" name="client_name" required placeholder="TU Delft"/>
+            <label class="lbl" for="cnote">Note &mdash; only MiSt sees this</label>
+            <input class="inp" id="cnote" name="note" placeholder="who this is for, why"/>
+            <button class="btn-main" type="submit">Create and make a link</button>
+          </form>
+        </div>
+      </details>
 
-      <div class="card">
-        <h3 class="h3" style="font-size:18px;margin:0 0 6px;">Another login</h3>
-        <p class="muted" style="font-size:13.5px;margin-bottom:18px;">
-          For a client that already exists &mdash; a second person at the same
-          organisation. They see the same data; the logins are separate so a reset does
-          not lock everyone out.
-        </p>
-        <form method="post" action="/admin/accounts">
-          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
-            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Client</label>
-          <select name="tenant" required
-                  style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
-                  background:var(--white);border:1px solid var(--mist);border-radius:8px;
-                  padding:11px 13px;margin-bottom:16px;">
-            {% for t in all_tenants %}
-            <option value="{{ t.tenant }}">{{ t.display_name }}</option>
+      <details class="card fold">
+        <summary>
+          <span class="t">Add a login</span>
+          <span class="mk" aria-hidden="true">+</span>
+          <span class="s">A second person at a client you already have. Same data,
+            separate login, so a reset does not lock everyone out.</span>
+        </summary>
+        <div class="pad">
+          <form method="post" action="/admin/accounts">
+            <label class="lbl" for="tn">Client</label>
+            <select class="inp" id="tn" name="tenant" required>
+              {% for t in all_tenants %}
+              <option value="{{ t.tenant }}">{{ t.display_name }}</option>
+              {% endfor %}
+            </select>
+            <input type="hidden" name="client_name" value="-"/>
+            <label class="lbl" for="lnote">Note &mdash; only MiSt sees this</label>
+            <input class="inp" id="lnote" name="note" placeholder="who this login is for"/>
+            <button class="btn-main" type="submit">Add and make a link</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="card fold" {% if pw_error or done %}open{% endif %}>
+        <summary>
+          <span class="t">Your own password</span>
+          <span class="mk" aria-hidden="true">+</span>
+          <span class="s">Signed in as {{ me.display_name }}. Needs your current one.</span>
+        </summary>
+        <div class="pad">
+          {% if done %}
+          <div class="finding" style="border:none;padding:0 0 14px;">
+            <span class="dot ok"></span>
+            <div><div class="msg">Changed. Your old password stopped working straight away.</div></div>
+          </div>
+          {% endif %}
+          {% if pw_error %}
+          <div class="finding" style="border:none;padding:0 0 14px;">
+            <span class="dot error"></span><div><div class="msg">{{ pw_error }}</div></div>
+          </div>
+          {% endif %}
+          <form method="post" action="/account" autocomplete="on">
+            <input type="hidden" name="back" value="/admin"/>
+            <label class="lbl" for="c1">Current password</label>
+            <input class="inp" id="c1" name="current" type="password"
+                   autocomplete="current-password" required/>
+            <label class="lbl" for="p1">New password</label>
+            <input class="inp" id="p1" name="password" type="password"
+                   autocomplete="new-password" minlength="8" required/>
+            <label class="lbl" for="a1">Type it again</label>
+            <input class="inp" id="a1" name="again" type="password"
+                   autocomplete="new-password" minlength="8" required/>
+            <button class="btn-main" type="submit">Change it</button>
+          </form>
+          <p class="muted" style="font-size:13px;margin-top:16px;">
+            Forgotten it? Ask
+            {% for e in support_emails %}{{ e }}{% if not loop.last %} or {% endif %}{% endfor %}
+            for a link.
+          </p>
+        </div>
+      </details>
+    </div>
+
+    <!-- ------------------------------------------------------------ the tables -->
+    <details class="card fold" open style="margin-top:22px;">
+      <summary>
+        <span class="t">Every login</span>
+        <span class="mk" aria-hidden="true">+</span>
+        <span class="s">Who exists, what they can see, and when they were last here.</span>
+      </summary>
+      <div class="pad">
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr>
+              <th>Account</th><th>Role</th><th>Can see</th><th>Created</th>
+              <th>Last signed in</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for u in users %}
+            <tr>
+              <td class="name">{{ u.display_name or u.username }}
+                <span class="muted">({{ u.username }})</span></td>
+              <td>
+                {% if u.role == 'admin' %}<span class="pill">admin</span>
+                {% else %}<span class="pill warn">client</span>{% endif %}
+              </td>
+              <td>{% if u.role == 'admin' %}<strong>every client</strong>
+                  {% else %}{{ u.tenant }}{% endif %}</td>
+              <td class="muted">{{ (u.created_at or '')[:10] }}</td>
+              <td class="muted">{{ (u.last_seen or 'never')[:16]|replace('T',' ') }}</td>
+              <td>
+                <form method="post" action="/admin/accounts/link" style="display:inline;">
+                  <input type="hidden" name="username" value="{{ u.username }}"/>
+                  <button class="btn-ghost" type="submit">Send a link</button>
+                </form>
+              </td>
+            </tr>
             {% endfor %}
-          </select>
-          <input type="hidden" name="client_name" value="-"/>
-          <label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;
-            text-transform:uppercase;color:var(--sage);margin-bottom:8px;">Note (only MiSt sees this)</label>
-          <input name="note" placeholder="who this login is for"
-                 style="width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);
-                 background:var(--white);border:1px solid var(--mist);border-radius:8px;
-                 padding:11px 13px;margin-bottom:20px;"/>
-          <button class="btn-main" type="submit">Add a login and make a link</button>
-        </form>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </details>
 
-    {% if outstanding %}
-    <h3 class="h3" style="font-size:18px;margin:38px 0 6px;">Links not used yet</h3>
-    <p class="muted" style="font-size:13.5px;margin-bottom:16px;">
-      A link is a key: whoever holds it can set that account&rsquo;s password. Revoke one
-      you sent to the wrong place.
-    </p>
-    <div class="card scroll-x">
-      <table class="tbl">
-        <thead><tr><th>Account</th><th>Kind</th><th>Made</th><th>By</th><th>Note</th>
-          <th>Expires</th><th></th></tr></thead>
-        <tbody>
-        {% for l in outstanding %}
-        <tr>
-          <td class="name">{{ l.username }}</td>
-          <td><span class="pill {{ 'warn' if l.kind == 'reset' else 'soft' }}">{{ l.kind }}</span></td>
-          <td class="muted">{{ (l.created_at or '')[:16]|replace('T',' ') }}</td>
-          <td class="muted">{{ l.created_by }}</td>
-          <td class="muted">{{ l.note }}</td>
-          <td class="muted">{% if l.expired %}<span class="pill bad">expired</span>
-              {% else %}{{ (l.expires_at or '')[:16]|replace('T',' ') }}{% endif %}</td>
-          <td>
-            <form method="post" action="/admin/accounts/revoke" style="display:inline;"
-                  onsubmit="return confirm('Revoke this link? Whoever has it will not be able to use it.');">
-              <input type="hidden" name="ref" value="{{ l.ref }}"/>
-              <button class="btn-ghost" type="submit">Revoke</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
+    <details class="card fold" {% if outstanding %}open{% endif %} style="margin-top:16px;">
+      <summary>
+        <span class="t">Links not used yet</span>
+        <span class="mk" aria-hidden="true">+</span>
+        <span class="s">A link is a key: whoever holds it can set that account&rsquo;s
+          password. Revoke one that went to the wrong place.</span>
+      </summary>
+      <div class="pad">
+        {% if outstanding %}
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Account</th><th>Kind</th><th>Made</th><th>By</th><th>Note</th>
+              <th>Expires</th><th></th></tr></thead>
+            <tbody>
+            {% for l in outstanding %}
+            <tr>
+              <td class="name">{{ l.username }}</td>
+              <td><span class="pill {{ 'warn' if l.kind == 'reset' else 'soft' }}">{{ l.kind }}</span></td>
+              <td class="muted">{{ (l.created_at or '')[:16]|replace('T',' ') }}</td>
+              <td class="muted">{{ l.created_by }}</td>
+              <td class="muted">{{ l.note }}</td>
+              <td class="muted">{% if l.expired %}<span class="pill bad">expired</span>
+                  {% else %}{{ (l.expires_at or '')[:16]|replace('T',' ') }}{% endif %}</td>
+              <td>
+                <form method="post" action="/admin/accounts/revoke" style="display:inline;"
+                      onsubmit="return confirm('Revoke this link? Whoever has it will not be able to use it.');">
+                  <input type="hidden" name="ref" value="{{ l.ref }}"/>
+                  <button class="btn-ghost" type="submit">Revoke</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="muted" style="font-size:14px;">Nothing outstanding &mdash; every link made
+          so far has been used, revoked, or has expired.</p>
+        {% endif %}
+      </div>
+    </details>
   </div>
 </section>
 
 <section class="dark">
   <div class="inner">
     <div class="sec-label sl-teal">Clients</div>
-    <h2 class="sec-h2">Each one&rsquo;s data is <em>their own.</em></h2>
-    <p class="lede">
-      Every purchase line, upload and saved analysis carries the client it belongs to, and
-      every query is filtered by it. A client account cannot reach another client&rsquo;s
-      data even by guessing an internal id &mdash; the lookups check ownership, not just
-      the id.
-    </p>
-
-    <div class="cache-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:34px;">
+    <div class="grid g3" style="margin-top:20px;">
       {% for t in all_tenants %}
-      <div style="background:var(--ink2);border-radius:14px;padding:20px 22px;">
+      <div class="card">
         <div style="font-family:var(--serif);font-size:19px;font-weight:700;color:var(--white);">{{ t.display_name }}</div>
         <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--teal-light);margin-top:8px;">{{ t.tenant }}</div>
-        {% if t.caterer %}<div style="font-size:13px;color:rgba(242,248,243,.7);margin-top:10px;">Caterer: {{ t.caterer }}</div>{% endif %}
+        <div style="font-size:13px;color:rgba(242,248,243,.7);margin-top:10px;">
+          {{ users|selectattr('tenant','equalto',t.tenant)|list|length }} login(s)
+        </div>
       </div>
       {% endfor %}
     </div>
-
-    {% if decisions %}
-    <p class="lede" style="margin-top:34px;">
-      The shared catalogue holds <strong>{{ "{:,}".format(decisions.decisions) }}</strong>
-      curated decisions, <strong>{{ decisions.portable_pct }}%</strong> of them stored
-      against a barcode &mdash; so they apply to the same product from any wholesaler, for
-      every client here and every client after them.
-    </p>
-    {% endif %}
   </div>
 </section>
 
