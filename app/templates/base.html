@@ -25,6 +25,7 @@
       <li><a href="/" {% if page=='dashboard' %}class="active"{% endif %}>Dashboard</a></li>
       <li><a href="/data-health" {% if page=='health' %}class="active"{% endif %}>Data health</a></li>
       <li><a href="/history" {% if page=='history' %}class="active"{% endif %}>History</a></li>
+      <li><a href="/files" {% if page=='files' %}class="active"{% endif %}>Files</a></li>
       {% if me %}
       {# One item, named for what is behind it rather than for who is signed in. An admin
          manages everyone's accounts and their own password in one place; a client has
@@ -38,9 +39,7 @@
       {% endif %}
       <li><a href="/logout">Sign out</a></li>
       {% endif %}
-      {% if me and me.is_admin %}
-      <li><a href="/upload" class="nav-cta">Upload a file</a></li>
-      {% endif %}
+
     </ul>
   </div>
 </nav>
@@ -114,9 +113,9 @@
   <div class="footer-inner">
     <ul class="footer-links">
       <li><a href="/">Dashboard</a></li>
-      {% if me and me.is_admin %}<li><a href="/upload">Upload</a></li>{% endif %}
       <li><a href="/data-health">Data health</a></li>
       <li><a href="/history">History</a></li>
+      <li><a href="/files">Files</a></li>
     </ul>
     <span class="footer-copy">KVK 88298078 &nbsp;·&nbsp; © 2026 MiSt Sustainable Solutions</span>
   </div>

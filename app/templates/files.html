@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Files{% endblock %}
+{% block body %}
+
+{#
+  One place for files, which there was not before: they appeared on the upload page and
+  again at the bottom of History, with different columns and different actions, and
+  neither was somewhere you could manage them. That is why discarding one meant opening
+  it and scrolling past three import-mode cards to find a small button.
+
+  A client sees this page too, read-only. What their numbers are built from is not a
+  secret from them -- and the actions all POST to admin-only routes, so seeing the page
+  grants nothing.
+#}
+<style>
+.months{display:flex;flex-wrap:wrap;gap:4px;}
+.months .m{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--sage);
+  background:var(--linen2);border-radius:4px;padding:2px 6px;white-space:nowrap;}
+.acts-cell{display:flex;gap:12px;align-items:center;white-space:nowrap;}
+.upl{background:var(--linen2);border-color:rgba(61,102,71,.15);}
+</style>
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Files</div>
+    <h1 class="page-h1">What the numbers are <em>built from.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:64ch;">
+      Every file {{ client_name }}&rsquo;s figures rest on, and every file that is kept
+      but not counted. A file only changes a number once you count it.
+    </p>
+
+    {% if error %}
+    <div class="card" style="margin-top:24px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">could not do that</div><div class="msg">{{ error }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="grid g4" style="margin-top:30px;">
+      <div class="card"><div class="stat">
+        <div class="k">Files</div><div class="v">{{ uploads|length }}</div>
+        <div class="sub">received in total</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Counted</div>
+        <div class="v">{{ uploads|selectattr('selected')|rejectattr('archived')|list|length }}</div>
+        <div class="sub">making up the numbers</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Held</div>
+        <div class="v">{{ uploads|rejectattr('selected')|list|length }}</div>
+        <div class="sub">kept, not counted</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Months held</div><div class="v">{{ months_held }}</div>
+        <div class="sub">of purchase history</div>
+      </div></div>
+    </div>
+
+    {% if me.is_admin %}
+    <div class="card upl" style="margin-top:22px;">
+      <div class="sec-label" style="margin:0 0 8px;">Add a file</div>
+      <p class="muted" style="font-size:14px;max-width:62ch;margin-bottom:18px;">
+        It is read and checked first. You see what is in it &mdash; and what is wrong with
+        it &mdash; before a single number moves. Nothing enters
+        {{ client_name }}&rsquo;s data until you say so.
+      </p>
+      <form method="post" action="/upload" enctype="multipart/form-data" id="upForm">
+        <label class="drop" id="drop" style="background:var(--white);">
+          <input type="file" name="file" id="file" accept=".xlsx,.xlsm,.xls" required/>
+          <div class="h3">Choose a file, or drag it here</div>
+          <p class="muted" style="margin-top:10px;">
+            A Sligro export, or the MiSt template. <code>.xlsx</code>
+          </p>
+          <p class="muted" id="chosen" style="margin-top:14px;font-weight:700;color:var(--teal-ink);"></p>
+        </label>
+        <div style="display:flex;gap:20px;align-items:center;margin-top:20px;flex-wrap:wrap;">
+          <button class="btn-main" type="submit" id="go">Check this file</button>
+          <label class="muted" style="display:flex;gap:8px;align-items:center;font-size:13px;">
+            Year (only if a Sligro file was renamed)
+            <input type="number" name="year" min="2000" max="2100" placeholder="—"
+                   style="width:96px;font-family:var(--sans);font-size:13px;padding:8px 10px;
+                          border:1px solid var(--mist);border-radius:6px;background:var(--white);color:var(--ink);"/>
+          </label>
+          <a class="btn-ghost" href="/upload/template">Download the template</a>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if contested %}
+    <div class="card" style="margin-top:22px;border-color:var(--warn);border-width:2px;">
+      <div class="sec-label" style="margin:0 0 8px;color:var(--warn);">
+        {{ contested|length }} month{{ '' if contested|length == 1 else 's' }}
+        supplied by more than one counted file
+      </div>
+      <p class="muted" style="font-size:14px;max-width:64ch;margin-bottom:16px;">
+        Each is counted once, from the file named below &mdash; chosen because it has the
+        most lines for that month, which is a starting point rather than a judgement.
+        Change it if you know better.
+      </p>
+      <div class="scroll-x">
+        <table class="tbl">
+          <thead><tr><th>Month</th><th>Counted from</th><th>Also supplied by</th></tr></thead>
+          <tbody>
+          {% for c in contested %}
+          <tr>
+            <td class="name">{{ c.period }}</td>
+            <td>
+              {% for f in c.files if f.owns %}<strong>{{ f.filename|truncate(26) }}</strong>
+                <span class="muted">({{ "{:,}".format(f.lines) }} lines)</span>{% endfor %}
+            </td>
+            <td>
+              {% for f in c.files if not f.owns %}
+                {% if me.is_admin %}
+                <form method="post" action="/files/owner" style="display:inline;">
+                  <input type="hidden" name="year" value="{{ c.year }}"/>
+                  <input type="hidden" name="month" value="{{ c.month }}"/>
+                  <input type="hidden" name="upload_id" value="{{ f.upload_id }}"/>
+                  <button class="btn-ghost" type="submit"
+                          title="Count {{ c.period }} from this file instead">
+                    use {{ f.filename|truncate(20) }} ({{ "{:,}".format(f.lines) }})
+                  </button>
+                </form>
+                {% else %}
+                <span class="muted">{{ f.filename|truncate(20) }}
+                  ({{ "{:,}".format(f.lines) }})</span>
+                {% endif %}
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if uploads %}
+    <div class="card scroll-x" style="margin-top:22px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>File</th><th>Months</th><th class="num">Lines</th><th class="num">Spend</th>
+          <th>Checked</th><th>State</th><th>Received</th>
+          {% if me.is_admin %}<th></th>{% endif %}
+        </tr></thead>
+        <tbody>
+        {% for u in uploads %}
+        <tr>
+          <td class="name">{{ u.filename|truncate(34) }}
+            <div class="muted" style="font-size:12px;">read as {{ u.adapter }}</div></td>
+          <td>
+            {# The thing you actually need in order to decide anything, and it used to be
+               visible only after opening the file. #}
+            <div class="months">
+              {% for m in u.periods %}<span class="m">{{ m }}</span>{% endfor %}
+            </div>
+          </td>
+          <td class="num">{{ "{:,}".format(u.lines) }}</td>
+          <td class="num">{% if u.spend_eur %}&euro;{{ "{:,.0f}".format(u.spend_eur) }}{% else %}&mdash;{% endif %}</td>
+          <td>
+            <span class="pill {{ 'soft' if u.verdict=='go' else ('warn' if u.verdict=='go_with_warnings' else 'bad') }}">
+              {{ u.verdict|replace('_',' ') }}
+            </span>
+          </td>
+          <td>
+            {% if u.archived %}<span class="pill bad">archived</span>
+            {% elif u.selected %}<span class="pill soft">counted</span>
+            {% else %}<span class="pill warn">not counted</span>{% endif %}
+          </td>
+          <td class="muted">{{ (u.uploaded_at or '')[:10] }}</td>
+          {% if me.is_admin %}
+          <td>
+            <div class="acts-cell">
+              <a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a>
+              {% if u.archived %}
+              <form method="post" action="/upload/{{ u.upload_id }}/restore" style="display:inline;">
+                <button class="btn-ghost" type="submit">Restore</button>
+              </form>
+              <form method="post" action="/upload/{{ u.upload_id }}/destroy" style="display:inline;"
+                    onsubmit="return confirm('Delete this file for good? Its purchase lines go with it, and this cannot be undone.');">
+                <button class="btn-ghost" type="submit" style="color:var(--danger);">Delete</button>
+              </form>
+              {% else %}
+              <form method="post" action="/upload/{{ u.upload_id }}/select" style="display:inline;">
+                <input type="hidden" name="on" value="{{ 0 if u.selected else 1 }}"/>
+                <button class="btn-ghost" type="submit">
+                  {{ "Stop counting" if u.selected else "Count this" }}
+                </button>
+              </form>
+              <form method="post" action="/upload/{{ u.upload_id }}/archive" style="display:inline;"
+                    onsubmit="return confirm('Archive this file? It stops counting, but nothing is destroyed and you can restore it.');">
+                <button class="btn-ghost" type="submit">Archive</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">
+      {% if me.is_admin %}
+        <strong>Count this</strong> puts a file into the numbers; a month supplied by two
+        counted files is still counted once, from the one named above.
+        <strong>Archive</strong> stops it counting without destroying anything, and only an
+        archived file can be deleted &mdash; deleting takes its purchase lines with it.
+      {% else %}
+        Files are added by MiSt. Send yours across and it will appear here once it has been
+        read and checked.
+      {% endif %}
+    </p>
+    {% else %}
+    <p class="lede" style="margin-top:26px;">No files yet.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if me.is_admin %}
+<section class="dark tight">
+  <div class="inner">
+    <div class="sec-label sl-teal">What we accept</div>
+    <div class="grid g2" style="margin-top:6px;">
+      {% for a in adapters %}
+      <div class="card">
+        <div class="h3">{{ a.label }}</div>
+        <p class="muted" style="margin-top:10px;">{{ a.description }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<script>
+(function () {
+  var f = document.getElementById("file"), c = document.getElementById("chosen"),
+      d = document.getElementById("drop"), g = document.getElementById("go");
+  if (!f) { return; }
+  f.addEventListener("change", function () {
+    if (f.files && f.files[0]) { c.textContent = f.files[0].name; }
+  });
+  if (d) {
+    ["dragenter", "dragover"].forEach(function (e) {
+      d.addEventListener(e, function (ev) { ev.preventDefault(); d.classList.add("over"); });
+    });
+    ["dragleave", "drop"].forEach(function (e) {
+      d.addEventListener(e, function (ev) { ev.preventDefault(); d.classList.remove("over"); });
+    });
+    d.addEventListener("drop", function (ev) {
+      if (ev.dataTransfer && ev.dataTransfer.files.length) {
+        f.files = ev.dataTransfer.files;
+        c.textContent = f.files[0].name;
+      }
+    });
+  }
+  var form = document.getElementById("upForm");
+  if (form && g) {
+    form.addEventListener("submit", function () {
+      g.disabled = true;
+      g.textContent = "Reading the file…";
+    });
+  }
+})();
+</script>
+
+{% endblock %}

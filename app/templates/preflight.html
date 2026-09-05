@@ -161,82 +161,75 @@
   <div class="inner">
     <div class="sec-label">What happens next</div>
 
-    {% if report.committed %}
-      <h2 class="sec-h2">Already <em>imported.</em></h2>
-      <p class="lede" style="margin-top:16px;">
-        Committed {{ report.committed_at }} in <strong>{{ report.commit_mode }}</strong> mode —
-        {{ report.commit_note }}
+    {% if report.archived_at %}
+      <h2 class="sec-h2">Archived.</h2>
+      <p class="lede" style="margin-top:16px;max-width:64ch;">
+        This file counts for nothing and is out of the way, but nothing has been
+        destroyed. Restore it, or delete it for good, from
+        <a href="/files">Files</a> &mdash; deleting takes its purchase lines with it.
+      </p>
+
+    {% elif report.selected %}
+      <h2 class="sec-h2">Counted.</h2>
+      <p class="lede" style="margin-top:16px;max-width:64ch;">
+        This file is part of {{ client_name }}&rsquo;s numbers. Every month it supplies is
+        counted from here, unless another counted file owns that month &mdash;
+        <a href="/files">Files</a> says which, and lets you change it.
       </p>
       <div style="display:flex;gap:20px;align-items:center;margin-top:24px;flex-wrap:wrap;">
         <a class="btn-main" href="/">See the dashboard</a>
-        <form method="post" action="/upload/{{ report.upload_id }}/uncommit"
-              style="display:inline;"
-              onsubmit="return confirm('Take this import back out of the data?\n\nThe purchase lines it added are removed and the file returns to staged, so you can import it again or discard it. Nothing else is touched.');">
-          <button class="btn-ghost" type="submit">Undo this import</button>
+        <form method="post" action="/upload/{{ report.upload_id }}/select"
+              style="display:inline;">
+          <input type="hidden" name="on" value="0"/>
+          <input type="hidden" name="back" value="/upload/{{ report.upload_id }}"/>
+          <button class="btn-ghost" type="submit">Stop counting it</button>
         </form>
       </div>
-      <p class="muted" style="margin-top:14px;max-width:66ch;font-size:14px;">
-        Undoing removes only the lines this file added — every purchase line records the
-        import it came from, so other months stay exactly as they are.
-      </p>
 
     {% else %}
-      <h2 class="sec-h2">Your call.</h2>
-
+      <h2 class="sec-h2">Held, and counting for <em>nothing.</em></h2>
+      <p class="lede" style="margin-top:16px;max-width:64ch;">
+        Every line in this file is stored and tagged to it, so you can see exactly what
+        arrived. None of it touches a number until you count it.
+      </p>
       {% if v == 'blocked' %}
-      <p class="lede" style="margin-top:16px;">
-        This file would produce a wrong number as it stands. The usual cause is
-        <strong>overlap</strong>: Sligro exports are cumulative, so a December file also
-        contains January to November. Importing it on top of months you already hold counts
-        them twice.
+      <p class="lede" style="margin-top:14px;max-width:64ch;">
+        The checks above say this file would produce a wrong number. Read them before you
+        count it &mdash; nothing here stops you, but nothing here is guessing either.
       </p>
       {% endif %}
-
-      <form method="post" action="/upload/{{ report.upload_id }}/commit" style="margin-top:26px;">
-        <div class="grid g3" style="align-items:stretch;">
-          {% for mode in commit_modes %}
-          <label class="card" style="cursor:pointer;display:block;">
-            <div style="display:flex;gap:10px;align-items:flex-start;">
-              <input type="radio" name="mode" value="{{ mode.key }}" {% if mode.default %}checked{% endif %}
-                     style="margin-top:5px;accent-color:var(--teal);"/>
-              <div>
-                <div class="h3" style="font-size:17px;">{{ mode.label }}</div>
-                <p class="muted" style="margin-top:6px;">{{ mode.description }}</p>
-                {% if mode.effect %}<p class="muted" style="margin-top:8px;"><strong>{{ mode.effect }}</strong></p>{% endif %}
-              </div>
-            </div>
-          </label>
-          {% endfor %}
-        </div>
-
-        {% if v == 'blocked' %}
-        <label class="muted" style="display:flex;gap:9px;align-items:flex-start;margin-top:22px;max-width:66ch;">
-          <input type="checkbox" name="override" value="1" style="margin-top:5px;accent-color:var(--danger);"/>
-          <span>
-            I have read the blocking findings above and want to import anyway. I understand
-            this can double-count months and produce a wrong footprint.
-          </span>
-        </label>
-        {% endif %}
-
-        <div style="display:flex;gap:20px;align-items:center;margin-top:26px;flex-wrap:wrap;">
-          <button class="btn-main" type="submit">Import into {{ client_name }}'s data</button>
-          <button class="btn-ghost" type="submit" form="discard-form">Discard this file</button>
-          <a class="btn-ghost" href="/upload">Upload a different file</a>
-        </div>
-      </form>
-
-      <form method="post" action="/upload/{{ report.upload_id }}/discard" id="discard-form"
-            onsubmit="return confirm('Discard this file? The staged lines and the pre-flight report are deleted. Nothing that has been imported is affected.');"></form>
-
-      {% if commit_error %}
-      <div class="card" style="margin-top:24px;border-color:var(--danger);">
-        <div class="finding" style="border:none;padding:0;">
-          <span class="dot error"></span>
-          <div><div class="code">import refused</div><div class="msg">{{ commit_error }}</div></div>
-        </div>
+      <div style="display:flex;gap:20px;align-items:center;margin-top:24px;flex-wrap:wrap;">
+        <form method="post" action="/upload/{{ report.upload_id }}/select"
+              style="display:inline;">
+          <input type="hidden" name="on" value="1"/>
+          <input type="hidden" name="back" value="/upload/{{ report.upload_id }}"/>
+          <button class="btn-main" type="submit">Count this file</button>
+        </form>
+        <form method="post" action="/upload/{{ report.upload_id }}/archive"
+              style="display:inline;"
+              onsubmit="return confirm('Archive this file? It stops counting, but nothing is destroyed and you can restore it.');">
+          <button class="btn-ghost" type="submit">Archive it</button>
+        </form>
+        <a class="btn-ghost" href="/files">Back to files</a>
       </div>
-      {% endif %}
+    {% endif %}
+
+    {% if error %}
+    <div class="card" style="margin-top:24px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">could not do that</div><div class="msg">{{ error }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% set mine = contested | selectattr('files') | list %}
+    {% if report.selected and mine %}
+    <p class="muted" style="margin-top:26px;font-size:14px;max-width:64ch;">
+      {{ mine|length }} month{{ '' if mine|length == 1 else 's' }} in this client&rsquo;s
+      selection {{ 'is' if mine|length == 1 else 'are' }} supplied by more than one counted
+      file. <a href="/files">Files</a> shows which file each is counted from.
+    </p>
     {% endif %}
   </div>
 </section>

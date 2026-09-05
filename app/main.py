@@ -38,6 +38,7 @@ import catalogue
 import charts
 import config
 import db
+import selection
 import uploads
 from adapters import mist_template
 
@@ -58,6 +59,10 @@ async def lifespan(app: FastAPI):
     """
     db.init()
     auth.init()
+    # Purchase lines that predate file tracking would otherwise become invisible the
+    # moment "only a selected file counts" took effect. Adopting them keeps every number
+    # where it is and puts a row on the Files page saying what it is.
+    selection.adopt_orphans()
     yield
 
 
@@ -121,20 +126,12 @@ app.add_middleware(SessionMiddleware, secret_key=auth.session_secret(),
                    max_age=60 * 60 * 12)
 
 
-COMMIT_MODES = [
-    dict(key="new_only", label="Only the new months", default=True,
-         description=("Import months we do not already hold and skip the rest. Safe with a "
-                      "cumulative export, which always repeats earlier months."),
-         effect="Nothing existing is touched."),
-    dict(key="replace", label="Replace what we hold", default=False,
-         description=("Delete the months this file covers, then import it. Use when the "
-                      "supplier has re-issued a corrected export."),
-         effect="Existing months in this file's range are overwritten."),
-    dict(key="all", label="Import everything", default=False,
-         description=("Take every line as-is. Refused when it would overlap, because that "
-                      "is exactly how a cumulative file double-counts."),
-         effect="Only valid when nothing overlaps."),
-]
+# COMMIT_MODES used to live here: new_only, replace, all.
+#
+# Three modes existed so that a cumulative export could be imported without counting a
+# month twice, and choosing the wrong one doubled a year with nothing on screen to say
+# so. There is nothing to choose now -- every line a file supplies is stored when the
+# file is read, and a month is counted from exactly one selected file. See selection.py.
 
 
 def relabel(result: dict) -> dict:
@@ -509,13 +506,31 @@ def account_change(request: Request, current: str = Form(...),
     return RedirectResponse(f"{home}?done=1", status_code=303)
 
 
+@app.get("/files", response_class=HTMLResponse)
+def files_page(request: Request, error: str | None = None):
+    """One place for files. Deliberately NOT admin-only.
+
+    A client cannot upload, undo or discard -- every action on this page posts to a
+    route that is already admin-gated, so seeing it grants nothing. But what their
+    numbers are built from is not a secret from them, and hiding the list would make it
+    look like one.
+    """
+    p = me(request)
+    snap = db.snapshot(p.tenant)
+    return templates.TemplateResponse(request, "files.html", ctx(
+        request, "files", error=error,
+        uploads=uploads.listing(limit=200, tenant=p.tenant),
+        adapters=adapters.listing(),
+        contested=selection.contested(p.tenant),
+        months_held=len(snap["months"])))
+
+
 # --------------------------------------------------------------------------- upload
 @app.get("/upload", response_class=HTMLResponse)
 def upload_form(request: Request, error: str | None = None):
-    p = me(request)
-    return templates.TemplateResponse(request, "upload.html", ctx(
-        request, "upload", error=error, adapters=adapters.listing(),
-        uploads=uploads.listing(limit=12, tenant=p.tenant)))
+    """Kept so an old link still works; the upload form itself lives on /files now."""
+    return RedirectResponse("/files" + (f"?error={quote(error)}" if error else ""),
+                            status_code=303)
 
 
 @app.get("/upload/template")
@@ -540,9 +555,7 @@ async def upload_file(request: Request, file: UploadFile = File(...),
         try:
             report = uploads.stage(tmp, file.filename, y, tenant=p.tenant)
         except Exception as e:
-            return templates.TemplateResponse(request, "upload.html", ctx(
-                request, "upload", error=str(e), adapters=adapters.listing(),
-                uploads=uploads.listing(limit=12, tenant=p.tenant)), status_code=422)
+            return files_page(request, error=str(e))
     finally:
         try:
             os.unlink(tmp)
@@ -552,53 +565,73 @@ async def upload_file(request: Request, file: UploadFile = File(...),
 
 
 @app.get("/upload/{upload_id}", response_class=HTMLResponse)
-def upload_report(request: Request, upload_id: str, commit_error: str | None = None):
+def upload_report(request: Request, upload_id: str, error: str | None = None):
+    """One file: what was in it, what is wrong with it, and whether it counts."""
     p = me(request)
     report = uploads.get(upload_id, p.tenant)
     if report is None:
         raise HTTPException(404, f"no upload {upload_id}")
     return templates.TemplateResponse(request, "preflight.html", ctx(
-        request, "upload", report=report, commit_modes=COMMIT_MODES,
-        commit_error=commit_error))
+        request, "files", report=report, error=error,
+        contested=selection.contested(p.tenant)))
 
 
-@app.post("/upload/{upload_id}/commit")
-def commit_upload(request: Request, upload_id: str,
-                  mode: str = Form("new_only"), override: str | None = Form(None)):
-    p = me(request)
-    try:
-        uploads.commit(upload_id, mode, bool(override), tenant=p.tenant)
-    except uploads.CommitError as e:
-        return upload_report(request, upload_id, commit_error=str(e))
-    return RedirectResponse(f"/upload/{upload_id}", status_code=303)
+@app.post("/upload/{upload_id}/select")
+def select_file(request: Request, upload_id: str, on: int = Form(1),
+                back: str = Form("/files")):
+    """Count this file, or stop counting it.
 
-
-@app.post("/upload/{upload_id}/discard")
-def discard_upload(request: Request, upload_id: str):
-    """Throw away a staged upload.
-
-    POST, not GET. It was a GET, reached from a link, which meant anything that follows
-    links on a page -- a browser prefetching, a scanner, somebody's accelerator
-    extension -- could delete a staged file without a person ever clicking it. A request
-    that destroys something should never be one a machine can make by looking around.
+    The whole of what used to be committing and undoing. Nothing moves; a switch changes,
+    and any month now supplied by two selected files gets an owner so it is still counted
+    once.
     """
     p = me(request)
     try:
-        uploads.discard(upload_id, p.tenant)
-    except uploads.CommitError:
-        return RedirectResponse(f"/upload/{upload_id}", status_code=303)
-    return RedirectResponse("/upload", status_code=303)
+        selection.set_selected(upload_id, p.tenant, bool(on), by=p.username)
+    except ValueError as e:
+        return files_page(request, error=str(e))
+    return RedirectResponse(back if back.startswith("/") else "/files", status_code=303)
 
 
-@app.post("/upload/{upload_id}/uncommit")
-def uncommit_upload(request: Request, upload_id: str):
-    """Take a committed import back out. Leaves the file staged, ready to re-commit."""
+@app.post("/upload/{upload_id}/archive")
+def archive_file(request: Request, upload_id: str):
+    """Step one of getting rid of a file. It stops counting; nothing is destroyed."""
     p = me(request)
     try:
-        uploads.uncommit(upload_id, p.tenant)
-    except uploads.CommitError as e:
-        return upload_report(request, upload_id, commit_error=str(e))
-    return RedirectResponse(f"/upload/{upload_id}", status_code=303)
+        selection.archive(upload_id, p.tenant, by=p.username)
+    except ValueError as e:
+        return files_page(request, error=str(e))
+    return RedirectResponse("/files", status_code=303)
+
+
+@app.post("/upload/{upload_id}/restore")
+def restore_file(request: Request, upload_id: str):
+    p = me(request)
+    selection.restore(upload_id, p.tenant)
+    return RedirectResponse("/files", status_code=303)
+
+
+@app.post("/upload/{upload_id}/destroy")
+def destroy_file(request: Request, upload_id: str):
+    """Step two, and there is no step three -- it takes the purchase lines with it."""
+    p = me(request)
+    try:
+        selection.destroy(upload_id, p.tenant)
+    except ValueError as e:
+        return files_page(request, error=str(e))
+    return RedirectResponse("/files", status_code=303)
+
+
+@app.post("/files/owner")
+def set_month_owner(request: Request, year: int = Form(...), month: int = Form(...),
+                    upload_id: str = Form(...)):
+    """Decide which file supplies a month two selected files both cover."""
+    p = me(request)
+    try:
+        selection.set_owner(p.tenant, year, month, upload_id, by=p.username)
+    except ValueError as e:
+        return files_page(request, error=str(e))
+    return RedirectResponse("/files", status_code=303)
 
 
 # --------------------------------------------------------------------------- export

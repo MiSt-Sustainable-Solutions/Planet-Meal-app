@@ -29,7 +29,8 @@ import analysis          # noqa: E402
 import catalogue         # noqa: E402
 import config            # noqa: E402
 import db                # noqa: E402
-import preflight         # noqa: E402
+import preflight
+import selection         # noqa: E402
 import uploads           # noqa: E402
 from adapters import mist_template, sligro   # noqa: E402
 
@@ -119,56 +120,68 @@ P(finding(rep, "weights")["pct_of_spend"] > 0, "the per-piece gap is quantified"
 P(finding(rep, "barcodes")["pct"] > 90, "barcode coverage is reported")
 
 print("\n=== THE DOUBLE-COUNT GUARD ===")
-staged = uploads.stage(f("Augustus 2024.xlsx"), "Augustus 2024.xlsx")
-P(staged["verdict"] != "blocked", "the first file stages cleanly")
-P(db.stats()["lines"] == 0, "staging writes nothing into the client's data")
+# It used to be three import modes and a refusal. It is now structural: a file's lines
+# are stored the moment it is read and count for nothing, and a month is counted from
+# exactly one selected file. There is no mode to get wrong.
+aug = uploads.stage(f("Augustus 2024.xlsx"), "Augustus 2024.xlsx")
+P(aug["stored_lines"] > 0, f"the file's {aug['stored_lines']:,} lines are stored on arrival")
+P(db.stats()["lines"] == 0, "and count for nothing until somebody selects the file")
 
-res = uploads.commit(staged["upload_id"], "new_only")
+selection.set_selected(aug["upload_id"], config.TENANT, True)
 after = db.stats()["lines"]
-P(after == res["imported_lines"] > 0, f"committed {res['imported_lines']:,} lines")
-P(len(res["imported_months"]) == 8, "all 8 months were new")
+P(after == aug["stored_lines"], f"selecting it counts exactly its {after:,} lines")
+P(len(db.months()) == 8, f"eight months ({len(db.months())})")
 
+print("\n=== the same file twice cannot count twice ===")
 again = uploads.stage(f("Augustus 2024.xlsx"), "Augustus 2024.xlsx")
-P(again["verdict"] == "blocked", "the SAME file is now blocked")
-P(sev(again, "overlap") == "error", "because every month already exists")
-ov = finding(again, "overlap")
-P(len(ov["already_loaded"]) == 8 and not ov["new_months"], "and the clash is named exactly")
+selection.set_selected(again["upload_id"], config.TENANT, True)
+P(db.stats()["lines"] == after,
+  f"a second copy of the same file adds nothing ({db.stats()['lines']:,})")
+c = selection.contested(config.TENANT)
+P(len(c) == 8, f"all eight months are reported as contested ({len(c)})")
+P(all(x["decided"] for x in c), "each already has an owner, so nothing is ambiguous")
+selection.set_selected(again["upload_id"], config.TENANT, False)
+P(selection.contested(config.TENANT) == [], "unselecting the copy clears it")
 
-for mode in ("all", "new_only"):
-    try:
-        uploads.commit(again["upload_id"], mode)
-        P(False, f"mode {mode} must refuse")
-    except uploads.CommitError as e:
-        P(True, f"mode {mode} refuses: {str(e)[:52]}...")
-P(db.stats()["lines"] == after, "and the client's data did not move")
-
-print("\n=== a cumulative file on top of an earlier one ===")
+print("\n=== a cumulative file that overlaps AND adds ===")
 dec = uploads.stage(f("December 2024.xlsx"), "December 2024.xlsx")
-P(sev(dec, "overlap") == "error", "December 2024 re-supplies Jan-Aug, so it overlaps")
-ovd = finding(dec, "overlap")
-P(sorted(ovd["new_months"]) == ["2024-09", "2024-10", "2024-11", "2024-12"],
-  f"but Sep-Dec are genuinely new ({ovd['new_months']})")
-P(sev(dec, "partial_months") == "error", "and those months are a partial export")
-res2 = uploads.commit(dec["upload_id"], "new_only", override=True)
-P(len(res2["imported_months"]) == 4 and len(res2["skipped_months"]) == 8,
-  "new_only imported the 4 new months and skipped the 8 duplicates")
-P(len(db.months()) == 12, "the client now holds 12 months, not 20")
+selection.set_selected(dec["upload_id"], config.TENANT, True)
+P(len(db.months()) == 12, f"twelve months now ({len(db.months())})")
+c = selection.contested(config.TENANT)
+P(len(c) == 8, f"Jan-Aug are contested ({len(c)})")
+P(all(x["owner"] == aug["upload_id"] for x in c),
+  "and Augustus owns them, having far more lines for each")
+grew = db.stats()["lines"] - after
+P(0 < grew < dec["stored_lines"],
+  f"only December's own months were added ({grew:,} of its {dec['stored_lines']:,})")
 
-print("\n=== replace overwrites rather than appends ===")
-before = db.stats()["lines"]
-third = uploads.stage(f("Augustus 2024.xlsx"), "Augustus 2024.xlsx")
-uploads.commit(third["upload_id"], "replace", override=True)
-P(db.stats()["lines"] == before, f"replace left the count unchanged ({db.stats()['lines']:,})")
+print("\n=== a person can hand a month to the other file ===")
+selection.set_owner(config.TENANT, 2024, 3, dec["upload_id"], by="test")
+P(selection.owners(config.TENANT)[(2024, 3)] == dec["upload_id"],
+  "March is now counted from December, and the decision is written down")
+P(len(db.months()) == 12, "still twelve months — nothing was lost by moving it")
+selection.set_owner(config.TENANT, 2024, 3, aug["upload_id"], by="test")
 
-print("\n=== a blocked file cannot be committed by accident ===")
+print("\n=== a blocked verdict advises, it does not block ===")
+# It used to refuse without an override. Refusing is the wrong shape now: the file is
+# already stored and counts for nothing, so there is nothing to protect against. What
+# matters is that the verdict is on screen when somebody decides.
 fourth = uploads.stage(f("December 2024.xlsx"), "December 2024.xlsx")
+P(fourth["verdict"] in ("go", "go_with_warnings", "blocked"),
+  f"the file is judged ({fourth['verdict']}) and stored either way")
+P(uploads.get(fourth["upload_id"], config.TENANT)["selected"] is False,
+  "and arrives counting for nothing")
+
+print("\n=== getting rid of a file takes two steps ===")
 try:
-    uploads.commit(fourth["upload_id"], "new_only")
-    P(False, "a blocked upload must not commit without an override")
-except uploads.CommitError as e:
-    P("blocked" in str(e) and "override" in str(e), "it refuses, and says how to force it")
-P(uploads.discard(fourth["upload_id"], config.TENANT) is True,
-  "a staged upload can be discarded")
+    selection.destroy(fourth["upload_id"], config.TENANT)
+    P(False, "should have refused to delete a file that is not archived")
+except ValueError as e:
+    P("archive it first" in str(e), "an unarchived file cannot be destroyed")
+selection.archive(fourth["upload_id"], config.TENANT)
+out = selection.destroy(fourth["upload_id"], config.TENANT)
+P(out["lines_removed"] > 0, f"archived, then deleted with its {out['lines_removed']:,} lines")
+P(uploads.get(fourth["upload_id"], config.TENANT) is None, "and the file is gone")
 
 print("\n=== quiet holiday months are not mistaken for broken ones ===")
 flagged = set()

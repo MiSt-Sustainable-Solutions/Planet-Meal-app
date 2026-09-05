@@ -59,6 +59,17 @@ CREATE TABLE IF NOT EXISTS upload_product(
   ivp TEXT, vp TEXT, maat REAL, eenh TEXT, ean TEXT, ean_he TEXT, foodflag TEXT);
 CREATE INDEX IF NOT EXISTS ix_up ON upload_product(upload_id);
 
+-- Which file owns a month, when more than one selected file supplies it. Only
+-- contested months need a row; everything else is decided by there being one candidate.
+CREATE TABLE IF NOT EXISTS month_owner(
+  tenant TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  upload_id TEXT NOT NULL,
+  decided_at TEXT,
+  decided_by TEXT,
+  PRIMARY KEY (tenant, year, month));
+
 CREATE TABLE IF NOT EXISTS analysis_run(
   id TEXT PRIMARY KEY, tenant TEXT NOT NULL,
   label TEXT, period_from TEXT, period_to TEXT, eat_profile TEXT,
@@ -83,7 +94,35 @@ MIGRATIONS = [
     ("analysis_run", "window_key", "TEXT"),
     ("analysis_run", "catalogue_version", "TEXT"),
     ("analysis_run", "data_fingerprint", "TEXT"),
+    # A file is held whether or not it counts. `selected` is the switch; archiving is the
+    # first of the two steps to being rid of it.
+    ("upload", "selected", "INTEGER DEFAULT 0"),
+    ("upload", "archived_at", "TEXT"),
 ]
+
+# WHICH LINES COUNT.
+#
+# Every purchase line records the file it came from, so a line counts when that file is
+# selected, is not archived, and OWNS the month the line falls in.
+#
+# Ownership is the part that is not obvious, and it exists because of a real case in TU
+# Delft's own data: "Augustus 2024" covers January to August and "December 2024" covers
+# January to December. Select both and eight months are counted twice; select either one
+# alone and months are lost. Neither file is wrong -- they simply overlap, and no rule can
+# decide which should win. So a month has an owner, recorded in a table, and a person can
+# change it.
+#
+# A month with no owner row is owned by whichever selected file covers it, which is the
+# ordinary case and needs no decision at all.
+COUNTED_JOIN = """
+        JOIN upload u ON u.id = l.source_upload AND u.tenant = l.tenant
+        LEFT JOIN month_owner o
+               ON o.tenant = l.tenant AND o.year = l.year AND o.month = l.month
+"""
+COUNTED_WHERE = """
+        AND u.selected = 1 AND u.archived_at IS NULL
+        AND (o.upload_id IS NULL OR o.upload_id = l.source_upload)
+"""
 
 
 def connect():
@@ -183,18 +222,22 @@ def snapshot(tenant: str | None = None) -> dict:
 
     con = connect()
     rows = con.execute("""
-        SELECT year, month,
+        -- Every column qualified with l. now that month_owner is joined: it carries a
+        -- year and a month of its own, so a bare `year` is ambiguous.
+        SELECT l.year AS year, l.month AS month,
                -- A month is partial if ANY of it is. SQLite would happily return a
                -- column that is not in the GROUP BY, picking an arbitrary row's value;
                -- Postgres refuses, which is the better behaviour and forces the rule to
                -- be stated. Written out rather than MIN(quality) so it does not depend
                -- on 'PARTIAL' happening to sort before 'complete'.
-               CASE WHEN SUM(CASE WHEN quality = 'complete' THEN 0 ELSE 1 END) > 0
+               CASE WHEN SUM(CASE WHEN l.quality = 'complete' THEN 0 ELSE 1 END) > 0
                     THEN 'PARTIAL' ELSE 'complete' END AS quality,
-               COUNT(*) AS lines, SUM(omzet) AS spend,
-               SUM(kg) AS kg, SUM(CASE WHEN kg_known=0 THEN 1 ELSE 0 END) AS piece_lines
-        FROM purchase_line WHERE tenant=?
-        GROUP BY year, month ORDER BY year, month""", (tenant,)).fetchall()
+               COUNT(*) AS lines, SUM(l.omzet) AS spend,
+               SUM(l.kg) AS kg,
+               SUM(CASE WHEN l.kg_known=0 THEN 1 ELSE 0 END) AS piece_lines
+        FROM purchase_line l""" + COUNTED_JOIN + """
+        WHERE l.tenant=?""" + COUNTED_WHERE + """
+        GROUP BY l.year, l.month ORDER BY l.year, l.month""", (tenant,)).fetchall()
     pr = con.execute("SELECT COUNT(*), MAX(last_seen) FROM product WHERE tenant=?",
                      (tenant,)).fetchone()
     con.close()
@@ -228,8 +271,9 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
         SELECT l.artikelnr, p.description, p.category, p.ean, p.ean_he,
                l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known
         FROM purchase_line l
-        LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
-        WHERE l.tenant=? AND (l.year*100+l.month) BETWEEN ? AND ?""",
+        LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr""" +
+        COUNTED_JOIN + """
+        WHERE l.tenant=? AND (l.year*100+l.month) BETWEEN ? AND ?""" + COUNTED_WHERE,
         (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchall()
     con.close()
     # The barcodes travel with the line. An article number belongs to the supplier; a
@@ -254,16 +298,18 @@ def piece_items(y0: int, m0: int, y1: int, m1: int, limit: int = 100,
         SELECT l.artikelnr, p.description, p.category, p.vp, p.eenh,
                SUM(l.aantal) AS pieces, SUM(l.omzet) AS spend
         FROM purchase_line l
-        LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
-        WHERE l.tenant=? AND l.kg_known=0 AND (l.year*100+l.month) BETWEEN ? AND ?
+        LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr""" +
+        COUNTED_JOIN + """
+        WHERE l.tenant=? AND l.kg_known=0 AND (l.year*100+l.month) BETWEEN ? AND ?""" +
+        COUNTED_WHERE + """
         -- every product column here is determined by artikelnr (it is the product
         -- table's key), so naming them changes nothing except that Postgres will
         -- accept it. SQLite allowed the shorter form and picked a value at random.
         GROUP BY l.artikelnr, p.description, p.category, p.vp, p.eenh
         ORDER BY spend DESC""",
         (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchall()
-    total = con.execute("""SELECT SUM(omzet) FROM purchase_line
-        WHERE tenant=? AND (year*100+month) BETWEEN ? AND ?""",
+    total = con.execute("""SELECT SUM(l.omzet) FROM purchase_line l""" + COUNTED_JOIN +
+        """ WHERE l.tenant=? AND (l.year*100+l.month) BETWEEN ? AND ?""" + COUNTED_WHERE,
         (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchone()[0] or 0
     con.close()
     spend = sum(r["spend"] or 0 for r in rows)
@@ -294,9 +340,11 @@ def stats(tenant: str | None = None) -> dict:
     """
     tenant = tenant or config.TENANT
     con = connect()
-    r = con.execute("""SELECT COUNT(*) AS lines, COUNT(DISTINCT artikelnr) AS products,
-                              COUNT(DISTINCT restaurant) AS restaurants, SUM(omzet) AS spend
-                       FROM purchase_line WHERE tenant=?""", (tenant,)).fetchone()
+    r = con.execute("""SELECT COUNT(*) AS lines, COUNT(DISTINCT l.artikelnr) AS products,
+                              COUNT(DISTINCT l.restaurant) AS restaurants,
+                              SUM(l.omzet) AS spend
+                       FROM purchase_line l""" + COUNTED_JOIN + """
+                       WHERE l.tenant=?""" + COUNTED_WHERE, (tenant,)).fetchone()
     uploads = con.execute("SELECT COUNT(*) FROM upload WHERE tenant=?", (tenant,)).fetchone()[0]
     runs = con.execute("SELECT COUNT(*) FROM analysis_run WHERE tenant=?", (tenant,)).fetchone()[0]
     con.close()

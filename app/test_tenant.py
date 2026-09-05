@@ -103,17 +103,23 @@ for tenant, spec in CLIENTS.items():
             con.execute("INSERT INTO purchase_line (tenant, year, month, klantnr, "
                         "restaurant, city, artikelnr, aantal, omzet, kg, kg_known, "
                         "quality, source_upload) VALUES (?,2025,?,'K1',?,'X',?,10,?,?,1,"
-                        "'complete','fixture')",
+                        "'complete',?)",
                         (tenant, month, f"{tenant.upper()} CANTEEN", art,
-                         spec["eur"], spec["kg"]))
+                         spec["eur"], spec["kg"], f"upl-{tenant}"))
     # a staged upload each, so the by-id attacks have something real to aim at
-    con.execute("INSERT INTO upload VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)",
+    con.execute("""INSERT INTO upload
+               (id, tenant, filename, stored_path, adapter, year, uploaded_at, periods,
+                lines, products, spend_eur, verdict, report_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (f"upl-{tenant}", tenant, f"{tenant}.xlsx", "", "sligro", 2025,
                  "2025-01-01T00:00:00", '["2025-01"]', 1, 1, spec["eur"], "ok",
                  json.dumps(dict(verdict="ok", findings=[], summary={},
                                  filename=f"{tenant}.xlsx", adapter="sligro",
                                  lines=1, products=1, spend_eur=spec["eur"],
                                  periods=["2025-01"]))))
+# Only a SELECTED file counts now, so the fixture selects the one it just made. This is
+# what production looks like: data exists, and someone decided it should be counted.
+con.execute("UPDATE upload SET selected=1")
 con.commit()
 con.close()
 db.invalidate()

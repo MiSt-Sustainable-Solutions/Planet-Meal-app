@@ -1,17 +1,17 @@
 """
-Staging: receive a file, judge it, park it, and only then commit.
+Receive a file, judge it, and hold everything it contained.
 
-Nothing enters the client's purchase history on arrival. A file is read by its adapter,
-judged by preflight, and held. A human reads the verdict and decides.
+There is no commit step any more, and no import modes. A file used to be poured into one
+merged history by new_only / replace / all -- three modes that existed only to stop the
+same month landing twice, where choosing wrongly doubled a year and nothing said so.
 
-Commit modes:
-    new_only   import only months not already present.  The safe default.
-    replace    delete the existing rows for every month in this file, then import.
-    all        import everything as-is. Refused on overlap, because that is precisely how
-               a cumulative export double-counts.
+Now every line a file supplies is stored the moment the file is read, tagged with the
+file it came from, and counts for nothing until somebody selects that file. Double
+counting stops being a risk the app guards against: a month is supplied by exactly one
+selected file, because one file owns it. See selection.py.
 
-Committing is reversible in the sense that matters: purchase_line is derived from the
-files, all of which are kept under data/uploads/. Nothing here is the only copy.
+So this module only receives. What counts, what a month is worth, and what gets thrown
+away are all decisions, and decisions live in selection.py.
 """
 from __future__ import annotations
 
@@ -36,6 +36,66 @@ def _now() -> str:
     return dt.datetime.now().isoformat(timespec="seconds")
 
 
+
+def _ingest(con, uid: str, tenant: str, reading, rep: dict) -> int:
+    """Store every line and product the file supplied. Counts for nothing yet.
+
+    Everything the file contains goes in, whole. There is no month filtering here,
+    because whether a month should be counted is not a property of the file -- it is a
+    decision, made later, per month, and recorded where it can be seen.
+    """
+    # An adapter cannot tell whether a month is complete -- only the pre-flight can, by
+    # comparing it against what this client already holds. So the verdict is recorded
+    # against the months it applies to, and every screen reads it from the data rather
+    # than re-deriving it. A month judged partial is kept and labelled, never dropped.
+    partial = set()
+    for fnd in rep.get("findings", []):
+        if fnd.get("code") in ("partial_months", "thin_months"):
+            partial |= set(fnd.get("months") or [])
+
+    rows = [(tenant, l["year"], l["month"], l["klantnr"], l["restaurant"], l["city"],
+             l["artikelnr"], l["aantal"], l["omzet"], l["kg"], l["kg_known"],
+             ("PARTIAL" if f"{l['year']}-{l['month']:02d}" in partial else "complete"),
+             uid)
+            for l in ({"year": x[0], "month": x[1], "klantnr": x[2], "restaurant": x[3],
+                       "city": x[4], "artikelnr": x[5], "aantal": x[6], "omzet": x[7],
+                       "kg": x[8], "kg_known": x[9]} for x in reading.lines)]
+    con.executemany(
+        "INSERT INTO purchase_line VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+
+    now = _now()
+    for p in reading.products.values():
+        con.execute("""
+            INSERT INTO product (tenant, artikelnr, description, brand, category, ivp, vp,
+                                 maat, eenh, ean, ean_he, foodflag, first_seen, last_seen)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(tenant, artikelnr) DO UPDATE SET
+                description=excluded.description, brand=excluded.brand,
+                category=excluded.category, ivp=excluded.ivp, vp=excluded.vp,
+                maat=excluded.maat, eenh=excluded.eenh,
+                ean=CASE WHEN excluded.ean<>'' THEN excluded.ean ELSE product.ean END,
+                last_seen=excluded.last_seen""",
+            (tenant, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10],
+             now, now))
+    return len(rows)
+
+
+def _teach(reading) -> dict | None:
+    """Tell the shared catalogue about products it has never seen. Never fatal.
+
+    A product resolved once is resolved for every future upload and every future client
+    -- that is the whole reason the catalogue is shared. If it is unreachable the file is
+    still stored; the products are simply resolved live the next time something asks.
+    """
+    try:
+        return catalogue.learn([
+            dict(artikelnr=p[0], description=p[1] or "", category=p[3] or "",
+                 ean_ce=p[8] or "", ean_he=p[9] or "")
+            for p in reading.products.values()])
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------------------- receive
 def stage(src_path: str, filename: str | None = None, year: int | None = None,
           tenant: str | None = None) -> dict:
@@ -55,7 +115,10 @@ def stage(src_path: str, filename: str | None = None, year: int | None = None,
 
     con = db.connect()
     con.execute(
-        "INSERT INTO upload VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)",
+        """INSERT INTO upload
+               (id, tenant, filename, stored_path, adapter, year, uploaded_at, periods,
+                lines, products, spend_eur, verdict, report_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (uid, tenant, filename, stored, reading.adapter, reading.year, _now(),
          json.dumps(reading.periods), len(reading.lines), len(reading.products),
          rep["spend_eur"], rep["verdict"], json.dumps(rep)))
@@ -66,7 +129,14 @@ def stage(src_path: str, filename: str | None = None, year: int | None = None,
     con.commit()
     con.close()
 
-    rep.update(upload_id=uid, uploaded_at=_now(), committed=False)
+    stored = _ingest(con2 := db.connect(), uid, tenant, reading, rep)
+    con2.commit()
+    con2.close()
+    db.invalidate()
+    learned = _teach(reading)
+
+    rep.update(upload_id=uid, uploaded_at=_now(), stored_lines=stored,
+               learned=learned, selected=False)
     return rep
 
 
@@ -88,8 +158,7 @@ def get(uid: str, tenant: str | None) -> dict | None:
         return None
     rep = json.loads(r["report_json"])
     rep.update(upload_id=r["id"], uploaded_at=r["uploaded_at"],
-               committed=bool(r["committed_at"]), committed_at=r["committed_at"],
-               commit_mode=r["commit_mode"], commit_note=r["commit_note"])
+               selected=bool(r["selected"]), archived_at=r["archived_at"])
     return rep
 
 
@@ -98,215 +167,26 @@ def listing(limit: int = 50, tenant: str | None = None) -> list[dict]:
     con = db.connect()
     rows = con.execute(
         """SELECT id, filename, adapter, uploaded_at, periods, lines, products, spend_eur,
-                  verdict, committed_at, commit_mode
+                  verdict, selected, archived_at
            FROM upload WHERE tenant=? ORDER BY uploaded_at DESC, id DESC LIMIT ?""",
         (tenant, limit)).fetchall()
     con.close()
     return [dict(upload_id=r["id"], filename=r["filename"], adapter=r["adapter"],
                  uploaded_at=r["uploaded_at"], periods=json.loads(r["periods"] or "[]"),
                  lines=r["lines"], products=r["products"], spend_eur=r["spend_eur"],
-                 verdict=r["verdict"], committed=bool(r["committed_at"]),
-                 committed_at=r["committed_at"], commit_mode=r["commit_mode"])
+                 verdict=r["verdict"], selected=bool(r["selected"]),
+                 archived_at=r["archived_at"], archived=bool(r["archived_at"]))
             for r in rows]
 
 
-def discard(uid: str, tenant: str | None) -> bool:
-    """Throw away a staged upload. Scoped to a client; `tenant=None` means any.
-
-    Deleting is destructive and irreversible, so it is scoped for the same reason the
-    reads are: an id is a handle, not a permission. Without the filter one client could
-    delete another's staged file before they had a chance to look at it.
-    """
-    con = db.connect()
-    if tenant is None:
-        r = con.execute("SELECT committed_at FROM upload WHERE id=?", (uid,)).fetchone()
-    else:
-        r = con.execute("SELECT committed_at FROM upload WHERE id=? AND tenant=?",
-                        (uid, tenant)).fetchone()
-    if r is None:
-        con.close()
-        return False
-    if r["committed_at"]:
-        con.close()
-        raise CommitError("this upload has already been committed and cannot be discarded")
-    con.execute("DELETE FROM upload_line WHERE upload_id=?", (uid,))
-    con.execute("DELETE FROM upload_product WHERE upload_id=?", (uid,))
-    con.execute("DELETE FROM upload WHERE id=?", (uid,))
-    con.commit()
-    con.close()
-    return True
+# Commit and uncommit used to live here.
+#
+# commit() moved a staged file into the merged history under one of three modes;
+# uncommit() took it back out again. Both are gone: a file's lines are stored when it is
+# read, and whether they count is selection.set_selected(). There is nothing to move, so
+# there is nothing to move back.
+#
+# discard() is gone too. Getting rid of a file is selection.archive() and then
+# selection.destroy() -- two steps, because deleting takes the purchase lines with it.
 
 
-def uncommit(uid: str, tenant: str | None) -> dict:
-    """Take a committed import back out of a client's history.
-
-    The counterpart to commit(), and the reason it can exist at all is that every
-    purchase line records the upload it came from. So this removes exactly the rows that
-    one import added -- not a month range, not a date window, the rows themselves. A
-    file imported in `new_only` mode alongside three others leaves those three untouched.
-
-    It UNDOES THE IMPORT, it does not delete the file. The upload goes back to staged,
-    with its parsed lines and its pre-flight report intact, so it can be committed again
-    in a different mode or discarded. Two small reversible steps rather than one large
-    irreversible one -- which matters, because the usual reason to reach for this is
-    that something has already gone wrong once.
-
-    What it deliberately leaves behind:
-
-      * `product` rows. They are identity, not measurement -- a description and a
-        barcode -- and other uploads reference the same articles. Deleting them would
-        break imports that had nothing to do with this mistake.
-      * saved analyses. They record what was reported and when. An analysis that was
-        genuinely shown to somebody is not made untrue by a later correction, and
-        rewriting that history would be worse than leaving it. The next run gets a new
-        data fingerprint and recalculates on its own.
-    """
-    con = db.connect()
-    row = con.execute("SELECT * FROM upload WHERE id=? AND tenant=?",
-                      (uid, tenant)).fetchone()
-    if not row:
-        con.close()
-        raise CommitError(f"no upload {uid}")
-    if not row["committed_at"]:
-        con.close()
-        raise CommitError("this upload was never committed, so there is nothing to undo. "
-                          "Discard it instead.")
-
-    n = con.execute("SELECT COUNT(*) FROM purchase_line WHERE tenant=? AND source_upload=?",
-                    (tenant, uid)).fetchone()[0]
-    con.execute("DELETE FROM purchase_line WHERE tenant=? AND source_upload=?",
-                (tenant, uid))
-    con.execute("UPDATE upload SET committed_at=NULL, commit_mode=NULL, commit_note=NULL "
-                "WHERE id=? AND tenant=?", (uid, tenant))
-    con.commit()
-    db.invalidate()
-    con.close()
-    return dict(upload_id=uid, removed_lines=n, filename=row["filename"])
-
-
-# --------------------------------------------------------------------------- commit
-def commit(uid: str, mode: str = "new_only", override: bool = False,
-           tenant: str | None = None) -> dict:
-    """Move a staged upload into the client's purchase history."""
-    tenant = tenant or config.TENANT
-    if mode not in ("new_only", "replace", "all"):
-        raise CommitError(f"unknown mode {mode!r} — use new_only, replace or all")
-
-    con = db.connect()
-    # Scoped to the tenant doing the committing. Otherwise a caller could commit
-    # somebody else's staged file INTO THEIR OWN data -- not just a read of another
-    # client's numbers but a permanent corruption of two clients at once.
-    row = con.execute("SELECT * FROM upload WHERE id=? AND tenant=?",
-                      (uid, tenant)).fetchone()
-    if not row:
-        con.close()
-        raise CommitError(f"no upload {uid}")
-    if row["committed_at"]:
-        con.close()
-        raise CommitError(f"upload {uid} was already committed at {row['committed_at']}")
-    if row["verdict"] == "blocked" and not override:
-        con.close()
-        raise CommitError(
-            "the pre-flight verdict is 'blocked'. Read the findings and fix the file, or "
-            "commit again with override if you accept the consequences knowingly.")
-
-    lines = con.execute(
-        """SELECT year,month,klantnr,restaurant,city,artikelnr,aantal,omzet,kg,kg_known,quality
-           FROM upload_line WHERE upload_id=?""", (uid,)).fetchall()
-    prods = con.execute(
-        """SELECT artikelnr,description,brand,category,ivp,vp,maat,eenh,ean,ean_he,foodflag
-           FROM upload_product WHERE upload_id=?""", (uid,)).fetchall()
-
-    file_periods = sorted({(l["year"], l["month"]) for l in lines})
-    existing = {(r["year"], r["month"]) for r in con.execute(
-        "SELECT DISTINCT year, month FROM purchase_line WHERE tenant=?", (tenant,))}
-    overlap = [p for p in file_periods if p in existing]
-
-    if mode == "all" and overlap and not override:
-        con.close()
-        raise CommitError(
-            f"{len(overlap)} month(s) in this file are already loaded. Mode 'all' would "
-            "count them twice. Use 'new_only' to import just the new months, or 'replace' "
-            "to overwrite the existing ones.")
-
-    take, replaced = file_periods, []
-    if mode == "new_only":
-        take = [p for p in file_periods if p not in existing]
-        if not take:
-            con.close()
-            raise CommitError(
-                "every month in this file is already loaded, so 'new_only' has nothing to "
-                "import. Use 'replace' if you mean to overwrite them.")
-    elif mode == "replace":
-        replaced = overlap
-        for y, m in overlap:
-            con.execute("DELETE FROM purchase_line WHERE tenant=? AND year=? AND month=?",
-                        (tenant, y, m))
-
-    # An adapter cannot tell whether a month is complete — only the pre-flight can, by
-    # comparing it against this client's history. So the verdict is recorded HERE, against
-    # the months it applies to, and every screen reads it from the data rather than
-    # re-deriving it. A month judged partial is kept and labelled, never dropped.
-    partial = set()
-    try:
-        rep = json.loads(row["report_json"])
-        for fnd in rep.get("findings", []):
-            if fnd.get("code") in ("partial_months", "thin_months"):
-                partial |= set(fnd.get("months") or [])
-    except Exception:
-        pass
-
-    keep = set(take)
-    rows = [(tenant, l["year"], l["month"], l["klantnr"], l["restaurant"], l["city"],
-             l["artikelnr"], l["aantal"], l["omzet"], l["kg"], l["kg_known"],
-             ("PARTIAL" if f"{l['year']}-{l['month']:02d}" in partial else "complete"), uid)
-            for l in lines if (l["year"], l["month"]) in keep]
-    con.executemany(
-        "INSERT INTO purchase_line VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-
-    now = _now()
-    # products are identity, not measurement: refresh what a supplier may have improved
-    # (descriptions get corrected), but never invent a first_seen that is later than reality
-    for p in prods:
-        con.execute("""
-            INSERT INTO product (tenant, artikelnr, description, brand, category, ivp, vp,
-                                 maat, eenh, ean, ean_he, foodflag, first_seen, last_seen)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(tenant, artikelnr) DO UPDATE SET
-                description=excluded.description, brand=excluded.brand,
-                category=excluded.category, ivp=excluded.ivp, vp=excluded.vp,
-                maat=excluded.maat, eenh=excluded.eenh,
-                ean=CASE WHEN excluded.ean<>'' THEN excluded.ean ELSE product.ean END,
-                last_seen=excluded.last_seen""",
-            (tenant, p["artikelnr"], p["description"], p["brand"], p["category"], p["ivp"],
-             p["vp"], p["maat"], p["eenh"], p["ean"], p["ean_he"], p["foodflag"], now, now))
-
-    # Tell the shared catalogue about anything it has not seen. A product resolved once is
-    # resolved for every future upload and every future client — that is the whole reason
-    # the catalogue is shared. Non-fatal: the import has already succeeded.
-    learned = None
-    try:
-        learned = catalogue.learn([
-            dict(artikelnr=p["artikelnr"], description=p["description"] or "",
-                 category=p["category"] or "", ean_ce=p["ean"] or "",
-                 ean_he=p["ean_he"] or "")
-            for p in prods])
-    except Exception:
-        learned = None
-
-    note = (f"imported {len(rows):,} lines for {len(take)} month(s)"
-            + (f"; replaced {len(replaced)} existing month(s)" if replaced else "")
-            + (f"; skipped {len(file_periods) - len(take)} already-loaded month(s)"
-               if len(take) < len(file_periods) else ""))
-    con.execute("UPDATE upload SET committed_at=?, commit_mode=?, commit_note=? "
-                "WHERE id=? AND tenant=?", (now, mode, note, uid, tenant))
-    con.commit()
-    db.invalidate()   # the client's data just changed
-    con.close()
-
-    return dict(upload_id=uid, mode=mode, note=note, imported_lines=len(rows),
-                catalogue_learned=(learned or {}).get("learned"),
-                catalogue_reachable=learned is not None,
-                imported_months=[f"{y}-{m:02d}" for y, m in take],
-                replaced_months=[f"{y}-{m:02d}" for y, m in replaced],
-                skipped_months=[f"{y}-{m:02d}" for y, m in file_periods if (y, m) not in keep])

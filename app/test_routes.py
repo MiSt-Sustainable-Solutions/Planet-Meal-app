@@ -86,7 +86,7 @@ for month in range(1, 7):
     con.execute("INSERT INTO purchase_line (tenant, year, month, klantnr, restaurant, "
                 "city, artikelnr, aantal, omzet, kg, kg_known, quality, source_upload) "
                 "VALUES ('acme',2025,?,'K1','ACME CANTEEN','Delft','194072',10,500.0,"
-                "100.0,1,'complete','fixture')", (month,))
+                "100.0,1,'complete','upl-acme')", (month,))
 con.commit()
 con.close()
 db.invalidate()
@@ -95,7 +95,10 @@ db.invalidate()
 # reported as unreachable. Inserted directly rather than by uploading a file: this test is
 # about whether pages render, and test_app already owns whether staging works.
 con = db.connect()
-con.execute("INSERT INTO upload VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)",
+con.execute("""INSERT INTO upload
+               (id, tenant, filename, stored_path, adapter, year, uploaded_at, periods,
+                lines, products, spend_eur, verdict, report_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("upl-acme", "acme", "acme.xlsx", "", "sligro", 2025,
              "2025-01-01T00:00:00", '["2025-01"]', 1, 1, 500.0, "ok",
              json.dumps(dict(verdict="ok", findings=[], summary={},
@@ -103,6 +106,12 @@ con.execute("INSERT INTO upload VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL
                              products=1, spend_eur=500.0, periods=["2025-01"]))))
 con.commit()
 con.close()
+
+con = db.connect()
+con.execute("UPDATE upload SET selected=1")
+con.commit()
+con.close()
+db.invalidate()
 
 auth.create_user("boss", "boss-password-1", "admin", None, "Boss")
 auth.create_user("acmeuser", "acme-password-1", "client", "acme", "Acme")
@@ -187,7 +196,7 @@ for path, must_contain in (("/", "Acme Catering Co"),
                            ("/data-health", "Acme Catering Co"),
                            ("/history", "Acme Catering Co"),
                            ("/admin", "Acme Catering Co"),
-                           ("/upload", "Acme Catering Co"),
+                           ("/files", "Acme Catering Co"),
                            ("/login", "Sign")):
     body = TestClient(main.app).get(path).text if path == "/login" else admin.get(path).text
     P(must_contain in body and len(body) > 500,

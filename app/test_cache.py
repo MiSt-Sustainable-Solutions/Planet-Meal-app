@@ -32,6 +32,7 @@ import analysis          # noqa: E402
 import catalogue         # noqa: E402
 import config            # noqa: E402
 import db                # noqa: E402
+import store             # noqa: E402
 
 FAILED = []
 
@@ -82,6 +83,27 @@ LINES = [
 ]
 
 con = db.connect()
+
+# Lines only count when the file they came from is counted, so the fixture makes one.
+# Two of them, in fact: the second insert further down represents a later file arriving,
+# which is what the fingerprint is being asked to notice.
+def _fixture_file(con, uid, name):
+    import json
+    store.upsert(
+        con, "upload",
+        ["id", "tenant", "filename", "stored_path", "adapter", "year", "uploaded_at",
+         "periods", "lines", "products", "spend_eur", "verdict", "report_json",
+         "committed_at", "commit_mode", "commit_note", "selected", "archived_at"],
+        [(uid, config.TENANT, name, "", "sligro", 2025, "2025-01-01T00:00:00",
+          json.dumps(["2025-01"]), 0, 0, 0.0, "go",
+          json.dumps(dict(verdict="go", findings=[], summary={}, filename=name,
+                          adapter="sligro", lines=0, products=0, spend_eur=0.0,
+                          periods=["2025-01"])),
+          None, None, None, 1, None)],
+        conflict=["id"])
+
+
+_fixture_file(con, 'fixture', 'fixture.xlsx')
 for art, desc, cat, ean, kg, eur in LINES:
     con.execute("INSERT INTO product (tenant, artikelnr, description, category, ean, "
                 "ean_he, first_seen, last_seen) VALUES (?,?,?,?,?,'','2025-01','2025-06')",
@@ -138,6 +160,7 @@ P(analysis.run(frm="2025-01", to="2025-03").get("cached") is True,
 print("\n=== changing the client's own data invalidates it ===")
 fp_before = db.window_fingerprint(2025, 1, 2025, 12)
 con = db.connect()
+_fixture_file(con, "fixture2", "fixture2.xlsx")
 con.execute("INSERT INTO purchase_line (tenant, year, month, klantnr, restaurant, city, "
             "artikelnr, aantal, omzet, kg, kg_known, quality, source_upload) "
             "VALUES (?,2025,6,'K1','Aula','Delft','102030',5,90,55,1,'complete','fixture2')",

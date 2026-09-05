@@ -2,6 +2,12 @@
 {% block title %}History{% endblock %}
 {% block body %}
 
+{#
+  "Files received" used to sit at the bottom of this page as well, with different columns
+  from the upload page's list and no actions on it -- the same files in two places, and
+  neither one somewhere you could manage them. They have their own page now.
+#}
+
 <section class="light">
   <div class="inner">
     <div class="sec-label">History</div>
@@ -36,44 +42,12 @@
         </tbody>
       </table>
     </div>
+    <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">
+      What each run was built from is on <a href="/files">Files</a>.
+    </p>
     {% else %}
     <p class="lede" style="margin-top:24px;">No analyses have been run yet.</p>
     <p style="margin-top:20px;"><a class="btn-main" href="/">Run one now</a></p>
-    {% endif %}
-  </div>
-</section>
-
-<section class="dark tight">
-  <div class="inner">
-    <div class="sec-label sl-teal">Files received</div>
-    {% if uploads %}
-    <div class="card scroll-x">
-      <table class="tbl">
-        <thead><tr>
-          <th>File</th><th>Read as</th><th>Uploaded</th><th class="num">Lines</th>
-          <th>Verdict</th><th>State</th><th></th>
-        </tr></thead>
-        <tbody>
-        {% for u in uploads %}
-        <tr>
-          <td class="name">{{ u.filename|truncate(36) }}</td>
-          <td class="muted">{{ u.adapter }}</td>
-          <td class="muted">{{ u.uploaded_at|replace('T',' ') }}</td>
-          <td class="num">{{ "{:,}".format(u.lines) }}</td>
-          <td>
-            <span class="pill {{ 'soft' if u.verdict=='go' else ('warn' if u.verdict=='go_with_warnings' else 'bad') }}">
-              {{ u.verdict|replace('_',' ') }}
-            </span>
-          </td>
-          <td class="muted">{{ 'committed' if u.committed else 'staged' }}</td>
-          <td><a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a></td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <p class="muted">No files received yet.</p>
     {% endif %}
   </div>
 </section>
