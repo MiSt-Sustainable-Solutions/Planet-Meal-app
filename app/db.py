@@ -289,6 +289,31 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
             for r in rows]
 
 
+def lines_from_upload(upload_id: str, tenant: str | None = None) -> list[dict]:
+    """Every line ONE file supplied, shaped for the catalogue.
+
+    Deliberately ignores selection and ownership. Those decide what makes up a client's
+    numbers; this answers a different question -- what is in this file -- and the answer
+    should not change because somebody ticked a box on another page.
+    """
+    tenant = tenant or config.TENANT
+    con = connect()
+    rows = con.execute("""
+        SELECT l.artikelnr, p.description, p.category, p.ean, p.ean_he,
+               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known
+        FROM purchase_line l
+        LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
+        WHERE l.tenant=? AND l.source_upload=?""", (tenant, upload_id)).fetchall()
+    con.close()
+    return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
+                 category=r["category"] or "", restaurant=r["restaurant"] or "",
+                 klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
+                 aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
+                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
+                 ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+            for r in rows]
+
+
 def piece_items(y0: int, m0: int, y1: int, m1: int, limit: int = 100,
                 tenant: str | None = None) -> dict:
     """The lines that weigh zero. The app's own data, so no API call needed."""

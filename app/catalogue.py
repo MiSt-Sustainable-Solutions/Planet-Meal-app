@@ -88,6 +88,33 @@ def score(lines: list[dict], label: str = "analysis", profile: str | None = None
     return r.json()
 
 
+def score_lines(lines: list[dict], label: str = "analysis",
+                profile: str | None = None) -> dict:
+    """Every line back with what the catalogue made of it. -> {window, lines, rows}.
+
+    The aggregates say the footprint is a number. This says which rows it is made of and
+    where each one came from -- the group, the kg CO2e, and which rung of which ladder
+    produced them. It is what lets a client check any figure back to its source.
+    """
+    if not lines:
+        raise CatalogueDown("there are no purchase lines to score")
+    payload = {"lines": lines, "label": label}
+    if profile:
+        payload["profile"] = profile
+    try:
+        with _client() as c:
+            r = c.post("/analysis/run/lines", json=payload)
+    except Exception as e:
+        raise CatalogueDown(
+            f"could not reach the catalogue API at {config.CATALOGUE_API} "
+            f"({type(e).__name__}). Is it running?") from e
+    if r.status_code != 200:
+        detail = r.json().get("detail") if r.headers.get("content-type", "").startswith(
+            "application/json") else r.text
+        raise CatalogueDown(f"the catalogue refused the request ({r.status_code}): {detail}")
+    return r.json()
+
+
 def work_queue(lines: list[dict], label: str = "analysis", limit: int = 50) -> dict:
     try:
         with _client() as c:

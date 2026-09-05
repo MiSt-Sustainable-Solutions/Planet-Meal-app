@@ -180,6 +180,8 @@
           <td>
             <div class="acts-cell">
               <a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a>
+              <a class="btn-ghost" href="/upload/{{ u.upload_id }}/lines.xlsx"
+                 title="Every line in this file with its CO2 and EAT-Lancet group">Lines</a>
               <form method="post" action="/upload/{{ u.upload_id }}/select" style="display:inline;">
                 <input type="hidden" name="on" value="{{ 0 if u.selected else 1 }}"/>
                 <button class="btn-ghost" type="submit">
@@ -198,6 +200,11 @@
         </tbody>
       </table>
     </div>
+    {% if months_held %}
+    <p style="margin-top:18px;">
+      <a class="btn-ghost" href="/lines.xlsx">Download every counted line</a>
+    </p>
+    {% endif %}
     <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">
       {% if me.is_admin %}
         <strong>Count this</strong> puts a file into the numbers; a month supplied by two

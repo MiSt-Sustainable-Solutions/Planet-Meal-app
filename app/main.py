@@ -38,6 +38,7 @@ import catalogue
 import charts
 import config
 import db
+import lines_export
 import selection
 import uploads
 from adapters import mist_template
@@ -632,6 +633,59 @@ def set_month_owner(request: Request, year: int = Form(...), month: int = Form(.
     except ValueError as e:
         return files_page(request, error=str(e))
     return RedirectResponse("/files", status_code=303)
+
+
+# --------------------------------------------------------------------------- lines
+def _lines_workbook(request: Request, rows, label: str, filename: str):
+    """Score rows line by line and hand back a workbook. Shared by both entry points."""
+    p = me(request)
+    if not rows:
+        raise HTTPException(400, "there are no purchase lines to export")
+    scored = catalogue.score_lines(rows, label=label)
+    data = lines_export.workbook(
+        scored["rows"], client_name_for(p), label,
+        version=scored.get("catalogue_version"))
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def client_name_for(p) -> str:
+    name, _caterer = auth.tenant_names(p.tenant)
+    return name
+
+
+@app.get("/upload/{upload_id}/lines.xlsx")
+def file_lines_xlsx(request: Request, upload_id: str):
+    """Every line this ONE file supplied, with what we made of it.
+
+    Available whether or not the file is counted -- what a file contains is a fact about
+    the file, and being able to look at it before deciding to count it is most of why
+    this exists.
+    """
+    p = me(request)
+    rep = uploads.get(upload_id, p.tenant)
+    if rep is None:
+        raise HTTPException(404, f"no file {upload_id}")
+    rows = db.lines_from_upload(upload_id, p.tenant)
+    stamp = (rep.get("filename") or upload_id).rsplit(".", 1)[0].replace(" ", "_")
+    return _lines_workbook(request, rows, f"{rep.get('filename') or upload_id}",
+                           f"PLANETmeal_lines_{stamp}.xlsx")
+
+
+@app.get("/lines.xlsx")
+def window_lines_xlsx(request: Request, window: str | None = None):
+    """Every counted line in a window -- the selection, not one file."""
+    p = me(request)
+    try:
+        label, y0, m0, y1, m1 = analysis.parse_window(
+            window or analysis.default_window(p.tenant), tenant=p.tenant)
+    except analysis.WindowError as e:
+        raise HTTPException(400, str(e))
+    rows = db.lines_for(y0, m0, y1, m1, tenant=p.tenant)
+    return _lines_workbook(request, rows, label,
+                           f"PLANETmeal_lines_{p.tenant}_{label.replace(' ', '')}.xlsx")
 
 
 # --------------------------------------------------------------------------- export
