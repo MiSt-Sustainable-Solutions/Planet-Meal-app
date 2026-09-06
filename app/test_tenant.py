@@ -247,7 +247,11 @@ for tenant, spec in CLIENTS.items():
     body = c.get("/").text
     other = [v for t, v in CLIENTS.items() if t != tenant][0]
     P(spec["name"] in body, f"{spec['name']:18} sees its own name")
-    P(spec["caterer"] in body, f"{spec['name']:18} sees its own caterer")
+    # The caterer used to sit in the dashboard header and this asserted each client saw
+    # its own. It is off that page now -- it is who runs the kitchen, not whose purchasing
+    # this is -- so the property worth checking has inverted: nobody's caterer belongs on
+    # a client's screen, theirs included. It is on MiSt's own Clients cards instead.
+    P(spec["caterer"] not in body, f"{spec['name']:18} is shown no caterer, not even its own")
     P(other["name"] not in body and other["caterer"] not in body,
       f"{spec['name']:18} is never shown {other['name']}'s")
     # The chip in the header, not the whole page. "TU Delft" appears elsewhere on it

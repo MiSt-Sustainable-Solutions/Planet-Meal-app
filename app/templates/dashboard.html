@@ -35,7 +35,11 @@
   <div class="inner">
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
       <div>
-        <div class="sec-label">{{ client_name }} · {{ caterer_name }} · {{ result.window.label }}</div>
+        {# The caterer used to sit between these two. It is who runs the kitchen, not
+           whose purchasing this is, and on the one line that says what you are looking
+           at it read as part of the client's name. Still on the tenant row; just not
+           here. It also left a dangling separator for every client with no caterer set. #}
+        <div class="sec-label">{{ client_name }} · {{ result.window.label }}</div>
         <h1 class="page-h1">What this kitchen <em>actually bought.</em></h1>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end;">

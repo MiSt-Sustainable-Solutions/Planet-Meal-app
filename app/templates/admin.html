@@ -312,7 +312,15 @@
       <div class="card">
         <div style="font-family:var(--serif);font-size:19px;font-weight:700;color:var(--white);">{{ t.display_name }}</div>
         <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--teal-light);margin-top:8px;">{{ t.tenant }}</div>
+        {# The caterer lives here and nowhere else. It is who runs the kitchen, which is
+           ours to know and not a label to hang over a client's own dashboard. Collected
+           on the account form, so it has to be visible somewhere or stop being asked for. #}
+        {% if t.caterer %}
         <div style="font-size:13px;color:rgba(242,248,243,.7);margin-top:10px;">
+          catered by {{ t.caterer }}
+        </div>
+        {% endif %}
+        <div style="font-size:13px;color:rgba(242,248,243,.7);margin-top:6px;">
           {{ users|selectattr('tenant','equalto',t.tenant)|list|length }} login(s)
         </div>
       </div>
