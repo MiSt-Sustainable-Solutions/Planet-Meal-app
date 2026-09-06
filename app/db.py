@@ -289,6 +289,60 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
             for r in rows]
 
 
+def lines_picked(owner: dict, tenant: str | None = None) -> list[dict]:
+    """The lines a chosen set of files supplies, one file per month.
+
+    `owner` maps (year, month) -> upload_id and comes from selection.resolve(), which is
+    what stops two chosen files that both cover March from counting March twice.
+
+    Ignores selected/archived entirely. This answers "what do these files say", and the
+    answer must not depend on which of them somebody happens to be counting today.
+    """
+    if not owner:
+        return []
+    ids = sorted(set(owner.values()))
+    marks = ",".join("?" for _ in ids)
+    con = connect()
+    rows = con.execute(f"""
+        SELECT l.artikelnr, p.description, p.category, p.ean, p.ean_he,
+               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known,
+               l.source_upload
+        FROM purchase_line l
+        LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
+        WHERE l.tenant=? AND l.source_upload IN ({marks})""",
+        (tenant or config.TENANT, *ids)).fetchall()
+    con.close()
+    return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
+                 category=r["category"] or "", restaurant=r["restaurant"] or "",
+                 klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
+                 aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
+                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
+                 ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+            for r in rows
+            if owner.get((r["year"], r["month"])) == r["source_upload"]]
+
+
+def picked_fingerprint(upload_ids: list[str], tenant: str | None = None) -> str:
+    """Half the cache key for a chosen set of files.
+
+    window_fingerprint() aggregates the COUNTED data for a period, so it cannot see a
+    file that is not being counted -- and an ad-hoc pick is mostly interesting for
+    exactly those. Re-import one and the months would look untouched while the answer
+    changed, which is a stale number nobody asked for.
+    """
+    if not upload_ids:
+        return "empty"
+    marks = ",".join("?" for _ in upload_ids)
+    con = connect()
+    rows = con.execute(
+        "SELECT source_upload, COUNT(*), SUM(kg), SUM(omzet) FROM purchase_line "
+        f"WHERE tenant=? AND source_upload IN ({marks}) GROUP BY source_upload "
+        "ORDER BY source_upload", (tenant or config.TENANT, *upload_ids)).fetchall()
+    con.close()
+    parts = [f"{r[0]}:{r[1]}:{r[2]}:{r[3]}" for r in rows]
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+
+
 def lines_from_upload(upload_id: str, tenant: str | None = None) -> list[dict]:
     """Every line ONE file supplied, shaped for the catalogue.
 
@@ -314,28 +368,52 @@ def lines_from_upload(upload_id: str, tenant: str | None = None) -> list[dict]:
             for r in rows]
 
 
+def _owner_clause(owner: dict) -> tuple[str, list]:
+    """SQL restricting lines to the ONE chosen file per month, and its parameters.
+
+    The counted reads get the same restriction from month_owner through COUNTED_WHERE.
+    An ad-hoc pick has no stored owner -- deliberately, it must not disturb the client's
+    real selection -- so it carries the decision in the query instead.
+    """
+    if not owner:
+        return " AND 1=0", []
+    terms, params = [], []
+    for (y, m), upload_id in sorted(owner.items()):
+        terms.append("(l.year=? AND l.month=? AND l.source_upload=?)")
+        params.extend([y, m, upload_id])
+    return " AND (" + " OR ".join(terms) + ")", params
+
+
 def piece_items(y0: int, m0: int, y1: int, m1: int, limit: int = 100,
-                tenant: str | None = None) -> dict:
-    """The lines that weigh zero. The app's own data, so no API call needed."""
+                tenant: str | None = None, owner: dict | None = None) -> dict:
+    """The lines that weigh zero. The app's own data, so no API call needed.
+
+    `owner` switches it from the counted selection to a chosen set of files, so that a
+    per-file analysis reports ITS per-piece gap rather than the client's official one.
+    """
     tenant = tenant or config.TENANT
+    if owner is None:
+        join, cond, extra = COUNTED_JOIN, COUNTED_WHERE, []
+    else:
+        join, (cond, extra) = "", _owner_clause(owner)
     con = connect()
     rows = con.execute("""
         SELECT l.artikelnr, p.description, p.category, p.vp, p.eenh,
                SUM(l.aantal) AS pieces, SUM(l.omzet) AS spend
         FROM purchase_line l
         LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr""" +
-        COUNTED_JOIN + """
+        join + """
         WHERE l.tenant=? AND l.kg_known=0 AND (l.year*100+l.month) BETWEEN ? AND ?""" +
-        COUNTED_WHERE + """
+        cond + """
         -- every product column here is determined by artikelnr (it is the product
         -- table's key), so naming them changes nothing except that Postgres will
         -- accept it. SQLite allowed the shorter form and picked a value at random.
         GROUP BY l.artikelnr, p.description, p.category, p.vp, p.eenh
         ORDER BY spend DESC""",
-        (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchall()
-    total = con.execute("""SELECT SUM(l.omzet) FROM purchase_line l""" + COUNTED_JOIN +
-        """ WHERE l.tenant=? AND (l.year*100+l.month) BETWEEN ? AND ?""" + COUNTED_WHERE,
-        (tenant, y0 * 100 + m0, y1 * 100 + m1)).fetchone()[0] or 0
+        (tenant, y0 * 100 + m0, y1 * 100 + m1, *extra)).fetchall()
+    total = con.execute("""SELECT SUM(l.omzet) FROM purchase_line l""" + join +
+        """ WHERE l.tenant=? AND (l.year*100+l.month) BETWEEN ? AND ?""" + cond,
+        (tenant, y0 * 100 + m0, y1 * 100 + m1, *extra)).fetchone()[0] or 0
     con.close()
     spend = sum(r["spend"] or 0 for r in rows)
     return dict(products=len(rows), spend_eur=round(spend),

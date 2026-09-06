@@ -24,7 +24,8 @@ from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (FastAPI, File, Form, HTTPException, Query, Request,
+                     UploadFile)
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                RedirectResponse, Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
@@ -249,20 +250,38 @@ def admin_home(request: Request, error: str | None = None,
 
 # --------------------------------------------------------------------------- dashboard
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, window: str | None = None, refresh: int = 0):
+def dashboard(request: Request, window: str | None = None, refresh: int = 0,
+              file: list[str] | None = Query(None)):
     """`?refresh=1` recalculates instead of serving the saved result.
 
     Everything else reads the cache: the same window, the same purchase data and the same
     catalogue version means the saved answer is still the right answer.
+
+    `?file=a&file=b` asks the other question this page can answer: not "what did we buy
+    in FY2025" but "what do these files say". Composed here into one window string rather
+    than threaded through as a second concept, so caching, exporting and the per-line
+    sheet all keep working without knowing the difference.
     """
     p = me(request)
+    # Archived files and files holding no purchase lines are not worth offering: one is
+    # deliberately out of the way, the other would only produce an error saying so.
+    pickable = [u for u in visible_uploads(p) if not u["archived"] and u["held"]]
+    if file:
+        # Only files this person can see. Otherwise ?file= is a way to read another
+        # tenant's data, or a client's way to reach a file we are deliberately not showing.
+        allowed = {u["upload_id"] for u in pickable}
+        file = [f for f in file if f in allowed]
+    chosen_ids = sorted(set(file or []))
+    selected = ("files:" + ",".join(chosen_ids)) if chosen_ids else (
+        window or analysis.default_window(p.tenant))
+
     try:
-        selected = window or analysis.default_window(p.tenant)
         result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             request, "dashboard.html", ctx(request, "dashboard", error=str(e),
                                            window_options=analysis.windows(p.tenant),
+                                           pickable=pickable, chosen_ids=chosen_ids,
                                            selected_window=window))
 
     relabel(result)
@@ -270,6 +289,7 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0):
         request, "dashboard",
         result=result, selected_window=selected, stale=result.get("stale"),
         window_options=analysis.windows(p.tenant),
+        pickable=pickable, chosen_ids=chosen_ids,
         conf_bar=charts.confidence(result["headline"]["confidence"]["by_tier"]),
         trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
         rest_chart=charts.bars(result["by_restaurant"], "restaurant", "co2_kg",
@@ -512,6 +532,24 @@ def account_change(request: Request, current: str = Form(...),
     return RedirectResponse(f"{home}?done=1", status_code=303)
 
 
+def visible_uploads(p) -> list[dict]:
+    """The files this person may see.
+
+    A client sees the files their numbers are made of, and only those. Everything else --
+    files kept but not counted, the archive, a month two files both supply -- is MiSt's
+    working state, and showing it to a client raises questions about their data that are
+    really questions about our housekeeping.
+
+    One function because two screens need the same answer: the Files page lists them and
+    the dashboard offers them to choose between. Two copies of this rule would let a
+    client pick a file they cannot see.
+    """
+    held = uploads.listing(limit=200, tenant=p.tenant)
+    if p.is_admin:
+        return held
+    return [u for u in held if u["selected"] and not u["archived"]]
+
+
 @app.get("/files", response_class=HTMLResponse)
 def files_page(request: Request, error: str | None = None):
     """One place for files. Deliberately NOT admin-only.
@@ -523,11 +561,12 @@ def files_page(request: Request, error: str | None = None):
     """
     p = me(request)
     snap = db.snapshot(p.tenant)
+    held = visible_uploads(p)
     return templates.TemplateResponse(request, "files.html", ctx(
         request, "files", error=error,
-        uploads=uploads.listing(limit=200, tenant=p.tenant),
+        uploads=held,
         adapters=adapters.listing(),
-        contested=selection.contested(p.tenant),
+        contested=selection.contested(p.tenant) if p.is_admin else [],
         months_held=len(snap["months"])))
 
 
@@ -784,7 +823,7 @@ def export_xlsx(request: Request, window: str | None = None):
     # file, rather than being sent somewhere else to fetch them.
     try:
         scored = catalogue.score_lines(
-            db.lines_for(y0, m0, y1, m1, tenant=p.tenant), label=h["window"])
+            analysis.rows_for(win, p.tenant, y0, m0, y1, m1), label=h["window"])
     except catalogue.CatalogueDown as e:
         raise HTTPException(409, str(e))
     lines_export.add_sheet(wb, scored["rows"], client_name_for(p), h["window"],

@@ -25,8 +25,13 @@
     <div class="sec-label">Files</div>
     <h1 class="page-h1">What the numbers are <em>built from.</em></h1>
     <p class="lede" style="margin-top:22px;max-width:64ch;">
+      {% if me.is_admin %}
       Every file {{ client_name }}&rsquo;s figures rest on, and every file that is kept
       but not counted. A file only changes a number once you count it.
+      {% else %}
+      Every file {{ client_name }}&rsquo;s figures rest on. Take any one of them away with
+      its lines priced and grouped, and check the dashboard against it.
+      {% endif %}
     </p>
 
     {% if error %}
@@ -38,6 +43,24 @@
     </div>
     {% endif %}
 
+    {% if not me.is_admin %}
+    <div class="grid g3" style="margin-top:30px;">
+      <div class="card"><div class="stat">
+        <div class="k">Files</div>
+        <div class="v">{{ uploads|length }}</div>
+        <div class="sub">making up the numbers</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Lines</div>
+        <div class="v">{{ "{:,}".format(uploads|sum(attribute='held')) }}</div>
+        <div class="sub">purchase lines counted</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">Months held</div><div class="v">{{ months_held }}</div>
+        <div class="sub">of purchase history</div>
+      </div></div>
+    </div>
+    {% else %}
     <div class="grid g4" style="margin-top:30px;">
       <div class="card"><div class="stat">
         <div class="k">Files</div>
@@ -60,6 +83,7 @@
         <div class="sub">of purchase history</div>
       </div></div>
     </div>
+    {% endif %}
 
     {% if me.is_admin %}
     <div class="card upl" style="margin-top:22px;">
@@ -146,7 +170,8 @@
       <table class="tbl">
         <thead><tr>
           <th>File</th><th>Months</th><th class="num">Lines</th>
-          <th class="num">In the numbers</th><th>Checked</th><th>State</th><th>Received</th>
+          <th class="num">In the numbers</th>
+          {% if me.is_admin %}<th>Checked</th><th>State</th>{% endif %}<th>Received</th>
           <th></th>
         </tr></thead>
         <tbody>
@@ -166,6 +191,7 @@
             {% if u.held %}{{ "{:,}".format(u.held) }}
             {% else %}<span class="muted" title="This file holds no purchase lines, so counting it changes nothing.">none</span>{% endif %}
           </td>
+          {% if me.is_admin %}
           <td>
             <span class="pill {{ 'soft' if u.verdict=='go' else ('warn' if u.verdict=='go_with_warnings' else 'bad') }}">
               {{ u.verdict|replace('_',' ') }}
@@ -175,6 +201,7 @@
             {% if u.selected %}<span class="pill soft">counted</span>
             {% else %}<span class="pill warn">not counted</span>{% endif %}
           </td>
+          {% endif %}
           <td class="muted">{{ (u.uploaded_at or '')[:10] }}</td>
           <td>
             <div class="acts-cell">

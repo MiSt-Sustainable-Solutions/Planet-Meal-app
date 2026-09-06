@@ -100,6 +100,51 @@ def contested(tenant: str) -> list[dict]:
     return out
 
 
+def resolve(tenant: str, upload_ids: list[str]) -> tuple[dict, list[dict]]:
+    """Which of these files supplies each month, and where two of them both did.
+
+    For an ad-hoc question -- "what do THESE files say" -- rather than for the counted
+    numbers. It deliberately does not read or write month_owner: that table belongs to
+    the client's official figures and must not move because somebody asked a question.
+
+    The rule is the one _settle applies by default, the file with the most lines for that
+    month, and it is applied here rather than stored. It is also REPORTED, which is the
+    whole point of the function existing. Two files quietly covering one month is a
+    double count, and a double-counted footprint does not look wrong -- it looks like a
+    bad year.
+
+    -> ({(year, month): upload_id}, [overlap, ...])
+    """
+    if not upload_ids:
+        return {}, []
+    marks = ",".join("?" for _ in upload_ids)
+    con = db.connect()
+    rows = con.execute(
+        "SELECT year, month, source_upload, COUNT(*) AS n FROM purchase_line "
+        f"WHERE tenant=? AND source_upload IN ({marks}) "
+        "GROUP BY year, month, source_upload", (tenant, *upload_ids)).fetchall()
+    names = {r[0]: r[1] for r in con.execute(
+        f"SELECT id, filename FROM upload WHERE tenant=? AND id IN ({marks})",
+        (tenant, *upload_ids))}
+    con.close()
+
+    by_month: dict[tuple[int, int], list] = {}
+    for r in rows:
+        by_month.setdefault((r[0], r[1]), []).append((r[3], r[2]))
+
+    owner, overlaps = {}, []
+    for (y, m), cands in sorted(by_month.items()):
+        # most lines wins; the id breaks a tie so the same pick is the same answer twice
+        cands.sort(key=lambda c: (-c[0], c[1]))
+        owner[(y, m)] = cands[0][1]
+        if len(cands) > 1:
+            overlaps.append(dict(
+                period=f"{y}-{m:02d}",
+                chosen=names.get(cands[0][1], cands[0][1]), chosen_lines=cands[0][0],
+                dropped=[dict(filename=names.get(i, i), lines=n) for n, i in cands[1:]]))
+    return owner, overlaps
+
+
 def _settle(con, tenant: str, by: str = "") -> int:
     """Give every contested month an owner, and drop owners that are no longer contested.
 

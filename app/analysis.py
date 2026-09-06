@@ -13,6 +13,7 @@ the profile changes later, old numbers still explain themselves.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import re
 import uuid
@@ -22,15 +23,52 @@ import config
 import db
 
 FY = re.compile(r"^FY(\d{4})$", re.I)
+PICK = re.compile(r"^files:(.+)$", re.I)
 
 
 class WindowError(ValueError):
     pass
 
 
+def picked(window: str | None) -> list[str] | None:
+    """The upload ids a 'files:a,b' window names, or None for an ordinary period.
+
+    One function so that every place which has to behave differently for a chosen set of
+    files asks the same question in the same way, instead of each parsing the string.
+    """
+    m = PICK.match((window or "").strip())
+    if not m:
+        return None
+    ids = [i.strip() for i in m.group(1).split(",") if i.strip()]
+    if not ids:
+        raise WindowError("no files were chosen")
+    return sorted(set(ids))
+
+
 def parse_window(window: str | None = None, frm: str | None = None, to: str | None = None,
                  tenant: str | None = None):
-    """-> (label, y0, m0, y1, m1). 'FY2025', 'all', or from/to as YYYY-MM."""
+    """-> (label, y0, m0, y1, m1). 'FY2025', 'all', 'files:a,b', or from/to as YYYY-MM."""
+    # Before the months check below, which asks what is COUNTED. A chosen set of files is
+    # a question about those files, and it stays answerable when nothing is counted at all.
+    chosen = picked(window)
+    if chosen:
+        import selection
+        owner, _overlaps = selection.resolve(tenant, chosen)
+        if not owner:
+            raise WindowError(
+                "the files you chose hold no purchase lines — nothing to analyse")
+        con = db.connect()
+        marks = ",".join("?" for _ in chosen)
+        names = [r[0] for r in con.execute(
+            f"SELECT filename FROM upload WHERE tenant=? AND id IN ({marks}) "
+            "ORDER BY filename", (tenant or config.TENANT, *chosen))]
+        con.close()
+        got = sorted(owner)
+        (y0, m0), (y1, m1) = got[0], got[-1]
+        label = (f"File: {names[0]}" if len(names) == 1
+                 else f"{len(chosen)} files chosen")
+        return label, y0, m0, y1, m1
+
     months = db.months(tenant)
     if not months:
         import uploads
@@ -109,6 +147,20 @@ def windows(tenant: str | None = None) -> list[dict]:
     return out
 
 
+def rows_for(window: str | None, tenant: str, y0: int, m0: int, y1: int, m1: int):
+    """The purchase lines a window covers, period or chosen files alike.
+
+    So that the per-line export and the analysis it must reconcile against can never be
+    reading two different sets of rows.
+    """
+    chosen = picked(window)
+    if not chosen:
+        return db.lines_for(y0, m0, y1, m1, tenant)
+    import selection
+    owner, _overlaps = selection.resolve(tenant, chosen)
+    return db.lines_picked(owner, tenant)
+
+
 # --------------------------------------------------------------------------- caching
 #
 # An analysis is expensive: ~29,000 lines posted to the catalogue and scored, about thirty
@@ -131,7 +183,8 @@ CACHE_COLUMNS = ("id, tenant, label, period_from, period_to, eat_profile, ran_at
                  "window_key, catalogue_version, data_fingerprint")
 
 
-def cache_key(y0: int, m0: int, y1: int, m1: int, profile: str | None) -> str:
+def cache_key(y0: int, m0: int, y1: int, m1: int, profile: str | None,
+              chosen: list[str] | None = None) -> str:
     """The window and the profile that was ASKED FOR, as one string.
 
     Not the profile that came back. A caller who asks for the default gets
@@ -142,7 +195,13 @@ def cache_key(y0: int, m0: int, y1: int, m1: int, profile: str | None) -> str:
     If the default itself changes, that is a change to the eat_profile table, which moves
     the catalogue version, which invalidates these rows anyway.
     """
-    return f"{y0}-{m0:02d}:{y1}-{m1:02d}|{profile or 'default'}"
+    base = f"{y0}-{m0:02d}:{y1}-{m1:02d}|{profile or 'default'}"
+    if chosen:
+        # Two different picks can cover the same months, so the months alone would serve
+        # one pick's answer for the other. Hashed rather than listed to keep the key short.
+        digest = hashlib.sha1(",".join(sorted(chosen)).encode()).hexdigest()[:10]
+        base += f"|files:{len(chosen)}:{digest}"
+    return base
 
 
 def _lookup(tenant: str, wkey: str, fingerprint: str,
@@ -227,8 +286,19 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
     """
     tenant = tenant or config.TENANT
     label, y0, m0, y1, m1 = parse_window(window, frm, to, tenant)
-    wkey = cache_key(y0, m0, y1, m1, profile)
-    fingerprint = db.window_fingerprint(y0, m0, y1, m1, tenant)
+
+    # A chosen set of files answers a different question from a period, and answers it
+    # from different rows: these files, whatever is being counted, with one file per
+    # month so that two of them covering March cannot count March twice.
+    chosen = picked(window)
+    owner, overlaps = (None, [])
+    if chosen:
+        import selection
+        owner, overlaps = selection.resolve(tenant, chosen)
+
+    wkey = cache_key(y0, m0, y1, m1, profile, chosen)
+    fingerprint = (db.picked_fingerprint(chosen, tenant) if chosen
+                   else db.window_fingerprint(y0, m0, y1, m1, tenant))
     live = catalogue.version()
     etag = live["etag"] if live else None
 
@@ -261,7 +331,8 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
                                      behind=None, note=None, reachable=False)
             return held
 
-    lines = db.lines_for(y0, m0, y1, m1, tenant)
+    lines = (db.lines_picked(owner, tenant) if chosen
+             else db.lines_for(y0, m0, y1, m1, tenant))
     if not lines:
         raise WindowError(f"no purchase lines in {label}")
 
@@ -285,9 +356,31 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
             message=("This window includes months that arrived in a partial export "
                      f"({', '.join(sorted(partial))}). Their volumes are a fraction of a "
                      "normal month and the totals here understate reality.")))
-    result["piece_items"] = db.piece_items(y0, m0, y1, m1, tenant=tenant)
+    result["piece_items"] = db.piece_items(y0, m0, y1, m1, tenant=tenant, owner=owner)
     result["window"] = dict(key=window or default_window(tenant), label=label,
                             period_from=f"{y0}-{m0:02d}", period_to=f"{y1}-{m1:02d}")
+
+    # What this is has to travel WITH the numbers, not sit in the URL that produced them.
+    # A figure from a chosen set of files is not the client's footprint for a period, and
+    # a screenshot of one carries no address bar.
+    result["picked"] = (dict(upload_ids=chosen, files=len(chosen), overlaps=overlaps)
+                        if chosen else None)
+    if chosen:
+        result["headline"]["caveats"].insert(0, dict(
+            code="chosen_files", severity="info", owner="MiSt",
+            message=(f"These numbers come from {len(chosen)} chosen "
+                     f"file{'' if len(chosen) == 1 else 's'}, not from what is being "
+                     "counted for this period. They are a working answer, not the "
+                     "reported footprint.")))
+    if overlaps:
+        result["headline"]["caveats"].insert(1, dict(
+            code="chosen_overlap", severity="warn", owner="MiSt",
+            message=("Two of the chosen files supply the same month, so each such month "
+                     "is counted once, from the file with the most lines for it: "
+                     + "; ".join(f"{o['period']} from {o['chosen']} "
+                                 f"(not {', '.join(d['filename'] for d in o['dropped'])})"
+                                 for o in overlaps[:6])
+                     + ("; and more" if len(overlaps) > 6 else "") + ".")))
 
     if save:
         result["ran_at"] = dt.datetime.now().isoformat(timespec="seconds")
