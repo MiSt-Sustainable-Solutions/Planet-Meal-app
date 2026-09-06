@@ -183,17 +183,23 @@ def review_sheet(products: list[dict], filename: str = "MiSt_review.xlsx",
     return r.content, int(r.headers.get("X-Review-Rows", 0))
 
 
-def curate(data: bytes, filename: str = "review.xlsx", dry_run: bool = False) -> dict:
+def curate(data: bytes, filename: str = "review.xlsx", dry_run: bool = False,
+           by: str = "") -> dict:
     """Send an answered review sheet back. THIS CHANGES THE SHARED CATALOGUE.
 
     Every client sees the result, which is the point: a decision made once is made for
     everyone. It is also why this is a deliberate action behind a button and not something
     that happens as a side effect of anything else.
+
+    `by` names the person, which the catalogue records against every decision. The admin
+    key says the request is allowed; it does not say who made it, and a history that
+    cannot answer "who decided this" answers half the question.
     """
     try:
         with _client(admin=True) as c:
             r = c.post("/catalogue/curate",
                        files={"file": (filename, data)},
+                       headers={"x-mist-actor": by} if by else {},
                        params={"dry_run": str(bool(dry_run)).lower()}, timeout=300)
     except Exception as e:
         raise CatalogueDown(

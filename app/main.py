@@ -390,11 +390,12 @@ async def curate(request: Request, file: UploadFile = File(...),
     filed, writing nothing. Worth doing: a decision here outranks every rule for every
     client, and the only thing worse than a wrong answer is finding out afterwards.
     """
-    me(request)                       # admin only; the gate has already checked
+    p = me(request)                   # admin only; the gate has already checked
     raw = await file.read()
     dry = bool(check)
     try:
-        report = catalogue.curate(raw, filename=file.filename or "review.xlsx", dry_run=dry)
+        report = catalogue.curate(raw, filename=file.filename or "review.xlsx",
+                                  dry_run=dry, by=p.username)
     except catalogue.CatalogueDown as e:
         return RedirectResponse(f"/data-health?curate_error={quote(str(e))}", status_code=303)
     lead = ("Checked, nothing written yet — this sheet would file "
@@ -404,6 +405,17 @@ async def curate(request: Request, file: UploadFile = File(...),
               else (f", {report['refused']} refused" if report.get("refused") else ""))
            + f". {report.get('portable', 0)} carry a barcode, so they apply to the same "
              "product from any wholesaler, for any client.")
+
+    # The number that was missing. Filing forty new decisions and overwriting forty
+    # existing ones read identically, and only one of them throws away somebody's earlier
+    # judgement. Said before the write on a check, and after it on a file, because it is
+    # the fact most likely to make a person stop.
+    if report.get("replaces"):
+        msg += (f" {report['replaces']} of them REPLACE a decision already made"
+                + (" — check those before filing." if dry else "."))
+    if report.get("snapshot"):
+        msg += (" Every decision as it stood beforehand was saved first, so this is "
+                "reversible.")
     return RedirectResponse(f"/data-health?curated={quote(msg)}", status_code=303)
 
 
