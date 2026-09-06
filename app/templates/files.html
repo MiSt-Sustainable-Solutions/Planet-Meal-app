@@ -147,7 +147,7 @@
         <thead><tr>
           <th>File</th><th>Months</th><th class="num">Lines</th>
           <th class="num">In the numbers</th><th>Checked</th><th>State</th><th>Received</th>
-          {% if me.is_admin %}<th></th>{% endif %}
+          <th></th>
         </tr></thead>
         <tbody>
         {% for u in uploads if not u.archived %}
@@ -176,12 +176,14 @@
             {% else %}<span class="pill warn">not counted</span>{% endif %}
           </td>
           <td class="muted">{{ (u.uploaded_at or '')[:10] }}</td>
-          {% if me.is_admin %}
           <td>
             <div class="acts-cell">
-              <a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a>
-              <a class="btn-ghost" href="/upload/{{ u.upload_id }}/lines.xlsx"
-                 title="Every line in this file with its CO2 and EAT-Lancet group">Lines</a>
+              {% if me.is_admin %}<a class="btn-ghost" href="/upload/{{ u.upload_id }}">Open</a>{% endif %}
+              {# Available to a client as well. What a file contains is a fact about the
+                 file, and it is theirs whether or not it is being counted. #}
+              <a class="btn-ghost" href="/files/{{ u.upload_id }}/lines.xlsx"
+                 title="Every line in this file, with its CO2 and EAT-Lancet group">Lines</a>
+              {% if me.is_admin %}
               <form method="post" action="/upload/{{ u.upload_id }}/select" style="display:inline;">
                 <input type="hidden" name="on" value="{{ 0 if u.selected else 1 }}"/>
                 <button class="btn-ghost" type="submit">
@@ -192,17 +194,21 @@
                     onsubmit="return confirm('Archive this file? It stops counting, but nothing is destroyed and you can restore it.');">
                 <button class="btn-ghost" type="submit">Archive</button>
               </form>
+              {% endif %}
             </div>
           </td>
-          {% endif %}
         </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
     {% if months_held %}
-    <p style="margin-top:18px;">
-      <a class="btn-ghost" href="/lines.xlsx">Download every counted line</a>
+    <p class="muted" style="font-size:13px;margin-top:18px;max-width:64ch;">
+      <strong>Lines</strong> gives you one file&rsquo;s purchase lines with the CO<sub>2</sub>
+      and the EAT-Lancet group worked out for each, and where every one of those numbers
+      came from. For every counted line across a period instead, use
+      <a href="/">Download Excel</a> on the dashboard &mdash; the same sheet is the last
+      tab of that workbook, next to the totals it explains.
     </p>
     {% endif %}
     <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">

@@ -85,7 +85,12 @@ PUBLIC_PREFIXES = ("/static", "/set-password")
 # Only an admin may reach these. Uploading and curating both change data that outlives
 # the person doing it -- an upload becomes a client's history, and a curated pin
 # outranks every rule for every client, forever. Neither belongs to a client account.
-ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin")
+#
+# /files/owner is named one by one rather than gating /files, because the Files PAGE is
+# for the client too: what their numbers are built from is not a secret from them. But
+# naming the file that supplies a contested month decides what those numbers ARE, which
+# is not theirs to change. Everything else under /files is a read.
+ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner")
 
 
 @app.middleware("http")
@@ -637,7 +642,11 @@ def set_month_owner(request: Request, year: int = Form(...), month: int = Form(.
 
 # --------------------------------------------------------------------------- lines
 def _lines_workbook(request: Request, rows, label: str, filename: str):
-    """Score rows line by line and hand back a workbook. Shared by both entry points."""
+    """Score rows line by line and hand back a workbook of its own.
+
+    One file at a time. For every counted line across a period the same sheet is the last
+    tab of /export.xlsx, where it sits next to the totals it is evidence for.
+    """
     p = me(request)
     if not rows:
         raise HTTPException(400, "there are no purchase lines to export")
@@ -656,13 +665,14 @@ def client_name_for(p) -> str:
     return name
 
 
-@app.get("/upload/{upload_id}/lines.xlsx")
+@app.get("/files/{upload_id}/lines.xlsx")
 def file_lines_xlsx(request: Request, upload_id: str):
     """Every line this ONE file supplied, with what we made of it.
 
     Available whether or not the file is counted -- what a file contains is a fact about
     the file, and being able to look at it before deciding to count it is most of why
-    this exists.
+    this exists. Available to the client as well, which is why it hangs off /files and
+    not off the admin-only /upload.
     """
     p = me(request)
     rep = uploads.get(upload_id, p.tenant)
@@ -674,21 +684,25 @@ def file_lines_xlsx(request: Request, upload_id: str):
                            f"PLANETmeal_lines_{stamp}.xlsx")
 
 
-@app.get("/lines.xlsx")
-def window_lines_xlsx(request: Request, window: str | None = None):
-    """Every counted line in a window -- the selection, not one file."""
-    p = me(request)
-    try:
-        label, y0, m0, y1, m1 = analysis.parse_window(
-            window or analysis.default_window(p.tenant), tenant=p.tenant)
-    except analysis.WindowError as e:
-        raise HTTPException(400, str(e))
-    rows = db.lines_for(y0, m0, y1, m1, tenant=p.tenant)
-    return _lines_workbook(request, rows, label,
-                           f"PLANETmeal_lines_{p.tenant}_{label.replace(' ', '')}.xlsx")
-
-
 # --------------------------------------------------------------------------- export
+def _version_gap(result: dict, scored: dict) -> list[str]:
+    """Say so when the summary sheets and the lines came from different catalogues.
+
+    The export serves a held analysis while the client's data is unchanged, but the lines
+    are always scored fresh -- so a catalogue published in between would leave one
+    workbook carrying two answers. It almost never happens. When it does, a reader who
+    discovers it for themselves has learnt something worse than the discrepancy.
+    """
+    was = (result.get("catalogue_version") or {}).get("etag")
+    now = (scored.get("catalogue_version") or {}).get("etag")
+    if not was or not now or was == now:
+        return []
+    return ["NOTE. The summary sheets were scored against catalogue version "
+            f"{was} and these lines against {now}, so the two can disagree slightly. "
+            "Recalculate on the dashboard and download again for a workbook where every "
+            "sheet came from one catalogue."]
+
+
 @app.get("/export.xlsx")
 def export_xlsx(request: Request, window: str | None = None):
     """The full analysis as a workbook, on demand."""
@@ -696,9 +710,10 @@ def export_xlsx(request: Request, window: str | None = None):
     p = me(request)
     from openpyxl.styles import Alignment, Font, PatternFill
 
+    win = window or analysis.default_window(p.tenant)
     try:
-        result = analysis.run(window=window or analysis.default_window(p.tenant),
-                              save=False, top=60, tenant=p.tenant)
+        _label, y0, m0, y1, m1 = analysis.parse_window(win, tenant=p.tenant)
+        result = analysis.run(window=win, save=False, top=60, tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         raise HTTPException(409, str(e))
 
@@ -763,6 +778,18 @@ def export_xlsx(request: Request, window: str | None = None):
     sheet("zero weight", ["artikelnr", "product", "category", "pack", "unit", "pieces", "spend EUR"],
           [[r["artikelnr"], r["description"], r["category"], r["vp"], r["eenh"],
             r["pieces"], r["spend_eur"]] for r in result["piece_items"]["rows"]])
+
+    # Every line the sheets above are made of. This is the point of the whole download:
+    # a reader who doubts a figure can open the rows underneath it here, in the same
+    # file, rather than being sent somewhere else to fetch them.
+    try:
+        scored = catalogue.score_lines(
+            db.lines_for(y0, m0, y1, m1, tenant=p.tenant), label=h["window"])
+    except catalogue.CatalogueDown as e:
+        raise HTTPException(409, str(e))
+    lines_export.add_sheet(wb, scored["rows"], client_name_for(p), h["window"],
+                           version=scored.get("catalogue_version"),
+                           extra_notes=_version_gap(result, scored))
 
     buf = io.BytesIO()
     wb.save(buf)

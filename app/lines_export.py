@@ -10,6 +10,11 @@ what they cannot get elsewhere is the ability to take any figure on any screen, 
 rows underneath it, and see that 70% of the weight was matched to a specific product and
 the rest to a group average -- stated, per line, rather than averaged into a claim.
 
+There are two ways in and ONE implementation of the sheet, deliberately. `add_sheet` puts
+it in the dashboard's workbook next to the summary it explains; `workbook` wraps the same
+call for a single file on the Files page. If they were written twice they would drift, and
+a client comparing one against the other would be the person who found out.
+
 Nutrition is not here, and not by omission. It is computed, because the footprint ladder
 uses NEVO to match; roughly half of it is group averages, so publishing it would invite a
 client to rely on a number nobody here stands behind.
@@ -57,13 +62,19 @@ NOTE_FONT = Font(color="3D6647", size=10)
 TITLE_FONT = Font(bold=True, size=13, color="1A4A2A")
 
 
-def _sheet_notes(ws, client: str, label: str, rows: int, version) -> int:
+def _etag(version) -> str | None:
+    if isinstance(version, dict):
+        return version.get("etag")
+    return version or None
+
+
+def _sheet_notes(ws, client: str, label: str, rows: int, version, extra) -> int:
     """The header a reader needs before the first number. -> the row the table starts on."""
     ws["A1"] = f"{client} — {label}"
     ws["A1"].font = TITLE_FONT
     notes = [
         f"{rows:,} purchase lines. Produced {dt.datetime.now():%Y-%m-%d %H:%M} by PLANETmeal.",
-        f"Catalogue version {version.get('etag') if isinstance(version, dict) else version}.",
+        f"Catalogue version {_etag(version)}.",
         "",
         "Every line carries where its numbers came from. 'Footprint from' and 'Group from' "
         "name the rung that produced each: a curated decision, a specific RIVM product, or "
@@ -83,6 +94,7 @@ def _sheet_notes(ws, client: str, label: str, rows: int, version) -> int:
         "Nutrition is deliberately absent. It is computed to help match products, but "
         "around half of it is group averages, so it is not published.",
     ]
+    notes.extend(extra or ())
     r = 2
     for n in notes:
         ws.cell(row=r, column=1, value=n).font = NOTE_FONT
@@ -90,13 +102,15 @@ def _sheet_notes(ws, client: str, label: str, rows: int, version) -> int:
     return r + 1
 
 
-def workbook(rows: list[dict], client: str, label: str, version=None) -> bytes:
-    """-> xlsx bytes. One row per purchase line, in the order they were scored."""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "lines"
+def add_sheet(wb, rows: list[dict], client: str, label: str, version=None,
+              title: str = "lines", extra_notes=()) -> None:
+    """Put the per-line sheet into an existing workbook.
 
-    start = _sheet_notes(ws, client, label, len(rows), version or {})
+    Used both on its own and as the last sheet of the dashboard export, where it is the
+    evidence for every summary sheet above it.
+    """
+    ws = wb.create_sheet(title[:31])
+    start = _sheet_notes(ws, client, label, len(rows), version or {}, extra_notes)
 
     for i, (_key, head, _fmt, width) in enumerate(COLUMNS, start=1):
         c = ws.cell(row=start, column=i, value=head)
@@ -118,8 +132,14 @@ def workbook(rows: list[dict], client: str, label: str, version=None) -> bytes:
             if fmt and isinstance(v, (int, float)):
                 cell.number_format = fmt
 
-    ws.auto_filter.ref = (f"A{start}:{get_column_letter(len(COLUMNS))}{start + len(rows)}")
+    ws.auto_filter.ref = f"A{start}:{get_column_letter(len(COLUMNS))}{start + len(rows)}"
 
+
+def workbook(rows: list[dict], client: str, label: str, version=None) -> bytes:
+    """-> xlsx bytes, the sheet on its own. One row per purchase line, as scored."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    add_sheet(wb, rows, client, label, version)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

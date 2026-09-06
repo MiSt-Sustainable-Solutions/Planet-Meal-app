@@ -53,6 +53,26 @@ if "/login" in str(_r.url) or "do not match" in _r.text:
     print(f"could not sign in as {_u!r} -- check MIST_TEST_USER / MIST_TEST_PASSWORD")
     sys.exit(2)
 
+# An admin arrives looking at whichever client they last looked at, and that may be one
+# with no purchase history -- which renders an empty dashboard and failed four honesty
+# checks further down. It read like a regression in the dashboard rather than a hole in
+# this fixture, so: switch until the dashboard has something on it. The checks are about
+# whether a page that HAS data states its caveats; a blank page cannot answer that.
+def _looking_at_data(html):
+    return "Take it away" in html
+
+
+if not _looking_at_data(_r.text):
+    _sw = re.search(r'name="tenant".*?</select>', _r.text, re.S)
+    for _t in re.findall(r'<option value="([^"]+)"', _sw.group(0) if _sw else ""):
+        if _looking_at_data(SESSION.post(BASE + "/admin/viewing",
+                                         data={"tenant": _t, "back": "/"}).text):
+            break
+    else:
+        print("signed in, but no client this account can see has any purchase data --")
+        print("the design checks need a dashboard with numbers on it.")
+        sys.exit(2)
+
 print("=== the tokens are the design system's, unaltered ===")
 for name, value in [("--linen", "#E8F0EA"), ("--ink", "#1A4A2A"), ("--sage", "#3D6647"),
                     ("--mist", "#8FB89A"), ("--gold", "#F4A93E"), ("--teal", "#2D9E75"),

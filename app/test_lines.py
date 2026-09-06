@@ -165,5 +165,70 @@ P(abs(co2_food - h["co2_kg"]) < 1,
 P(abs(spend - h["spend_eur"]) < 1,
   f"spend matches, including the non-food ({spend:,.0f} vs {h['spend_eur']:,})")
 
-print("\n" + ("ALL PASS" if not FAILED else f"{len(FAILED)} FAILED"))
+# --------------------------------------------------------------------------- the two ways in
+# The lines are worth nothing to a client who cannot get at them. The first version put
+# the per-file download under /upload, which is admin-only, so the one person the sheet
+# exists for got a 403 back -- and the window-level download was a separate button that
+# produced a file with no context around it. Both are answered by two facts this checks:
+# the sheet is the last tab of the dashboard export, and the per-file link is not gated.
+from fastapi.testclient import TestClient   # noqa: E402
+import main                                 # noqa: E402
+
+auth.create_user("boss", "boss-password-1", "admin", None, "Boss")
+auth.create_user("acmeuser", "acme-password-1", "client", "acme", "Acme")
+
+
+def signed_in(username, password):
+    c = TestClient(main.app, follow_redirects=False)
+    r = c.post("/login", data={"username": username, "password": password, "next": "/"})
+    assert r.status_code == 303, f"could not sign in as {username}"
+    return c
+
+
+client = signed_in("acmeuser", "acme-password-1")
+
+print()
+print("=== a client can take the lines away, and cannot change the numbers ===")
+r = client.get("/files/f1/lines.xlsx")
+P(r.status_code == 200, f"a client may download one file's lines ({r.status_code})")
+P(r.headers.get("content-type", "").startswith("application/vnd.openxmlformats"),
+  "and gets a workbook, not a login page")
+
+r = client.post("/files/owner", data=dict(year=2025, month=3, upload_id="f1"))
+P(r.status_code == 403,
+  f"but may NOT name the file that supplies a month ({r.status_code})")
+
+print()
+print("=== the dashboard export carries the lines, and they add up to its own summary ===")
+r = client.get("/export.xlsx?window=all")
+P(r.status_code == 200, f"the export downloads ({r.status_code})")
+ex = openpyxl.load_workbook(io.BytesIO(r.content))
+P("lines" in ex.sheetnames, f"it has a lines tab ({ex.sheetnames})")
+P(ex.sheetnames[-1] == "lines", "last, after the summaries it is the evidence for")
+
+lw = ex["lines"]
+lrows = list(lw.iter_rows(values_only=True))
+hi = next(i for i, row in enumerate(lrows) if row and row[0] == "Period")
+lcol = {h: i for i, h in enumerate(lrows[hi])}
+P(len(lrows) - hi - 1 == len(LINES),
+  f"one row per purchase line ({len(lrows) - hi - 1})")
+
+x_kg = sum((row[lcol["Kilograms counted"]] or 0)
+           for row in lrows[hi + 1:] if row[lcol["Food?"]] == "food")
+x_co2 = sum((row[lcol["kg CO2e"]] or 0)
+            for row in lrows[hi + 1:] if row[lcol["Food?"]] == "food")
+x_spend = sum((row[lcol["Spend EUR"]] or 0) for row in lrows[hi + 1:])
+
+# Checked against the SUMMARY TAB OF THE SAME FILE, not against the dashboard. Two tabs
+# of one workbook disagreeing is the failure a reader finds first and forgives least.
+said = {row[0]: row[1] for row in ex["summary"].iter_rows(values_only=True)}
+P(abs(x_kg - said["food purchased (kg)"]) < 1,
+  f"food kilograms match its own summary tab ({x_kg:,.1f} vs {said['food purchased (kg)']:,})")
+P(abs(x_co2 - said["CO2e (kg)"]) < 1,
+  f"kg CO2e match its own summary tab ({x_co2:,.1f} vs {said['CO2e (kg)']:,})")
+P(abs(x_spend - said["spend (EUR)"]) < 1,
+  f"spend matches, non-food included ({x_spend:,.0f} vs {said['spend (EUR)']:,})")
+
+print()
+print("ALL PASS" if not FAILED else f"{len(FAILED)} FAILED")
 sys.exit(1 if FAILED else 0)
