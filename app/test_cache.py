@@ -244,5 +244,101 @@ P(analysis.run(window="FY2025")["headline"]["co2_kg"] != 999999,
 P(theirs is not None and theirs["run_id"] == "rival",
   "while that tenant does get theirs -- the key works, it is scoped")
 
+# --------------------------------------------------------------------- the change log
+# The runs table is a cache log: a row lands whenever something had to be recalculated,
+# which is mostly "somebody opened the dashboard after a deploy". TU Delft's held 67 rows,
+# 59 of them FY2025, nearly all repeating the same number -- and the page printed all of
+# them. There was one fact in there. analysis.changes() is the function that finds it, so
+# what it must do is emit a row ONLY where an answer actually came out different, and say
+# which of the two possible causes moved it.
+print("\n=== the change log reports changes, not recalculations ===")
+
+
+def seed_run(rid, label, frm, to, ran, co2, *, key=None, ver="cat-1", fp="fp1", lines=100,
+             tenant=None):
+    con = db.connect()
+    con.execute("""INSERT INTO analysis_run (id, tenant, label, period_from, period_to,
+                   eat_profile, ran_at, lines, food_kg, co2_kg, intensity, eat_score,
+                   specific_pct, result_json, window_key, catalogue_version,
+                   data_fingerprint)
+                   VALUES (?,?,?,?,?,NULL,?,?,?,?,1.5,0.7,70,'{}',?,?,?)""",
+                (rid, tenant or config.TENANT, label, frm, to, ran, lines, co2 / 2, co2,
+                 key or f"{frm}:{to}|default", ver, fp))
+    con.commit()
+    con.close()
+
+
+con = db.connect()
+con.execute("DELETE FROM analysis_run")
+con.commit()
+con.close()
+
+# four looks at the same year; only one of them produced a different answer
+seed_run("c1", "FY2025", "2025-01", "2025-12", "2026-01-01T09:00:00", 329288)
+seed_run("c2", "FY2025", "2025-01", "2025-12", "2026-01-02T09:00:00", 329288)
+seed_run("c3", "FY2025", "2025-01", "2025-12", "2026-01-03T09:00:00", 329288)
+seed_run("c4", "FY2025", "2025-01", "2025-12", "2026-01-04T09:00:00", 329620, ver="cat-2")
+
+ch = analysis.changes()
+P(len(ch) == 1, f"four runs, one change ({len(ch)})")
+P(ch[0]["moves"][0]["what"] == "CO2", "and it says what moved")
+P("329,288" in ch[0]["moves"][0]["before"] and "329,620" in ch[0]["moves"][0]["after"],
+  "with the figure before and after, not just that it moved")
+P(ch[0]["rules"] and not ch[0]["data"], "attributed to the catalogue, not to their files")
+
+seed_run("c5", "FY2025", "2025-01", "2025-12", "2026-01-05T09:00:00", 400000,
+         ver="cat-2", fp="fp2", lines=140)
+ch = analysis.changes()
+P(len(ch) == 2, f"a second change is picked up ({len(ch)})")
+P(ch[0]["data"] and not ch[0]["rules"],
+  "and a move with the same catalogue is attributed to their files")
+P(ch[0]["lines_before"] == 100 and ch[0]["lines_after"] == 140,
+  "which the purchase-line count backs up")
+P(ch[0]["ran_at"] > ch[1]["ran_at"], "newest first")
+
+print("\n=== two windows are never compared against each other ===")
+# window_key arrived with the cache and is empty on every older row. Grouping on it alone
+# put all of them in one bucket, and the first version of this reported FY2025 "changing"
+# into All data -- a 57% drop presented as a real event.
+con = db.connect()
+con.execute("DELETE FROM analysis_run")
+con.commit()
+con.close()
+seed_run("l1", "FY2025", "2025-01", "2025-12", "2026-02-01T09:00:00", 329288, key="")
+seed_run("l2", "All data", "2024-01", "2026-06", "2026-02-01T10:00:00", 766854, key="")
+seed_run("l3", "FY2025", "2025-01", "2025-12", "2026-02-01T11:00:00", 329288, key="")
+P(analysis.changes() == [],
+  "three legacy rows with no window key, two windows, and nothing changed")
+
+print("\n=== a figure that barely twitched is not news ===")
+con = db.connect()
+con.execute("DELETE FROM analysis_run")
+con.commit()
+con.close()
+seed_run("n1", "FY2025", "2025-01", "2025-12", "2026-03-01T09:00:00", 329288.0)
+seed_run("n2", "FY2025", "2025-01", "2025-12", "2026-03-02T09:00:00", 329288.05)
+P(analysis.changes() == [], "0.00002% is arithmetic, not a change")
+
+print("\n=== a run we cannot attribute says so, rather than guessing ===")
+con = db.connect()
+con.execute("DELETE FROM analysis_run")
+con.commit()
+con.close()
+seed_run("u1", "FY2025", "2025-01", "2025-12", "2026-04-01T09:00:00", 100000,
+         ver=None, fp=None)
+seed_run("u2", "FY2025", "2025-01", "2025-12", "2026-04-02T09:00:00", 200000,
+         ver=None, fp=None)
+ch = analysis.changes()
+P(len(ch) == 1 and not ch[0]["known"], "flagged as unattributable")
+P("not recorded" in ch[0]["why"],
+  f"and says why rather than claiming nothing changed ({ch[0]['why']})")
+
+print("\n=== the log is one client's, like everything else ===")
+seed_run("x1", "FY2025", "2025-01", "2025-12", "2026-05-01T09:00:00", 1, tenant="rival")
+seed_run("x2", "FY2025", "2025-01", "2025-12", "2026-05-02T09:00:00", 999999, tenant="rival")
+P(all(c["run_id"] not in ("x1", "x2") for c in analysis.changes()),
+  "another tenant's changes are not in this one's log")
+P(len(analysis.changes("rival")) == 1, "and theirs is in theirs")
+
 print(f"\n{'ALL PASS' if not FAILED else str(len(FAILED)) + ' FAILED'}")
 sys.exit(1 if FAILED else 0)

@@ -467,6 +467,107 @@ def history(limit: int = 25, tenant: str | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# What counts as a figure having moved. Below this it is arithmetic noise from a
+# recalculation, not a change anybody should read about.
+MOVED = 0.0005          # 0.05%
+
+# (key in the row, label, how to format it)
+WATCHED = [
+    ("co2_kg",       "CO2",       lambda v: f"{v:,.0f} kg"),
+    ("food_kg",      "food",      lambda v: f"{v:,.0f} kg"),
+    ("intensity",    "intensity", lambda v: f"{v:,.3f}"),
+    ("eat_score",    "EAT",       lambda v: f"{v:,.3f}"),
+    ("specific_pct", "specific",  lambda v: f"{v:,.1f}%"),
+]
+
+
+def _moved(before, after) -> bool:
+    if before is None or after is None:
+        return before != after
+    top = max(abs(before), abs(after))
+    return top > 0 and abs(after - before) / top > MOVED
+
+
+def changes(tenant: str | None = None, limit: int = 40) -> list[dict]:
+    """When this client's answer actually CHANGED, and what changed it.
+
+    The runs table is a cache log: a row lands every time something had to be
+    recalculated, which is mostly "somebody opened the dashboard after a deploy". TU
+    Delft had 67 rows of which 59 said FY2025 and nearly all of those said the same
+    number. Printing that to a page is not a history, it is our implementation leaking
+    into somebody's screen -- and the same year appearing sixty times with two different
+    footprints and no explanation is the opposite of what this product sells.
+
+    There are only about four facts in those sixty-seven rows. This finds them: walk each
+    window oldest-first and emit a row only where a figure moved. Every emitted row is
+    something that happened.
+
+    It also says WHY, which the runs table can answer and nobody was asking it. Each run
+    stores the catalogue version and a fingerprint of the client's own purchase data, so
+    a change belongs to one of two causes, and they are not the same news:
+
+        the catalogue moved   -- our rules changed, and their published figure with it
+        their data changed    -- a file was counted, archived or re-imported
+
+    -> newest first, [{ran_at, label, why, moves: [{what, before, after, pct}], ...}]
+    """
+    tenant = tenant or config.TENANT
+    con = db.connect()
+    rows = con.execute(
+        """SELECT id, label, window_key, period_from, period_to, ran_at,
+                  catalogue_version, data_fingerprint, lines, food_kg, co2_kg,
+                  intensity, eat_score, specific_pct
+           FROM analysis_run WHERE tenant=? ORDER BY ran_at, id""",
+        (tenant,)).fetchall()
+    con.close()
+
+    out, previous = [], {}
+    for r in rows:
+        row = dict(r)
+        # window_key arrived with the cache and is empty on everything older, so grouping
+        # on it alone put every legacy run in one bucket -- and the first version of this
+        # duly reported FY2025 "changing" into All data, a 57% drop, as a real event. The
+        # window a run covers is what identifies it; the key is just the fast way to say so.
+        ident = row["window_key"] or f'{row["label"]}|{row["period_from"]}:{row["period_to"]}'
+        was = previous.get(ident)
+        previous[ident] = row
+        if was is None:
+            continue                      # the first answer for a window is not a change
+
+        moves = []
+        for key, what, fmt in WATCHED:
+            a, b = was[key], row[key]
+            if _moved(a, b):
+                moves.append(dict(
+                    what=what, before=fmt(a) if a is not None else "—",
+                    after=fmt(b) if b is not None else "—",
+                    pct=(round(100 * (b - a) / abs(a), 2)
+                         if a not in (None, 0) and b is not None else None)))
+        if not moves:
+            continue
+
+        rules = was["catalogue_version"] != row["catalogue_version"]
+        data = was["data_fingerprint"] != row["data_fingerprint"]
+        # Runs from before the cache recorded neither, so we genuinely cannot attribute
+        # them. Saying "neither changed" there would be a guess dressed as a finding.
+        known = (was["catalogue_version"] or row["catalogue_version"]
+                 or was["data_fingerprint"] or row["data_fingerprint"])
+        out.append(dict(
+            run_id=row["id"], label=row["label"], ran_at=row["ran_at"],
+            since=was["ran_at"], moves=moves,
+            lines_before=was["lines"], lines_after=row["lines"],
+            why=("not recorded — this run predates the version stamp" if not known
+                 else "the catalogue changed and so did the files counted" if rules and data
+                 else "the catalogue changed" if rules
+                 else "the files counted changed" if data
+                 else "neither the catalogue nor the files it was built from"),
+            known=bool(known), rules=rules, data=data,
+            version_before=was["catalogue_version"], version_after=row["catalogue_version"]))
+
+    out.sort(key=lambda c: c["ran_at"], reverse=True)
+    return out[:limit]
+
+
 def saved(run_id: str, tenant: str | None) -> dict | None:
     """A saved analysis by id, restricted to one client. `tenant=None` means any.
 

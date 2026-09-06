@@ -91,7 +91,14 @@ PUBLIC_PREFIXES = ("/static", "/set-password")
 # for the client too: what their numbers are built from is not a secret from them. But
 # naming the file that supplies a contested month decides what those numbers ARE, which
 # is not theirs to change. Everything else under /files is a read.
-ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner")
+#
+# /history is MiSt's for now. A client is not left blind by that: the dashboard already
+# tells them when their figures are behind the current catalogue, the moment it happens.
+# This is the retrospective view, and while the catalogue moves for OUR reasons several
+# times a week it reads as churn rather than candour. When a month passes where the only
+# changes are the client's own files, take it out of this tuple and un-hide the nav link.
+ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner",
+               "/history")
 
 
 @app.middleware("http")
@@ -402,9 +409,15 @@ async def curate(request: Request, file: UploadFile = File(...),
 
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request):
+    """When this client's answer changed, and what changed it.
+
+    `changes` is the page; `runs` is the log it was distilled from, folded away. The log
+    on its own was 67 rows for one client containing one fact.
+    """
     p = me(request)
     return templates.TemplateResponse(request, "history.html", ctx(
-        request, "history", runs=analysis.history(tenant=p.tenant),
+        request, "history", changes=analysis.changes(tenant=p.tenant),
+        runs=analysis.history(tenant=p.tenant),
         uploads=uploads.listing(tenant=p.tenant)))
 
 

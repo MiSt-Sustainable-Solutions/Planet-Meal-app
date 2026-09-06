@@ -24,7 +24,9 @@
     <ul class="nav-links" id="navLinks" role="list">
       <li><a href="/" {% if page=='dashboard' %}class="active"{% endif %}>Dashboard</a></li>
       <li><a href="/data-health" {% if page=='health' %}class="active"{% endif %}>Data health</a></li>
-      <li><a href="/history" {% if page=='history' %}class="active"{% endif %}>History</a></li>
+      {% if me and me.is_admin %}
+      <li><a href="/history" {% if page=='history' %}class="active"{% endif %}>Changes</a></li>
+      {% endif %}
       <li><a href="/files" {% if page=='files' %}class="active"{% endif %}>Files</a></li>
       {% if me %}
       {# One item, named for what is behind it rather than for who is signed in. An admin
@@ -114,7 +116,7 @@
     <ul class="footer-links">
       <li><a href="/">Dashboard</a></li>
       <li><a href="/data-health">Data health</a></li>
-      <li><a href="/history">History</a></li>
+      {% if me and me.is_admin %}<li><a href="/history">Changes</a></li>{% endif %}
       <li><a href="/files">Files</a></li>
     </ul>
     <span class="footer-copy">KVK 88298078 &nbsp;·&nbsp; © 2026 MiSt Sustainable Solutions</span>

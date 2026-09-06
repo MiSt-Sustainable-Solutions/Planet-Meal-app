@@ -1,55 +1,144 @@
 {% extends "base.html" %}
-{% block title %}History{% endblock %}
+{% block title %}Changes{% endblock %}
 {% block body %}
 
 {#
-  "Files received" used to sit at the bottom of this page as well, with different columns
-  from the upload page's list and no actions on it -- the same files in two places, and
-  neither one somewhere you could manage them. They have their own page now.
+  This page used to print the runs table: one row every time something was recalculated.
+  For TU Delft that was 67 rows, 59 of them FY2025, most of them saying the same number --
+  the cache log leaking onto a screen. Worse than useless: the same year appearing sixty
+  times with two different footprints and nothing saying which was right.
+
+  There was exactly one fact in those 67 rows, and it is now the page. The runs are still
+  underneath, folded away, because they are where you look when a change seems wrong --
+  but they are diagnostics, not news.
+
+  MiSt only, for now. A client already learns that their numbers are behind the current
+  catalogue: base.html puts a banner on the dashboard the moment it happens, with a
+  Recalculate button. This is the retrospective view, and while the catalogue still moves
+  for OUR reasons several times a week it would read as churn rather than candour. When a
+  month goes by where the only changes here are the client's own files, it should be shown
+  to them -- and that is a line in ADMIN_PATHS and a line in the nav, nothing more.
 #}
 
 <section class="light">
   <div class="inner">
-    <div class="sec-label">History</div>
-    <h1 class="page-h1">Every analysis, <em>kept.</em></h1>
-    <p class="lede" style="margin-top:22px;">
-      Each run is stored with the numbers it produced and the EAT-Lancet profile that
-      produced them. If a rule changes later, an old figure can still explain itself.
+    <div class="sec-label">Changes</div>
+    <h1 class="page-h1">When a number <em>moved.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:64ch;">
+      Not every time something was recalculated &mdash; only the times the answer came out
+      different, with what moved and what moved it. A figure reported in March can still
+      explain itself, and so can the day it stopped being true.
     </p>
 
-    {% if runs %}
+    {% if changes %}
     <div class="card scroll-x" style="margin-top:28px;">
       <table class="tbl">
         <thead><tr>
-          <th>Ran</th><th>Window</th><th class="num">Food t</th><th class="num">CO<sub>2</sub> t</th>
-          <th class="num">Intensity</th><th class="num">EAT</th><th class="num">Specific %</th>
-          <th>Profile</th><th></th>
+          <th>When</th><th>Window</th><th>What moved</th><th>Why</th>
         </tr></thead>
         <tbody>
-        {% for r in runs %}
+        {% for c in changes %}
         <tr>
-          <td class="muted">{{ r.ran_at|replace('T',' ') }}</td>
-          <td class="name">{{ r.label }}</td>
-          <td class="num">{{ (r.food_kg/1000)|round(1) }}</td>
-          <td class="num">{{ (r.co2_kg/1000)|round(1) }}</td>
-          <td class="num">{{ r.intensity }}</td>
-          <td class="num">{{ r.eat_score }}</td>
-          <td class="num">{{ r.specific_pct }}</td>
-          <td class="muted">{{ r.eat_profile }}</td>
-          <td><a class="btn-ghost" href="/api/run/{{ r.id }}">JSON</a></td>
+          <td class="muted" style="white-space:nowrap;">{{ c.ran_at[:10] }}<br/>
+            <span style="font-size:12px;">{{ c.ran_at[11:16] }}</span></td>
+          <td class="name">{{ c.label }}</td>
+          <td>
+            {% for m in c.moves %}
+            <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;
+                        {% if not loop.first %}margin-top:5px;{% endif %}">
+              <span class="muted" style="min-width:64px;font-size:12.5px;">{{ m.what }}</span>
+              <span class="muted">{{ m.before }}</span>
+              <span class="muted">&rarr;</span>
+              <strong>{{ m.after }}</strong>
+              {% if m.pct is not none %}
+              <span class="pill {{ 'soft' if m.pct|abs < 1 else 'warn' }}">
+                {{ '%+.2f'|format(m.pct) }}%
+              </span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </td>
+          <td>
+            {% if not c.known %}
+              <span class="pill">not recorded</span>
+              <div class="muted" style="font-size:12px;margin-top:4px;max-width:34ch;">
+                This run predates the version stamp, so we cannot say what caused it.
+              </div>
+            {% else %}
+              {% if c.rules %}<span class="pill warn">our rules</span>{% endif %}
+              {% if c.data %}<span class="pill soft">their files</span>{% endif %}
+              <div class="muted" style="font-size:12px;margin-top:4px;max-width:34ch;">
+                {{ c.why|capitalize }}.
+                {% if c.rules %}
+                <br/><code>{{ c.version_before }}</code> &rarr;
+                <code>{{ c.version_after }}</code>
+                {% endif %}
+                {% if c.lines_before != c.lines_after %}
+                <br/>{{ "{:,}".format(c.lines_before) }} &rarr;
+                {{ "{:,}".format(c.lines_after) }} purchase lines.
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
     <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">
+      <strong>Our rules</strong> means the catalogue moved and this client&rsquo;s published
+      figure moved with it &mdash; the change they would have to explain to an auditor.
+      <strong>Their files</strong> means a file was counted, archived or re-imported.
       What each run was built from is on <a href="/files">Files</a>.
     </p>
     {% else %}
-    <p class="lede" style="margin-top:24px;">No analyses have been run yet.</p>
-    <p style="margin-top:20px;"><a class="btn-main" href="/">Run one now</a></p>
+    <p class="lede" style="margin-top:24px;">
+      No figure has changed yet. Every recalculation so far produced the same answer as the
+      one before it &mdash; which is the result you want, and a dull page to read.
+    </p>
+    {% endif %}
+
+    {# The raw log. Kept because it is where you look when a change above seems wrong,
+       and folded because on its own it is sixty-odd rows of noise. #}
+    {% if runs %}
+    <details class="fold-runs" style="margin-top:28px;">
+      <summary>Every run ({{ runs|length }}), including the ones that changed nothing</summary>
+      <div class="card scroll-x" style="margin-top:14px;">
+        <table class="tbl">
+          <thead><tr>
+            <th>Ran</th><th>Window</th><th class="num">Food t</th>
+            <th class="num">CO<sub>2</sub> t</th><th class="num">Intensity</th>
+            <th class="num">EAT</th><th class="num">Specific %</th>
+            <th>Profile</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for r in runs %}
+          <tr>
+            <td class="muted">{{ r.ran_at|replace('T',' ') }}</td>
+            <td class="name">{{ r.label }}</td>
+            <td class="num">{{ (r.food_kg/1000)|round(1) }}</td>
+            <td class="num">{{ (r.co2_kg/1000)|round(1) }}</td>
+            <td class="num">{{ r.intensity }}</td>
+            <td class="num">{{ r.eat_score }}</td>
+            <td class="num">{{ r.specific_pct }}</td>
+            <td class="muted">{{ r.eat_profile }}</td>
+            <td><a class="btn-ghost" href="/api/run/{{ r.id }}">JSON</a></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
     {% endif %}
   </div>
 </section>
+
+<style>
+.fold-runs>summary{cursor:pointer;list-style:none;font-family:var(--sans);font-size:13px;
+  font-weight:700;color:var(--sage);display:flex;align-items:center;gap:8px;}
+.fold-runs>summary::-webkit-details-marker{display:none;}
+.fold-runs>summary::before{content:"+";font-weight:700;}
+.fold-runs[open]>summary::before{content:"\2212";}
+</style>
 
 {% endblock %}
