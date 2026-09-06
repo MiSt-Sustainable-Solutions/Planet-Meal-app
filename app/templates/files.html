@@ -119,25 +119,42 @@
 
     {% if contested %}
     <div class="card" style="margin-top:22px;border-color:var(--warn);border-width:2px;">
+      {% set clashing = contested | rejectattr('agree') | list %}
       <div class="sec-label" style="margin:0 0 8px;color:var(--warn);">
         {{ contested|length }} month{{ '' if contested|length == 1 else 's' }}
         supplied by more than one counted file
+        {% if clashing %}&mdash; {{ clashing|length }} where they disagree{% endif %}
       </div>
       <p class="muted" style="font-size:14px;max-width:64ch;margin-bottom:16px;">
-        Each is counted once, from the file named below &mdash; chosen because it has the
-        most lines for that month, which is a starting point rather than a judgement.
-        Change it if you know better.
+        Each is counted once, from the file named below, never added together &mdash;
+        chosen because it has the most lines for that month, which is a starting point
+        rather than a judgement. Change it if you know better.
+        {% if clashing %}
+        <br/><strong>The rows marked &ldquo;they differ&rdquo; are the ones worth your
+        time.</strong> Two exports repeating a month is normal &mdash; every Sligro export
+        runs from January. Two exports disagreeing about one means a file is partial or
+        the month was restated, and the total depends on which is believed.
+        {% else %}
+        Every one of these holds the same purchases in both files, so which is used
+        changes nothing.
+        {% endif %}
       </p>
       <div class="scroll-x">
         <table class="tbl">
-          <thead><tr><th>Month</th><th>Counted from</th><th>Also supplied by</th></tr></thead>
+          <thead><tr><th>Month</th><th>Same data?</th><th>Counted from</th>
+            <th>Also supplied by</th></tr></thead>
           <tbody>
           {% for c in contested %}
           <tr>
             <td class="name">{{ c.period }}</td>
             <td>
+              {% if c.agree %}<span class="pill soft">same</span>
+              {% else %}<span class="pill bad">they differ</span>{% endif %}
+            </td>
+            <td>
               {% for f in c.files if f.owns %}<strong>{{ f.filename|truncate(26) }}</strong>
-                <span class="muted">({{ "{:,}".format(f.lines) }} lines)</span>{% endfor %}
+                <span class="muted">({{ "{:,}".format(f.lines) }} lines,
+                  {{ "{:,.0f}".format(f.kg) }} kg)</span>{% endfor %}
             </td>
             <td>
               {% for f in c.files if not f.owns %}
@@ -148,12 +165,14 @@
                   <input type="hidden" name="upload_id" value="{{ f.upload_id }}"/>
                   <button class="btn-ghost" type="submit"
                           title="Count {{ c.period }} from this file instead">
-                    use {{ f.filename|truncate(20) }} ({{ "{:,}".format(f.lines) }})
+                    use {{ f.filename|truncate(20) }}
+                    ({{ "{:,}".format(f.lines) }} lines, {{ "{:,.0f}".format(f.kg) }} kg)
                   </button>
                 </form>
                 {% else %}
                 <span class="muted">{{ f.filename|truncate(20) }}
-                  ({{ "{:,}".format(f.lines) }})</span>
+                  ({{ "{:,}".format(f.lines) }} lines,
+                   {{ "{:,.0f}".format(f.kg) }} kg)</span>
                 {% endif %}
               {% endfor %}
             </td>

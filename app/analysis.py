@@ -147,6 +147,28 @@ def windows(tenant: str | None = None) -> list[dict]:
     return out
 
 
+def _held(f: dict) -> str:
+    """"Augustus 2024.xlsx: 20 lines, 200 kg" — what one file says about one month."""
+    return (f"{f['filename']}: {f['lines']:,} "
+            f"line{'' if f['lines'] == 1 else 's'}, {f['kg']:,.0f} kg")
+
+
+def _side_by_side(o: dict) -> str:
+    """One disagreed month, both sides of it, so the reader can judge which is wrong."""
+    return (f"{o['period']} — counted {_held(o['chosen'])}, against "
+            + " and ".join(_held(d) for d in o["dropped"]))
+
+
+def _months_from(overlaps: list[dict]) -> str:
+    """"2026-01, 2026-02 and 2026-03 (from Maart 2026.xlsx)", kept short for a caveat."""
+    by_file: dict[str, list[str]] = {}
+    for o in overlaps:
+        by_file.setdefault(o["chosen"]["filename"], []).append(o["period"])
+    return "; ".join(
+        f"{', '.join(ps[:4])}{' and more' if len(ps) > 4 else ''} from {name}"
+        for name, ps in sorted(by_file.items()))
+
+
 def rows_for(window: str | None, tenant: str, y0: int, m0: int, y1: int, m1: int):
     """The purchase lines a window covers, period or chosen files alike.
 
@@ -373,14 +395,32 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
                      "counted for this period. They are a working answer, not the "
                      "reported footprint.")))
     if overlaps:
-        result["headline"]["caveats"].insert(1, dict(
-            code="chosen_overlap", severity="warn", owner="MiSt",
-            message=("Two of the chosen files supply the same month, so each such month "
-                     "is counted once, from the file with the most lines for it: "
-                     + "; ".join(f"{o['period']} from {o['chosen']} "
-                                 f"(not {', '.join(d['filename'] for d in o['dropped'])})"
-                                 for o in overlaps[:6])
-                     + ("; and more" if len(overlaps) > 6 else "") + ".")))
+        # Two separate things, and they must not read alike. Files repeating a month is
+        # ordinary -- Sligro's exports all run from January -- and changes no number.
+        # Files DISAGREEING about a month is a fact about the data: one of them is a
+        # partial export or a restatement, and the footprint depends on which we believed.
+        same = [o for o in overlaps if o["agree"]]
+        differ = [o for o in overlaps if not o["agree"]]
+        if same:
+            result["headline"]["caveats"].insert(1, dict(
+                code="chosen_repeat", severity="info", owner="MiSt",
+                message=(f"{len(same)} month{'' if len(same) == 1 else 's'} "
+                         f"appear{'s' if len(same) == 1 else ''} in more than one of the "
+                         "chosen files, holding the same purchases each time — normal, "
+                         "because every Sligro export runs from January. Counted once, "
+                         "not added together, so the total is unaffected: "
+                         + _months_from(same) + ".")))
+        if differ:
+            result["headline"]["caveats"].insert(1, dict(
+                code="chosen_disagree", severity="error", owner="MiSt",
+                message=("The chosen files DISAGREE about "
+                         f"{len(differ)} month{'' if len(differ) == 1 else 's'}. Each is "
+                         "counted once, from the file holding the most lines for it, so "
+                         "nothing is doubled — but one of these files is partial or has "
+                         "been restated, and the total depends on which was believed. "
+                         + "; ".join(_side_by_side(o) for o in differ[:3])
+                         + (f"; and {len(differ) - 3} more" if len(differ) > 3 else "")
+                         + ".")))
 
     if save:
         result["ran_at"] = dt.datetime.now().isoformat(timespec="seconds")

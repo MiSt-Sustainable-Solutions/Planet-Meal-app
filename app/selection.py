@@ -82,8 +82,8 @@ def contested(tenant: str) -> list[dict]:
     con = db.connect()
     names = {r[0]: r[1] for r in con.execute(
         "SELECT id, filename FROM upload WHERE tenant=?", (tenant,))}
-    counts = {(r[0], r[1], r[2]): r[3] for r in con.execute(
-        "SELECT year, month, source_upload, COUNT(*) FROM purchase_line "
+    counts = {(r[0], r[1], r[2]): (r[3], r[4] or 0.0) for r in con.execute(
+        "SELECT year, month, source_upload, COUNT(*), SUM(kg) FROM purchase_line "
         "WHERE tenant=? GROUP BY year, month, source_upload", (tenant,))}
     con.close()
 
@@ -91,17 +91,37 @@ def contested(tenant: str) -> list[dict]:
     for (y, m), ids in sorted(have.items()):
         if len(ids) < 2:
             continue
+        files = [dict(upload_id=i, filename=names.get(i, i),
+                      lines=counts.get((y, m, i), (0, 0.0))[0],
+                      kg=round(counts.get((y, m, i), (0, 0.0))[1], 1),
+                      owns=(own.get((y, m)) == i)) for i in ids]
+        # Whether the overlap matters at all. Two exports repeating the same month is
+        # normal and changes nothing; two exports disagreeing about it is a fact about
+        # the data, and the one worth a person's attention.
         out.append(dict(
             year=y, month=m, period=f"{y}-{m:02d}",
-            owner=own.get((y, m)), decided=(y, m) in own,
-            files=[dict(upload_id=i, filename=names.get(i, i),
-                        lines=counts.get((y, m, i), 0),
-                        owns=(own.get((y, m)) == i)) for i in ids]))
+            owner=own.get((y, m)), decided=(y, m) in own, files=files,
+            agree=all(_agree(files[0], f) for f in files[1:])))
     return out
 
 
+# Two files "agree" about a month when they hold the same number of lines and the same
+# weight to within this much. Not zero: the same purchases can arrive at kilograms a gram
+# or two apart through rounding on the way in. A real disagreement is not a rounding
+# error -- it is one file being a partial export, or a month that was restated.
+SAME = 0.001          # 0.1% of the weight
+
+
+def _agree(a: dict, b: dict) -> bool:
+    if a["lines"] != b["lines"]:
+        return False
+    top = max(abs(a["kg"]), abs(b["kg"]))
+    return top == 0 or abs(a["kg"] - b["kg"]) / top <= SAME
+
+
 def resolve(tenant: str, upload_ids: list[str]) -> tuple[dict, list[dict]]:
-    """Which of these files supplies each month, and where two of them both did.
+    """Which of these files supplies each month, where two both did, and whether they said
+    the same thing.
 
     For an ad-hoc question -- "what do THESE files say" -- rather than for the counted
     numbers. It deliberately does not read or write month_owner: that table belongs to
@@ -113,6 +133,13 @@ def resolve(tenant: str, upload_ids: list[str]) -> tuple[dict, list[dict]]:
     double count, and a double-counted footprint does not look wrong -- it looks like a
     bad year.
 
+    But reporting "counted once, from Augustus" is not enough, because it reads the same
+    whether the two files hold identical purchases or completely different ones. Almost
+    always they are identical: Sligro's exports run from January, so a later one repeats
+    an earlier one exactly, and choosing between them changes nothing. When they are NOT
+    identical, that is not housekeeping -- one of those files is partial or restated, and
+    somebody needs to know which. So each overlap carries `agree`.
+
     -> ({(year, month): upload_id}, [overlap, ...])
     """
     if not upload_ids:
@@ -120,8 +147,8 @@ def resolve(tenant: str, upload_ids: list[str]) -> tuple[dict, list[dict]]:
     marks = ",".join("?" for _ in upload_ids)
     con = db.connect()
     rows = con.execute(
-        "SELECT year, month, source_upload, COUNT(*) AS n FROM purchase_line "
-        f"WHERE tenant=? AND source_upload IN ({marks}) "
+        "SELECT year, month, source_upload, COUNT(*), SUM(kg), SUM(omzet) "
+        f"FROM purchase_line WHERE tenant=? AND source_upload IN ({marks}) "
         "GROUP BY year, month, source_upload", (tenant, *upload_ids)).fetchall()
     names = {r[0]: r[1] for r in con.execute(
         f"SELECT id, filename FROM upload WHERE tenant=? AND id IN ({marks})",
@@ -130,18 +157,20 @@ def resolve(tenant: str, upload_ids: list[str]) -> tuple[dict, list[dict]]:
 
     by_month: dict[tuple[int, int], list] = {}
     for r in rows:
-        by_month.setdefault((r[0], r[1]), []).append((r[3], r[2]))
+        by_month.setdefault((r[0], r[1]), []).append(dict(
+            upload_id=r[2], filename=names.get(r[2], r[2]), lines=r[3],
+            kg=round(r[4] or 0.0, 1), spend_eur=round(r[5] or 0.0)))
 
     owner, overlaps = {}, []
     for (y, m), cands in sorted(by_month.items()):
-        # most lines wins; the id breaks a tie so the same pick is the same answer twice
-        cands.sort(key=lambda c: (-c[0], c[1]))
-        owner[(y, m)] = cands[0][1]
+        # most lines wins; the filename breaks a tie so the same pick is the same answer
+        # twice, and so the reason is one a person can see rather than a random id
+        cands.sort(key=lambda c: (-c["lines"], c["filename"], c["upload_id"]))
+        owner[(y, m)] = cands[0]["upload_id"]
         if len(cands) > 1:
             overlaps.append(dict(
-                period=f"{y}-{m:02d}",
-                chosen=names.get(cands[0][1], cands[0][1]), chosen_lines=cands[0][0],
-                dropped=[dict(filename=names.get(i, i), lines=n) for n, i in cands[1:]]))
+                period=f"{y}-{m:02d}", chosen=cands[0], dropped=cands[1:],
+                agree=all(_agree(cands[0], c) for c in cands[1:])))
     return owner, overlaps
 
 
