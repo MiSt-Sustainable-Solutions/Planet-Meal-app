@@ -22,8 +22,13 @@
       <span></span><span></span><span></span>
     </button>
     <ul class="nav-links" id="navLinks" role="list">
-      <li><a href="/" {% if page=='dashboard' %}class="active"{% endif %}>Dashboard</a></li>
-      <li><a href="/data-health" {% if page=='health' %}class="active"{% endif %}>Data health</a></li>
+      <li><a href="/{% if selected_window %}?window={{ selected_window|urlencode }}{% endif %}"
+             {% if page=='dashboard' %}class="active"{% endif %}>Dashboard</a></li>
+      {# The window travels with the link. Clicking between the dashboard and Data health
+         used to drop it, which is how you could analyse one file and then read a health
+         report for a different year without anything saying so. #}
+      <li><a href="/data-health{% if selected_window %}?window={{ selected_window|urlencode }}{% endif %}"
+             {% if page=='health' %}class="active"{% endif %}>Data health</a></li>
       {% if me and me.is_admin %}
       <li><a href="/history" {% if page=='history' %}class="active"{% endif %}>Changes</a></li>
       {% endif %}

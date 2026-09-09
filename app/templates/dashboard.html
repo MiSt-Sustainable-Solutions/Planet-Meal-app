@@ -16,20 +16,6 @@
 {% set h = result.headline %}
 {% set conf = h.confidence %}
 
-<style>
-.fold-pick{border:1px solid var(--mist);border-radius:8px;background:var(--white);max-width:340px;}
-.fold-pick>summary{cursor:pointer;list-style:none;padding:9px 12px;font-family:var(--sans);
-  font-size:13px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px;}
-.fold-pick>summary::-webkit-details-marker{display:none;}
-.fold-pick>summary::before{content:"+";font-weight:700;color:var(--sage);}
-.fold-pick[open]>summary::before{content:"\2212";}
-.pick-body{padding:0 12px 12px;max-height:min(52vh,420px);overflow-y:auto;}
-.pick-row{display:flex;align-items:center;gap:9px;padding:6px 0;
-  border-top:1px solid var(--linen2);font-size:13px;color:var(--ink);}
-.pick-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.pick-meta{color:var(--sage);font-size:12px;white-space:nowrap;}
-</style>
-
 <!-- ============================================ headline (light) -->
 <section class="light">
   <div class="inner">
@@ -42,54 +28,7 @@
         <div class="sec-label">{{ client_name }} · {{ result.window.label }}</div>
         <h1 class="page-h1">What this kitchen <em>actually bought.</em></h1>
       </div>
-      <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end;">
-        <form method="get" action="/" style="display:flex;gap:10px;align-items:center;">
-          <label class="muted" for="w">Period</label>
-          <select name="window" id="w" onchange="this.form.submit()"
-                  style="font-family:var(--sans);font-size:13px;padding:9px 12px;border:1px solid var(--mist);
-                         border-radius:6px;background:var(--white);color:var(--ink);">
-            {% for win in window_options %}
-            <option value="{{ win.key }}" {% if win.key==selected_window %}selected{% endif %}>
-              {{ win.label }}{% if win.partial %} — {{ win.partial|length }} partial{% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </form>
-
-        {# The other question this page answers: not "what did we buy in FY2025" but
-           "what do these files say". A <details> so it is out of the way until wanted,
-           and no JavaScript -- the checkboxes are the form. #}
-        {% if pickable %}
-        <details class="fold-pick" {% if chosen_ids %}open{% endif %}>
-          <summary>
-            {% if chosen_ids %}{{ chosen_ids|length }} file{{ '' if chosen_ids|length == 1 else 's' }} chosen
-            {% else %}or choose files{% endif %}
-          </summary>
-          <form method="get" action="/" class="pick-body">
-            <p class="muted" style="font-size:12.5px;margin:0 0 10px;max-width:38ch;">
-              What these files say, whether or not they are being counted.
-              <br/><br/>
-              Sligro exports all run from January, so two files usually hold some of the
-              same months. A shared month is taken from <em>one</em> of them &mdash; never
-              added together &mdash; and you are told which, and whether the two files
-              agreed about it.
-            </p>
-            {% for u in pickable %}
-            <label class="pick-row">
-              <input type="checkbox" name="file" value="{{ u.upload_id }}"
-                     {% if u.upload_id in chosen_ids %}checked{% endif %}/>
-              <span class="pick-name">{{ u.filename|truncate(30) }}</span>
-              <span class="pick-meta">{{ "{:,}".format(u.held or 0) }} lines</span>
-            </label>
-            {% endfor %}
-            <div style="display:flex;gap:10px;margin-top:12px;">
-              <button class="btn-main" type="submit">Analyse these</button>
-              <a class="btn-ghost" href="/">Back to a period</a>
-            </div>
-          </form>
-        </details>
-        {% endif %}
-      </div>
+      {% include "_picker.html" %}
     </div>
 
     <div class="grid g4" style="margin-top:clamp(28px,3.5vw,48px);">

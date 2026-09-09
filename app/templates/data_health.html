@@ -5,8 +5,13 @@
 {% if error %}
 <section class="light">
   <div class="inner">
-    <div class="sec-label">Data health</div>
-    <h1 class="page-h1">Nothing to assess <em>yet.</em></h1>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
+      <div>
+        <div class="sec-label">Data health</div>
+        <h1 class="page-h1">Nothing to assess <em>yet.</em></h1>
+      </div>
+      {% if window_options %}{% include "_picker.html" %}{% endif %}
+    </div>
     <p class="lede" style="margin-top:22px;">{{ error }}</p>
   </div>
 </section>
@@ -17,12 +22,29 @@
 
 <section class="light">
   <div class="inner">
-    <div class="sec-label">Data health · {{ result.window.label }}</div>
-    <h1 class="page-h1">What we are <em>not sure about.</em></h1>
-    <p class="lede" style="margin-top:22px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
+      <div>
+        <div class="sec-label">Data health · {{ result.window.label }}</div>
+        <h1 class="page-h1">What we are <em>not sure about.</em></h1>
+      </div>
+      {% include "_picker.html" %}
+    </div>
+    <p class="lede" style="margin-top:22px;max-width:64ch;">
       Everything the client should not have to think about, and we must. This page is the
       differentiator: the incumbent cannot say what share of their number is a real match
       versus a group average. Per product, we can.
+    </p>
+    {# Said out loud because it used not to be. This page took a window and never offered
+       one, so it always answered for the default period however you arrived -- and the
+       review sheet is built from whatever it is showing. #}
+    <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">
+      Everything below &mdash; the ladder, the work queue and the review sheet &mdash; is
+      for <strong>{{ result.window.label }}</strong>:
+      {{ "{:,}".format(result.headline.lines) }} purchase lines,
+      {{ result.headline.period_from }} to {{ result.headline.period_to }}.
+      {% if result.picked %}
+      Chosen files, not the counted numbers for a period.
+      {% endif %}
     </p>
   </div>
 </section>
@@ -246,6 +268,10 @@
   <div class="inner">
     <div class="sec-label">Coverage by month</div>
     <h2 class="sec-h2">What we <em>hold.</em></h2>
+    <p class="muted" style="margin-top:14px;max-width:64ch;">
+      Every month being counted, not only the ones in the selection above &mdash; this is
+      the shape of the whole history, which is what makes a gap in it visible.
+    </p>
     <div class="card scroll-x" style="margin-top:24px;">
       <table class="tbl">
         <thead><tr>

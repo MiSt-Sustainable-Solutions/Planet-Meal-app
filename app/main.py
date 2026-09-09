@@ -270,17 +270,7 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
     sheet all keep working without knowing the difference.
     """
     p = me(request)
-    # Archived files and files holding no purchase lines are not worth offering: one is
-    # deliberately out of the way, the other would only produce an error saying so.
-    pickable = [u for u in visible_uploads(p) if not u["archived"] and u["held"]]
-    if file:
-        # Only files this person can see. Otherwise ?file= is a way to read another
-        # tenant's data, or a client's way to reach a file we are deliberately not showing.
-        allowed = {u["upload_id"] for u in pickable}
-        file = [f for f in file if f in allowed]
-    chosen_ids = sorted(set(file or []))
-    selected = ("files:" + ",".join(chosen_ids)) if chosen_ids else (
-        window or analysis.default_window(p.tenant))
+    pickable, chosen_ids, selected = chosen_window(p, window, file)
 
     try:
         result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
@@ -309,14 +299,25 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
 
 @app.get("/data-health", response_class=HTMLResponse)
 def data_health(request: Request, window: str | None = None, refresh: int = 0,
-                curated: str | None = None, curate_error: str | None = None):
+                curated: str | None = None, curate_error: str | None = None,
+                file: list[str] | None = Query(None)):
+    """What we are not sure about, FOR A STATED SELECTION.
+
+    It used to take a window and never offer one, so it always answered for the default
+    period however you arrived. The review sheet is built from whatever this page is
+    showing, which made that worse than a display bug: you could analyse one file, come
+    here, and download a backlog for a different year without being told.
+    """
     p = me(request)
+    pickable, chosen_ids, selected = chosen_window(p, window, file)
     try:
-        selected = window or analysis.default_window(p.tenant)
         result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             request, "data_health.html", ctx(request, "health", error=str(e),
+                                             window_options=analysis.windows(p.tenant),
+                                             pickable=pickable, chosen_ids=chosen_ids,
+                                             selected_window=selected,
                                              months=db.months(p.tenant)))
 
     relabel(result)
@@ -331,12 +332,17 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
         request, "health", result=result, months=db.months(p.tenant),
         stale=result.get("stale"),
         work_queue=wq, work_queue_error=wq_err, selected_window=selected,
+        window_options=analysis.windows(p.tenant),
+        pickable=pickable, chosen_ids=chosen_ids,
         curated=curated, curate_error=curate_error,
         decisions=catalogue.decisions(limit=1)))
 
 
 # --------------------------------------------------------------------------- review loop
 def _review_products(tenant: str, window: str | None = None) -> tuple[list[dict], str]:
+    # `window` reaches here as a plain string, files: form included, so a backlog can be
+    # pulled for one file as easily as for a year -- which is the point of the picker on
+    # the page that links to it.
     """This window's curation backlog, shaped for the catalogue's review sheet.
 
     The weight and the current figure come from the analysis; the barcode comes from the
@@ -573,6 +579,32 @@ def visible_uploads(p) -> list[dict]:
     if p.is_admin:
         return held
     return [u for u in held if u["selected"] and not u["archived"]]
+
+
+def chosen_window(p, window: str | None, file: list[str] | None):
+    """What a page is looking at. -> (files it may offer, ids chosen, the window string)
+
+    Both the dashboard and Data health ask this, and they must agree. They did not: Data
+    health had no picker at all and no window in its nav link, so it silently fell back to
+    the default period. Analyse one file on the dashboard, click Data health, and you were
+    reading FY2025 with nothing on the page to say so.
+
+    Two request shapes reach here and both must work. `?file=a&file=b` is what the
+    checkboxes post; `?window=files:a,b` is the same selection as one string, which is how
+    a link carries it from one page to another. Reading both is what lets a selection
+    survive a click.
+    """
+    pickable = [u for u in visible_uploads(p) if not u["archived"] and u["held"]]
+    allowed = {u["upload_id"] for u in pickable}
+    # Only files this person can see. Otherwise either form of the request is a way to
+    # read a file we are deliberately not showing them.
+    ids = [f for f in (file or []) if f in allowed]
+    if not ids:
+        ids = [i for i in (analysis.picked(window) or []) if i in allowed]
+    ids = sorted(set(ids))
+    selected = ("files:" + ",".join(ids)) if ids else (
+        window or analysis.default_window(p.tenant))
+    return pickable, ids, selected
 
 
 @app.get("/files", response_class=HTMLResponse)

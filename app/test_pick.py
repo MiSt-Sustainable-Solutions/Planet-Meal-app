@@ -256,5 +256,46 @@ P("File: December 2024.xlsx" not in d,
 P("Acme Catering Co" in d, "they get their own default window instead of an error")
 
 print()
+print("=== Data health answers for a STATED selection, not the default period ===")
+# It took a window and never offered one, so however you arrived it reported on the
+# default period. Worse than a display bug: the review sheet is built from whatever this
+# page is showing, so you could analyse one file, click through, and download a curation
+# backlog for a different year with nothing saying so.
+dh = admin.get("/data-health").text
+P("Data health &middot;" in dh or "Data health ·" in dh, "the page renders")
+P('name="file"' in dh, "and now offers the files to choose between")
+
+# 'dec' is not counted, so a period window cannot reach it. Only a pick can.
+picked_dh = admin.get("/?file=dec").text
+P("File: December 2024.xlsx" in picked_dh, "a file is chosen on the dashboard")
+
+link = "/data-health?window=files%3Adec"
+P(f'href="{link}"' in picked_dh,
+  "and the Data health link in the nav carries that selection, rather than dropping it")
+
+dh_dec = admin.get(link).text
+P("File: December 2024.xlsx" in dh_dec,
+  "so following it lands on the same selection")
+P('href="/review-sheet.xlsx?window=files:dec"' in dh_dec,
+  "and the review sheet is built from it too, not from the default period")
+
+# both request shapes, because the checkboxes post one and the links carry the other
+P("File: December 2024.xlsx" in admin.get("/data-health?file=dec").text,
+  "the checkbox form reaches the same place as the link")
+
+print()
+print("=== the two pages cannot disagree about what is selected ===")
+# One resolver, because two would drift and the drift is invisible: both pages would
+# render happily, showing different data under the same heading.
+import main as _m   # noqa: E402
+P(hasattr(_m, "chosen_window"), "there is one function that decides")
+for path in ("/", "/data-health"):
+    body = admin.get(f"{path}?file=dec").text
+    P("File: December 2024.xlsx" in body, f"{path:14} agrees on the selection")
+
+P("File: December 2024.xlsx" not in client.get("/data-health?file=dec").text,
+  "and a client still cannot choose a file they are not shown")
+
+print()
 print("ALL PASS" if not FAILED else f"{len(FAILED)} FAILED")
 sys.exit(1 if FAILED else 0)
