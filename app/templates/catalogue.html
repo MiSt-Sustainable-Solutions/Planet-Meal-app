@@ -1,9 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Catalogue{% endblock %}
+{% block title %}Catalogue<style>
+.fold-vocab>summary{cursor:pointer;list-style:none;font-family:var(--sans);font-size:13px;
+  font-weight:700;color:var(--sage);display:flex;align-items:center;gap:8px;}
+.fold-vocab>summary::-webkit-details-marker{display:none;}
+.fold-vocab>summary::before{content:"+";font-weight:700;}
+.fold-vocab[open]>summary::before{content:"\2212";}
+</style>
+
+{% endblock %}
 {% macro reference_table(rows) %}
 <div class="card scroll-x" style="margin-top:12px;">
   <table class="tbl">
-    <thead><tr><th>NEVO</th><th>Reference</th><th>Also called</th><th>Group</th>
+    <thead><tr><th>NEVO</th><th>Reference food (English)</th>
+      <th>Dutch name &mdash; often what matched</th><th>EAT-Lancet bucket</th>
       <th class="num">kg CO<sub>2</sub>e/kg</th></tr></thead>
     <tbody>
     {% for r in rows %}
@@ -46,18 +55,59 @@
     <form method="get" action="/catalogue" style="margin-top:26px;display:flex;gap:12px;flex-wrap:wrap;">
       <input type="hidden" name="kind" value="{{ kind }}"/>
       <input class="inp" type="search" name="q" value="{{ q }}" autofocus
-             placeholder="melk &nbsp;·&nbsp; 194072 &nbsp;·&nbsp; 8710401996797 &nbsp;·&nbsp; 279"
+             placeholder="type a product name, or a number"
              style="flex:1;min-width:260px;max-width:520px;"/>
       <button class="btn-main" type="submit">Search</button>
     </form>
 
-    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
-      {% for k, label in [('search','Search'), ('groups','Food groups'),
-                          ('products','RIVM references'), ('buckets','Bucket averages')] %}
-      <a class="{{ 'btn-main' if kind == k else 'btn-ghost' }}"
+    {# The placeholder used to be four bare examples with nothing saying which was which,
+       which tells you what you CAN type and not what any of it is. #}
+    <div class="card" style="margin-top:16px;max-width:78ch;">
+      <table class="tbl">
+        <tbody>
+        <tr><td class="name"><a href="/catalogue?q=melk">melk</a></td>
+          <td>Part of a product name, in Dutch or English. Finds products you buy, and
+            the reference foods you could pin them to.</td></tr>
+        <tr><td class="name"><a href="/catalogue?q=194072">194072</a></td>
+          <td>A <strong>Sligro article number</strong> &mdash; the code on their invoice.</td></tr>
+        <tr><td class="name"><a href="/catalogue?q=8710401996797">8710401996797</a></td>
+          <td>A <strong>barcode</strong>. Gets you the same product, and works across
+            wholesalers.</td></tr>
+        <tr><td class="name"><a href="/catalogue?q=279">279</a></td>
+          <td>A <strong>NEVO code</strong> &mdash; the id of a reference food. Answers
+            &ldquo;which of our products did we call this?&rdquo;</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:22px;flex-wrap:wrap;">
+      {% for k, label, hint in [
+          ('search','Search', 'look something up'),
+          ('groups','Food groups', 'the 27 answers a reviewer can choose in the sheet'),
+          ('products','RIVM references', 'the 330 specific foods a product can be pinned to'),
+          ('buckets','Bucket averages', 'the 17 EAT-Lancet buckets and their crude averages')] %}
+      <a class="{{ 'btn-main' if kind == k else 'btn-ghost' }}" title="{{ hint }}"
          href="/catalogue?kind={{ k }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ label }}</a>
       {% endfor %}
     </div>
+    <p class="muted" style="font-size:13px;margin-top:10px;max-width:74ch;">
+      {% if kind == 'search' %}
+      The three tabs beside Search are reference lists, not results: what a decision is
+      allowed to point at, and what each of those is worth.
+      {% elif kind == 'groups' %}
+      <strong>Food groups</strong> are the 27 answers available in the review sheet&rsquo;s
+      group column &mdash; the fallback when you know what KIND of thing a product is but
+      not exactly which.
+      {% elif kind == 'products' %}
+      <strong>RIVM references</strong> are the specific foods a decision can pin a product
+      to. Pinning says &ldquo;this product IS that food&rdquo;, and it takes that
+      food&rsquo;s figure.
+      {% else %}
+      <strong>Bucket averages</strong> are the EAT-Lancet buckets. They serve two purposes:
+      grouping the dashboard&rsquo;s EAT-Lancet score, and giving a product a figure when
+      nothing better is known &mdash; the weakest rung of the ladder.
+      {% endif %}
+    </p>
 
     {% if done %}
     <div class="card" style="margin-top:20px;border-color:var(--teal);">
@@ -93,11 +143,22 @@
        number is genuinely both an article number and a NEVO code, so both were tried. #}
 
     {% if hits.products %}
-    <div class="card scroll-x" style="margin-top:24px;">
+    <h3 class="h3" style="margin-top:26px;">Products {{ client_name and '' }}we can buy</h3>
+    <p class="muted" style="font-size:13px;margin-top:6px;max-width:74ch;">
+      <strong>From</strong> is the rung that produced the figure, best to worst:
+      <em>curated pin</em> (a person decided it) &rarr; <em>rivm product</em> (matched to a
+      specific reference food) &rarr; <em>rivm group avg</em> / <em>bucket avg</em>
+      (an average over many foods).
+      <strong>Confidence</strong> is 1.00 for a decision about this exact product and falls
+      as the match gets coarser &mdash; so a 1.00 next to <em>curated pin</em> means
+      somebody looked at this product and said so.
+    </p>
+    <div class="card scroll-x" style="margin-top:14px;">
       <table class="tbl">
         <thead><tr>
           <th>Article</th><th>Product</th><th>Group</th>
-          <th class="num">kg CO<sub>2</sub>e/kg</th><th>From</th><th class="num">Sure</th><th></th>
+          <th class="num">kg CO<sub>2</sub>e/kg</th><th>From</th>
+          <th class="num" title="1.00 = a decision made about this exact product. Lower means a coarser match.">Confidence</th><th></th>
         </tr></thead>
         <tbody>
         {% for p in hits.products %}
@@ -144,12 +205,21 @@
     {% endif %}
 
     {% if hits.references %}
-    <h3 class="h3" style="margin-top:30px;">Reference foods a decision can point at</h3>
+    <h3 class="h3" style="margin-top:30px;">Reference foods you could pin to</h3>
+    <p class="muted" style="font-size:13px;margin-top:6px;max-width:74ch;">
+      Not products &mdash; these are entries in the Dutch national food data (NEVO), each
+      with a measured footprint from RIVM. They are the shelf: a decision says &ldquo;this
+      product IS that food&rdquo;, and the product then takes that food&rsquo;s figure.
+      They appear here because their name matched what you typed, <strong>often the Dutch
+      one</strong> &mdash; searching &ldquo;kip&rdquo; finds <em>Chicken fillet</em>
+      because NEVO calls it <em>Kipfilet</em>. Look at the Dutch column when a match looks
+      surprising.
+    </p>
     {{ reference_table(hits.references) }}
     {% endif %}
 
     {% if hits.groups %}
-    <h3 class="h3" style="margin-top:30px;">Food groups</h3>
+    <h3 class="h3" style="margin-top:30px;">Food groups matching that word</h3>
     <div class="card scroll-x" style="margin-top:12px;">
       <table class="tbl">
         <thead><tr><th>Group</th><th class="num">kg CO<sub>2</sub>e/kg</th>
@@ -164,6 +234,33 @@
       </table>
     </div>
     {% endif %}
+
+    <details class="fold-vocab" style="margin-top:30px;">
+      <summary>Three different kinds of grouping, and why that is confusing</summary>
+      <div class="card" style="margin-top:12px;max-width:80ch;">
+        <table class="tbl">
+          <tbody>
+          <tr><td class="name">Sligro category</td>
+            <td><code>ZUIVEL HOUDBAAR</code> &mdash; the wholesaler&rsquo;s own words, on
+              their invoice. We read it, we do not choose it.</td></tr>
+          <tr><td class="name">EAT-Lancet bucket</td>
+            <td><code>dairy</code>, <code>white_meat</code>, <code>red_meat</code> &mdash;
+              17 of them. This is what the dashboard&rsquo;s EAT-Lancet score is built on,
+              and its average is a product&rsquo;s last resort for a footprint.</td></tr>
+          <tr><td class="name">Food group</td>
+            <td><code>Milk and milk products</code>, <code>Bread</code> &mdash; 27 of them.
+              These are the answers a reviewer can pick in the review sheet when they know
+              the kind of thing but not the exact product.</td></tr>
+          </tbody>
+        </table>
+        <p class="muted" style="font-size:13px;margin:14px 2px 2px;">
+          A product has all three at once, and they will not look like each other. Whole
+          milk is <code>ZUIVEL HOUDBAAR</code> to Sligro, <code>dairy</code> to
+          EAT-Lancet, and would be <code>Milk and milk products</code> if somebody grouped
+          it by hand.
+        </p>
+      </div>
+    </details>
 
     {% if not (hits.products or hits.decisions or hits.references or hits.groups) %}
     <p class="lede" style="margin-top:24px;max-width:60ch;">

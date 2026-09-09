@@ -26,6 +26,12 @@
       here is tied to this supplier&rsquo;s article number &mdash; the product has no
       other name.{% endif %}
     </p>
+    <p class="muted" style="font-size:13px;margin-top:14px;max-width:70ch;">
+      <strong>Confidence</strong> runs 0 to 1. It is 1.00 only when the answer was made
+      about this exact product &mdash; a person deciding it, or a barcode matching one
+      reference food. It falls as the match gets coarser, and an average over a whole
+      group is the bottom of it.
+    </p>
     <p style="margin-top:20px;"><a class="btn-ghost" href="/catalogue">Back to search</a></p>
 
     {% if detail.rebuild_pending %}
@@ -67,13 +73,19 @@
       <div class="card"><div class="stat">
         <div class="k">From</div>
         <div class="v" style="font-size:20px;">{{ (p.footprint_src or '—')|replace('_',' ') }}</div>
-        <div class="sub">confidence
+        <div class="sub">
+          {% if p.footprint_src == 'curated_pin' %}a person decided it
+          {% elif p.footprint_src == 'rivm_product' %}matched to one specific food
+          {% elif p.footprint_src and 'avg' in p.footprint_src %}an average over many foods
+          {% endif %}
+          &middot; confidence
           {{ "%.2f"|format(p.footprint_conf) if p.footprint_conf is not none else '—' }}</div>
       </div></div>
       <div class="card"><div class="stat">
-        <div class="k">EAT-Lancet group</div>
+        <div class="k">EAT-Lancet bucket</div>
         <div class="v" style="font-size:20px;">{{ p.bucket or '—' }}</div>
-        <div class="sub">from {{ (p.bucket_src or '—')|replace('_',' ') }},
+        <div class="sub">what the dashboard&rsquo;s EAT score counts it as &middot;
+          from {{ (p.bucket_src or '—')|replace('_',' ') }},
           confidence {{ "%.2f"|format(p.bucket_conf) if p.bucket_conf is not none else '—' }}</div>
       </div></div>
     </div>
@@ -84,6 +96,11 @@
   <div class="inner">
     <div class="sec-label sl-teal">Where the number came from</div>
     <h2 class="sec-h2">The <em>chain.</em></h2>
+    <p class="lede" style="margin-top:16px;max-width:66ch;">
+      Read it top to bottom: the thing we bought, what somebody decided it was, the
+      reference food that decision points at, and what the answer would have been without
+      it.
+    </p>
     <div class="card" style="margin-top:24px;">
       <table class="tbl">
         <tbody>
@@ -145,18 +162,40 @@
     <div class="sec-label">The decision</div>
     {% if d %}
     <h2 class="sec-h2">A person <em>decided this.</em></h2>
-    <p class="lede" style="margin-top:18px;max-width:64ch;">
-      A curated decision outranks every rule in the system, for every client, so it is the
-      one thing here worth being able to take back.
+    <p class="lede" style="margin-top:18px;max-width:66ch;">
+      Somebody opened a review sheet, read this product&rsquo;s name, and said what it is.
+      That answer is stored as a <strong>rule, not a number</strong>: it records which
+      reference food this product IS, and the footprint is recalculated from that every
+      time &mdash; so it improves when the reference data does, and no figure anywhere was
+      typed in by hand.
+    </p>
+    <p class="muted" style="margin-top:14px;max-width:66ch;">
+      There are four answers a reviewer can give.
+      <strong>pin</strong> names one exact reference food.
+      <strong>group</strong> names a kind of food, when the exact one is not knowable.
+      <strong>nonfood</strong> takes it out of the food totals altogether.
+      <strong>no</strong> records that none of the suggestions fitted, so it is not asked
+      again.
+      A decision outranks every automatic rule in the system, for every client, which is
+      why it is the one thing worth being able to take back.
     </p>
 
     <div class="card" style="margin-top:24px;">
       <table class="tbl">
         <tbody>
-        <tr><td class="name">Answer</td><td>{{ d.answer }}</td></tr>
+        <tr><td class="name">Answer</td>
+          <td><strong>{{ d.answer }}</strong>
+            <span class="muted">&mdash;
+            {% if d.answer == 'pin' %}this product IS one exact reference food
+            {% elif d.answer == 'group' %}we know the kind of food, not the exact one
+            {% elif d.answer == 'nonfood' %}not food; excluded from the food totals
+            {% else %}none of the suggestions fitted{% endif %}</span></td></tr>
         <tr><td class="name">Points at</td>
-          <td>{{ d.group_name or ('NEVO ' ~ d.nevo_code if d.nevo_code else '—') }}</td></tr>
-        <tr><td class="name">Note</td><td>{{ d.note or '—' }}</td></tr>
+          <td>{{ d.group_name or ('NEVO ' ~ d.nevo_code if d.nevo_code else '—') }}
+            {% if d.group_name %}<span class="muted">&mdash; a food group, one of 27</span>
+            {% elif d.nevo_code %}<span class="muted">&mdash; a reference food in the Dutch
+              national food data</span>{% endif %}</td></tr>
+        <tr><td class="name">Why they said so</td><td>{{ d.note or '—' }}</td></tr>
         <tr><td class="name">Filed from</td><td>{{ d.source or '—' }}</td></tr>
         <tr><td class="name">When</td><td>{{ d.decided_at or 'not recorded' }}</td></tr>
         </tbody>
