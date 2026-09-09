@@ -1,5 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Catalogue<style>
+.reflist-label{font-family:var(--sans);font-size:11px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--sage);margin-bottom:10px;}
+.reflist-tabs{display:flex;gap:10px;flex-wrap:wrap;}
+.reftab{display:flex;flex-direction:column;gap:3px;padding:11px 14px;min-width:190px;
+  border:1px solid var(--mist);border-radius:8px;background:var(--white);
+  text-decoration:none;transition:border-color .15s,background .15s;}
+.reftab:hover{border-color:var(--sage);}
+.reftab.on{border-color:var(--ink);background:var(--linen2);}
+.reftab-name{font-family:var(--sans);font-size:13.5px;font-weight:700;color:var(--ink);}
+.reftab-hint{font-family:var(--sans);font-size:12px;color:var(--sage);}
 .fold-vocab>summary{cursor:pointer;list-style:none;font-family:var(--sans);font-size:13px;
   font-weight:700;color:var(--sage);display:flex;align-items:center;gap:8px;}
 .fold-vocab>summary::-webkit-details-marker{display:none;}
@@ -80,34 +90,32 @@
       </table>
     </div>
 
-    <div style="display:flex;gap:8px;margin-top:22px;flex-wrap:wrap;">
-      {% for k, label, hint in [
-          ('search','Search', 'look something up'),
-          ('groups','Food groups', 'the 27 answers a reviewer can choose in the sheet'),
-          ('products','RIVM references', 'the 330 specific foods a product can be pinned to'),
-          ('buckets','Bucket averages', 'the 17 EAT-Lancet buckets and their crude averages')] %}
-      <a class="{{ 'btn-main' if kind == k else 'btn-ghost' }}" title="{{ hint }}"
-         href="/catalogue?kind={{ k }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ label }}</a>
-      {% endfor %}
+    {# These were an orange button labelled SEARCH sitting next to three underlined text
+       links, directly below a second orange button also labelled SEARCH. Two controls
+       with one word between them, at two visual weights, one of which submits a form and
+       one of which navigates. They are not buttons; they are a shelf you can go and look
+       at, so they are now shaped like one. #}
+    <div class="reflist" style="margin-top:28px;">
+      <div class="reflist-label">Or look at the reference data itself</div>
+      <div class="reflist-tabs">
+        {% for k, label, hint in [
+            ('groups','Food groups', '27 — the answers a reviewer can choose in the sheet'),
+            ('products','RIVM references', '330 — the exact foods a product can be pinned to'),
+            ('buckets','Bucket averages', '17 — the EAT-Lancet buckets and their averages')] %}
+        <a class="reftab {{ 'on' if kind == k else '' }}"
+           href="/catalogue?kind={{ k }}">
+          <span class="reftab-name">{{ label }}</span>
+          <span class="reftab-hint">{{ hint }}</span>
+        </a>
+        {% endfor %}
+        {% if kind != 'search' %}
+        <a class="reftab" href="/catalogue{% if q %}?q={{ q|urlencode }}{% endif %}">
+          <span class="reftab-name">&larr; Back to search</span>
+          <span class="reftab-hint">look a product up instead</span>
+        </a>
+        {% endif %}
+      </div>
     </div>
-    <p class="muted" style="font-size:13px;margin-top:10px;max-width:74ch;">
-      {% if kind == 'search' %}
-      The three tabs beside Search are reference lists, not results: what a decision is
-      allowed to point at, and what each of those is worth.
-      {% elif kind == 'groups' %}
-      <strong>Food groups</strong> are the 27 answers available in the review sheet&rsquo;s
-      group column &mdash; the fallback when you know what KIND of thing a product is but
-      not exactly which.
-      {% elif kind == 'products' %}
-      <strong>RIVM references</strong> are the specific foods a decision can pin a product
-      to. Pinning says &ldquo;this product IS that food&rdquo;, and it takes that
-      food&rsquo;s figure.
-      {% else %}
-      <strong>Bucket averages</strong> are the EAT-Lancet buckets. They serve two purposes:
-      grouping the dashboard&rsquo;s EAT-Lancet score, and giving a product a figure when
-      nothing better is known &mdash; the weakest rung of the ladder.
-      {% endif %}
-    </p>
 
     {% if done %}
     <div class="card" style="margin-top:20px;border-color:var(--teal);">
