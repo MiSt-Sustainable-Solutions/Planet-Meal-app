@@ -245,3 +245,63 @@ def recognise(products: list[dict]) -> dict | None:
         return r.json()
     except Exception:
         return None
+
+
+# --------------------------------------------------------------------------- browsing
+#
+# Looking things up rather than computing anything. The only lookup used to be by
+# barcode -- the identifier you are least likely to be holding -- so "what did we decide
+# about this" had no answer short of opening the database, in a product whose whole claim
+# is that any number can be followed back to its source.
+def search(q: str, limit: int = 40) -> dict | None:
+    """Products, references, groups and decisions matching one query. None if unreachable."""
+    try:
+        with _client() as c:
+            r = c.get("/catalogue/search", params={"q": q, "limit": limit}, timeout=60)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def explain(supplier: str, sku: str) -> dict | None:
+    """One product and every reason it has the numbers it has. None if unreachable or gone."""
+    try:
+        with _client() as c:
+            r = c.get(f"/catalogue/explain/{supplier}/{sku}", timeout=60)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def reference(kind: str = "groups", q: str = "", limit: int = 400) -> dict | None:
+    """The shelf every answer is drawn from: groups, RIVM products, or bucket averages."""
+    try:
+        with _client() as c:
+            r = c.get("/catalogue/reference",
+                      params={"kind": kind, "q": q, "limit": limit}, timeout=60)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def retract(supplier: str, sku: str, why: str = "", by: str = "") -> dict:
+    """Remove one curated decision. THE PRODUCT FALLS BACK TO THE AUTOMATIC LADDER.
+
+    Raises rather than returning None: unlike the reads above, a caller must never treat
+    "we could not reach the catalogue" as "it is done".
+    """
+    try:
+        with _client(admin=True) as c:
+            r = c.post("/catalogue/decisions/retract",
+                       json={"supplier": supplier, "supplier_sku": sku, "why": why},
+                       headers={"x-mist-actor": by} if by else {}, timeout=60)
+    except Exception as e:
+        raise CatalogueDown(
+            f"could not reach the catalogue to retract the decision "
+            f"({type(e).__name__})") from e
+    if r.status_code != 200:
+        detail = r.json().get("detail") if r.headers.get(
+            "content-type", "").startswith("application/json") else r.text
+        raise CatalogueDown(f"the catalogue refused the retraction "
+                            f"({r.status_code}): {detail}")
+    return r.json()

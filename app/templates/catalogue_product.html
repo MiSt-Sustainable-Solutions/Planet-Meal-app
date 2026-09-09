@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.product.description|truncate(30) }}{% endblock %}
+{% block body %}
+
+{#
+  One product, and every reason it has the numbers it has. The page behind any figure on
+  any screen: what it resolved to, which rung of which ladder produced that, the reference
+  it points at and what that reference is worth, and whether a person decided it.
+
+  It is also the only place a decision can be taken back. That used to be impossible --
+  a wrong pin could be replaced by another pin but never removed, so a product decided in
+  error stayed decided, and a curated answer beats a correct automatic one every time.
+#}
+
+{% set p = detail.product %}
+{% set d = detail.decision %}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Catalogue · {{ supplier }} {{ sku }}</div>
+    <h1 class="page-h1">{{ p.description or sku }}</h1>
+    <p class="lede" style="margin-top:18px;max-width:62ch;">
+      {{ detail.decided|capitalize }}.
+      {% if p.gtin %}Barcode {{ p.gtin }}, so a decision here travels to the same product
+      under any article number, from any wholesaler.{% else %}No barcode, so a decision
+      here is tied to this supplier&rsquo;s article number &mdash; the product has no
+      other name.{% endif %}
+    </p>
+    <p style="margin-top:20px;"><a class="btn-ghost" href="/catalogue">Back to search</a></p>
+
+    {% if detail.rebuild_pending %}
+    {# Without this the page says "nobody decided this" directly above a figure whose
+       source reads "curated pin". Both are true for as long as it takes to rebuild, and
+       a reader who sees them side by side has no way to know that. #}
+    <div class="card" style="margin-top:20px;border-color:var(--warn);border-width:2px;">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot warn"></span>
+        <div><div class="code">a rebuild is owed</div>
+          <div class="msg">The decision has been removed, but the figure above is still
+            the one it produced &mdash; the golden catalogue keeps it until
+            <code>python resolver.py build</code> runs. Both statements on this page are
+            true right now, which is why it says so.</div></div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if done %}
+    <div class="card" style="margin-top:20px;border-color:var(--teal);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot ok"></span><div><div class="msg">{{ done }}</div></div></div>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="card" style="margin-top:20px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">that did not happen</div><div class="msg">{{ error }}</div></div></div>
+    </div>
+    {% endif %}
+
+    <div class="grid g3" style="margin-top:28px;">
+      <div class="card"><div class="stat">
+        <div class="k">CO<sub>2</sub></div>
+        <div class="v">{{ "%.3f"|format(p.co2) if p.co2 is not none else '—' }}</div>
+        <div class="sub">kg CO<sub>2</sub>e per kg</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">From</div>
+        <div class="v" style="font-size:20px;">{{ (p.footprint_src or '—')|replace('_',' ') }}</div>
+        <div class="sub">confidence
+          {{ "%.2f"|format(p.footprint_conf) if p.footprint_conf is not none else '—' }}</div>
+      </div></div>
+      <div class="card"><div class="stat">
+        <div class="k">EAT-Lancet group</div>
+        <div class="v" style="font-size:20px;">{{ p.bucket or '—' }}</div>
+        <div class="sub">from {{ (p.bucket_src or '—')|replace('_',' ') }},
+          confidence {{ "%.2f"|format(p.bucket_conf) if p.bucket_conf is not none else '—' }}</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section class="dark">
+  <div class="inner">
+    <div class="sec-label sl-teal">Where the number came from</div>
+    <h2 class="sec-h2">The <em>chain.</em></h2>
+    <div class="card" style="margin-top:24px;">
+      <table class="tbl">
+        <tbody>
+        <tr><td class="name">This product</td>
+          <td>{{ p.description }} &mdash; {{ supplier }} {{ sku }}{% if p.gtin %},
+            barcode {{ p.gtin }}{% endif %}</td></tr>
+        <tr><td class="name">Supplier category</td>
+          <td>{{ p.supplier_category or '—' }}</td></tr>
+        {% if d %}
+        <tr><td class="name">Decided by a person</td>
+          <td><strong>{{ d.answer }}</strong>
+            {% if d.nevo_code %} &rarr; NEVO {{ d.nevo_code }}{% endif %}
+            {% if d.group_name %} &rarr; {{ d.group_name }}{% endif %}
+            {% if d.note %}<div class="muted" style="margin-top:4px;">{{ d.note }}</div>{% endif %}
+          </td></tr>
+        {% endif %}
+        {% if detail.reference %}
+        <tr><td class="name">Reference it points at</td>
+          <td>NEVO {{ detail.reference.nevo_code }} &mdash;
+            {{ detail.reference.name or detail.reference.english_name }}
+            {% if detail.reference.dutch_name %}
+              <span class="muted">({{ detail.reference.dutch_name }})</span>{% endif %}
+            <div class="muted" style="margin-top:4px;">
+              {{ "%.3f"|format(detail.reference.co2) }} kg CO<sub>2</sub>e per kg
+              {% if detail.reference.land is not none %}
+                · land {{ "%.2f"|format(detail.reference.land) }}{% endif %}
+            </div>
+          </td></tr>
+        {% endif %}
+        {% if detail.group %}
+        <tr><td class="name">The group it was put in</td>
+          <td>{{ detail.group.group_name }} &mdash;
+            {{ "%.2f"|format(detail.group.co2) }} kg CO<sub>2</sub>e per kg,
+            averaged over {{ detail.group.n_items }} items</td></tr>
+        {% endif %}
+        {% if detail.bucket_average %}
+        <tr><td class="name">Otherwise it would get</td>
+          <td>{{ "%.2f"|format(detail.bucket_average.co2) }} kg CO<sub>2</sub>e per kg
+            &mdash; the {{ p.bucket }} average, over
+            {{ detail.bucket_average.n_items }} items
+            <div class="muted" style="margin-top:4px;">
+              The weakest rung: what this product would carry if nothing more specific
+              were known about it.
+              {% if p.co2 is not none and detail.bucket_average.co2 %}
+              {% set diff = 100 * (p.co2 - detail.bucket_average.co2) / detail.bucket_average.co2 %}
+              Knowing more moved it {{ "%+.0f"|format(diff) }}%.
+              {% endif %}
+            </div>
+          </td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">The decision</div>
+    {% if d %}
+    <h2 class="sec-h2">A person <em>decided this.</em></h2>
+    <p class="lede" style="margin-top:18px;max-width:64ch;">
+      A curated decision outranks every rule in the system, for every client, so it is the
+      one thing here worth being able to take back.
+    </p>
+
+    <div class="card" style="margin-top:24px;">
+      <table class="tbl">
+        <tbody>
+        <tr><td class="name">Answer</td><td>{{ d.answer }}</td></tr>
+        <tr><td class="name">Points at</td>
+          <td>{{ d.group_name or ('NEVO ' ~ d.nevo_code if d.nevo_code else '—') }}</td></tr>
+        <tr><td class="name">Note</td><td>{{ d.note or '—' }}</td></tr>
+        <tr><td class="name">Filed from</td><td>{{ d.source or '—' }}</td></tr>
+        <tr><td class="name">When</td><td>{{ d.decided_at or 'not recorded' }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <details class="fold-hist" style="margin-top:24px;">
+      <summary>
+        {% if detail.history %}Everything that has happened to it ({{ detail.history|length }})
+        {% else %}No changes recorded{% endif %}
+      </summary>
+      <div style="padding:14px 2px 2px;">
+        {% if detail.history %}
+        <div class="card scroll-x">
+          <table class="tbl">
+            <thead><tr><th>When</th><th>What</th><th>Was</th><th>Became</th>
+              <th>Who</th><th>Why</th></tr></thead>
+            <tbody>
+            {% for h in detail.history %}
+            <tr>
+              <td class="muted">{{ h.changed_at[:19]|replace('T',' ') }}</td>
+              <td><span class="pill {{ 'bad' if h.action == 'retract' else ('warn' if h.action == 'overwrite' else 'soft') }}">{{ h.action }}</span></td>
+              <td class="muted">{{ h.was_answer or '—' }}{% if h.was_nevo_code %} → {{ h.was_nevo_code }}{% endif %}{% if h.was_group_name %} → {{ h.was_group_name }}{% endif %}</td>
+              <td>{{ h.now_answer or '—' }}{% if h.now_nevo_code %} → {{ h.now_nevo_code }}{% endif %}{% if h.now_group_name %} → {{ h.now_group_name }}{% endif %}</td>
+              <td class="muted">{{ h.changed_by or '—' }}</td>
+              <td class="muted">{{ (h.why or '')|truncate(30) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% elif detail.history_unrecorded %}
+        {# Not the same as "nobody touched it", and the difference matters on a page whose
+           whole job is provenance. #}
+        <p class="muted" style="max-width:60ch;">
+          This decision was made before there was anywhere to record how. That is a gap in
+          our bookkeeping, not evidence that nothing happened &mdash; 328 decisions predate
+          the history. Everything filed from now on is recorded.
+        </p>
+        {% endif %}
+      </div>
+    </details>
+
+    <div class="card" style="margin-top:24px;border-color:var(--warn);">
+      <div class="sec-label" style="margin:0 0 8px;color:var(--warn);">Take it back</div>
+      <p class="muted" style="font-size:14px;max-width:64ch;margin-bottom:16px;">
+        Removes the decision. This product then resolves by the automatic ladder, exactly
+        as if nobody had ever decided it &mdash; which is the right answer when the
+        decision was wrong, because a curated answer beats a correct automatic one every
+        time. The removal is recorded, so it can be put back.
+        <strong>It changes what every client sees.</strong>
+      </p>
+      <form method="post" action="/catalogue/{{ supplier }}/{{ sku }}/retract"
+            style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;"
+            onsubmit="return confirm('Remove this decision? The product falls back to the automatic ladder for every client. It is recorded and can be put back.');">
+        <input class="inp" type="text" name="why" maxlength="200"
+               placeholder="why — stored with the removal"
+               style="flex:1;min-width:240px;max-width:420px;"/>
+        <button class="btn-ghost" type="submit">Remove this decision</button>
+      </form>
+    </div>
+
+    {% else %}
+    <h2 class="sec-h2">
+      {% if detail.rebuild_pending %}The decision was <em>removed.</em>
+      {% else %}Nobody has <em>decided this.</em>{% endif %}
+    </h2>
+    <p class="lede" style="margin-top:18px;max-width:64ch;">
+      {% if detail.rebuild_pending %}
+      It will resolve by the automatic ladder once the catalogue is rebuilt; until then
+      the figures above are the ones the decision produced.
+      {% else %}
+      It resolves automatically, by the ladder above.{% endif %} If that is wrong, it belongs in a
+      review sheet &mdash; decisions are made in batches from
+      <a href="/data-health">Data health</a>, where the heaviest unresolved products are
+      put in front of you first, rather than one at a time from a search result.
+    </p>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+.fold-hist>summary{cursor:pointer;list-style:none;font-family:var(--sans);font-size:13px;
+  font-weight:700;color:var(--sage);display:flex;align-items:center;gap:8px;}
+.fold-hist>summary::-webkit-details-marker{display:none;}
+.fold-hist>summary::before{content:"+";font-weight:700;}
+.fold-hist[open]>summary::before{content:"\2212";}
+</style>
+
+{% endblock %}

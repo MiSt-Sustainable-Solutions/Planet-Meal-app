@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}Catalogue{% endblock %}
+{% macro reference_table(rows) %}
+<div class="card scroll-x" style="margin-top:12px;">
+  <table class="tbl">
+    <thead><tr><th>NEVO</th><th>Reference</th><th>Also called</th><th>Group</th>
+      <th class="num">kg CO<sub>2</sub>e/kg</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="name">{{ r.nevo_code }}</td>
+      <td>{{ (r.name or r.english_name or '')|truncate(42) }}</td>
+      <td class="muted">{{ (r.dutch_name or '')|truncate(30) }}</td>
+      <td class="muted">{{ r.bucket or r.food_group_en or '—' }}</td>
+      <td class="num">{{ "%.3f"|format(r.co2) if r.co2 is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% block body %}
+
+{#
+  The catalogue, askable. Until now the only lookup was by barcode -- the identifier you
+  are least likely to be holding -- so "what did we decide about this" meant opening the
+  database. The 27 food groups existed only as a dropdown inside a downloaded spreadsheet
+  and the reference products nowhere at all, which is a poor shape for a product whose
+  claim is that any number can be followed back to its source.
+
+  MiSt's, not a client's: what this holds is shared across every client, and a decision
+  reached from here outranks every rule for all of them.
+#}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Catalogue</div>
+    <h1 class="page-h1">What we <em>know,</em> and how.</h1>
+    <p class="lede" style="margin-top:22px;max-width:62ch;">
+      Every product, every reference it can point at, and every decision a person has made.
+      Search with whatever you have &mdash; a name, an article number, a barcode, a NEVO
+      code. Shared across all clients.
+    </p>
+
+    <form method="get" action="/catalogue" style="margin-top:26px;display:flex;gap:12px;flex-wrap:wrap;">
+      <input type="hidden" name="kind" value="{{ kind }}"/>
+      <input class="inp" type="search" name="q" value="{{ q }}" autofocus
+             placeholder="melk &nbsp;·&nbsp; 194072 &nbsp;·&nbsp; 8710401996797 &nbsp;·&nbsp; 279"
+             style="flex:1;min-width:260px;max-width:520px;"/>
+      <button class="btn-main" type="submit">Search</button>
+    </form>
+
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+      {% for k, label in [('search','Search'), ('groups','Food groups'),
+                          ('products','RIVM references'), ('buckets','Bucket averages')] %}
+      <a class="{{ 'btn-main' if kind == k else 'btn-ghost' }}"
+         href="/catalogue?kind={{ k }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+
+    {% if done %}
+    <div class="card" style="margin-top:20px;border-color:var(--teal);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot ok"></span><div><div class="msg">{{ done }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+    {% if error or api_down %}
+    <div class="card" style="margin-top:20px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">the catalogue did not answer</div>
+          <div class="msg">{{ error or "It may be starting up, or unreachable from here.
+            Nothing below is missing — it was never fetched." }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{% if kind == 'search' and hits %}
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">
+      {{ hits.counts.products }} product{{ '' if hits.counts.products == 1 else 's' }} ·
+      {{ hits.counts.references }} reference{{ '' if hits.counts.references == 1 else 's' }} ·
+      {{ hits.counts.groups }} group{{ '' if hits.counts.groups == 1 else 's' }} ·
+      {{ hits.counts.decisions }} decision{{ '' if hits.counts.decisions == 1 else 's' }}
+    </div>
+    <h2 class="sec-h2">Read as <em>{{ hits.read_as|join(', or ') }}.</em></h2>
+    {# Said out loud so an empty result is explicable rather than mysterious: a short
+       number is genuinely both an article number and a NEVO code, so both were tried. #}
+
+    {% if hits.products %}
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Article</th><th>Product</th><th>Group</th>
+          <th class="num">kg CO<sub>2</sub>e/kg</th><th>From</th><th class="num">Sure</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for p in hits.products %}
+        <tr>
+          <td class="name">{{ p.supplier_sku }}</td>
+          <td>{{ (p.description or '')|truncate(44) }}
+            {% if p.gtin %}<div class="muted" style="font-size:12px;">{{ p.gtin }}</div>{% endif %}</td>
+          <td class="muted">{{ p.bucket or '—' }}</td>
+          <td class="num">{{ "%.3f"|format(p.co2) if p.co2 is not none else '—' }}</td>
+          <td>
+            <span class="pill {{ 'soft' if p.footprint_src == 'curated_pin' else '' }}">
+              {{ (p.footprint_src or '—')|replace('_',' ') }}
+            </span>
+          </td>
+          <td class="num">{{ "%.2f"|format(p.footprint_conf) if p.footprint_conf is not none else '—' }}</td>
+          <td><a class="btn-ghost" href="/catalogue/{{ p.supplier }}/{{ p.supplier_sku }}">Open</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if hits.decisions %}
+    <h3 class="h3" style="margin-top:30px;">Decisions</h3>
+    <div class="card scroll-x" style="margin-top:12px;">
+      <table class="tbl">
+        <thead><tr><th>Article</th><th>Answer</th><th>Points at</th><th>Note</th>
+          <th>Decided</th><th></th></tr></thead>
+        <tbody>
+        {% for d in hits.decisions %}
+        <tr>
+          <td class="name">{{ d.supplier_sku }}</td>
+          <td><span class="pill {{ 'soft' if d.answer == 'pin' else 'warn' }}">{{ d.answer }}</span></td>
+          <td class="muted">{{ d.group_name or ('NEVO ' ~ d.nevo_code if d.nevo_code else '—') }}</td>
+          <td class="muted">{{ (d.note or '')|truncate(38) }}</td>
+          <td class="muted">{{ (d.decided_at or '—')[:10] }}</td>
+          <td><a class="btn-ghost" href="/catalogue/{{ d.supplier }}/{{ d.supplier_sku }}">Open</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if hits.references %}
+    <h3 class="h3" style="margin-top:30px;">Reference foods a decision can point at</h3>
+    {{ reference_table(hits.references) }}
+    {% endif %}
+
+    {% if hits.groups %}
+    <h3 class="h3" style="margin-top:30px;">Food groups</h3>
+    <div class="card scroll-x" style="margin-top:12px;">
+      <table class="tbl">
+        <thead><tr><th>Group</th><th class="num">kg CO<sub>2</sub>e/kg</th>
+          <th class="num">Items behind it</th></tr></thead>
+        <tbody>
+        {% for g in hits.groups %}
+        <tr><td class="name">{{ g.group_name }}</td>
+          <td class="num">{{ "%.2f"|format(g.co2) }}</td>
+          <td class="num muted">{{ g.n_items }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if not (hits.products or hits.decisions or hits.references or hits.groups) %}
+    <p class="lede" style="margin-top:24px;max-width:60ch;">
+      Nothing matched. It was read as {{ hits.read_as|join(', and as ') }} &mdash; if that
+      is not what you meant, the thing you have may be an identifier the catalogue does
+      not carry.
+    </p>
+    {% endif %}
+  </div>
+</section>
+{% elif kind == 'search' and not q %}
+<section class="light2">
+  <div class="inner">
+    <p class="lede" style="max-width:60ch;">
+      Nothing searched yet. A short number is tried both as an article number and as a
+      NEVO code, because it is genuinely both &mdash; the page tells you which readings
+      it used.
+    </p>
+  </div>
+</section>
+{% endif %}
+
+{% if ref %}
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">
+      {% if kind == 'groups' %}Food groups{% elif kind == 'buckets' %}Bucket averages
+      {% else %}RIVM reference products{% endif %}
+    </div>
+    <h2 class="sec-h2">{{ ref.total }} of them, <em>and what each is worth.</em></h2>
+    <p class="lede" style="margin-top:18px;max-width:64ch;">
+      {% if kind == 'groups' %}
+      The answers available in the review sheet&rsquo;s group column. Until now this list
+      existed only as a dropdown inside a downloaded spreadsheet, so nobody could see what
+      an answer was worth before giving it.
+      {% elif kind == 'buckets' %}
+      What a product gets when nothing more specific is known &mdash; the weakest rung of
+      the footprint ladder, and the one the work queue exists to move products off.
+      {% else %}
+      Every reference product a decision can point at, with the figure it carries. This is
+      the shelf; a pin is a statement that a product IS one of these.
+      {% endif %}
+    </p>
+
+    {% if kind == 'buckets' %}
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr><th>Bucket</th><th class="num">kg CO<sub>2</sub>e/kg</th>
+          <th class="num">Items behind it</th></tr></thead>
+        <tbody>
+        {% for r in ref.rows %}
+        <tr><td class="name">{{ r.bucket }}</td>
+          <td class="num">{{ "%.2f"|format(r.co2) if r.co2 is not none else '—' }}</td>
+          <td class="num muted">{{ r.n_items }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% elif kind == 'groups' %}
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr><th>Group</th><th class="num">kg CO<sub>2</sub>e/kg</th>
+          <th class="num">Items</th><th class="num">Land</th><th class="num">Water</th></tr></thead>
+        <tbody>
+        {% for r in ref.rows %}
+        <tr><td class="name">{{ r.group_name }}</td>
+          <td class="num">{{ "%.2f"|format(r.co2) }}</td>
+          <td class="num muted">{{ r.n_items }}</td>
+          <td class="num muted">{{ "%.2f"|format(r.land) if r.land is not none else '—' }}</td>
+          <td class="num muted">{{ "%.3f"|format(r.water) if r.water is not none else '—' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    {{ reference_table(ref.rows) }}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}
+

@@ -98,7 +98,7 @@ PUBLIC_PREFIXES = ("/static", "/set-password")
 # times a week it reads as churn rather than candour. When a month passes where the only
 # changes are the client's own files, take it out of this tuple and un-hide the nav link.
 ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner",
-               "/history")
+               "/history", "/catalogue")
 
 
 @app.middleware("http")
@@ -778,6 +778,62 @@ def file_lines_xlsx(request: Request, upload_id: str):
     stamp = (rep.get("filename") or upload_id).rsplit(".", 1)[0].replace(" ", "_")
     return _lines_workbook(request, rows, f"{rep.get('filename') or upload_id}",
                            f"PLANETmeal_lines_{stamp}.xlsx")
+
+
+# --------------------------------------------------------------------------- catalogue
+@app.get("/catalogue", response_class=HTMLResponse)
+def catalogue_browse(request: Request, q: str = "", kind: str = "search",
+                     done: str | None = None, error: str | None = None):
+    """Search the shared catalogue: a name, an article number, a barcode, a NEVO code.
+
+    MiSt's, not a client's. What it holds is shared across every client, and a decision
+    reached from this page outranks every rule for all of them.
+    """
+    me(request)
+    hits = catalogue.search(q, limit=40) if q.strip() else None
+    ref = catalogue.reference(kind, q if kind != "search" else "", limit=400) \
+        if kind in ("groups", "products", "buckets") else None
+    return templates.TemplateResponse(request, "catalogue.html", ctx(
+        request, "catalogue", q=q, kind=kind, hits=hits, ref=ref,
+        api_down=(q.strip() and hits is None) or (kind != "search" and ref is None),
+        done=done, error=error))
+
+
+@app.get("/catalogue/{supplier}/{sku}", response_class=HTMLResponse)
+def catalogue_product(request: Request, supplier: str, sku: str,
+                      done: str | None = None, error: str | None = None):
+    """One product, and every reason it has the numbers it has."""
+    me(request)
+    detail = catalogue.explain(supplier, sku)
+    if detail is None:
+        raise HTTPException(404, f"no product {supplier}/{sku}, or the catalogue is down")
+    return templates.TemplateResponse(request, "catalogue_product.html", ctx(
+        request, "catalogue", detail=detail, supplier=supplier, sku=sku,
+        done=done, error=error))
+
+
+@app.post("/catalogue/{supplier}/{sku}/retract")
+def catalogue_retract(request: Request, supplier: str, sku: str, why: str = Form("")):
+    """Remove the curated decision on this product.
+
+    Its own action with its own confirmation, because it changes what every client sees.
+    The pin is recorded on its way out, so this is undoable in turn.
+    """
+    p = me(request)
+    try:
+        out = catalogue.retract(supplier, sku, why=why, by=p.username)
+    except catalogue.CatalogueDown as e:
+        return RedirectResponse(f"/catalogue/{supplier}/{sku}?error={quote(str(e))}",
+                                status_code=303)
+    was = out.get("retracted") or {}
+    msg = (f"Decision removed. It was {was.get('answer')}"
+           + (f" to NEVO {was['nevo_code']}" if was.get("nevo_code") else "")
+           + (f" ({was['group_name']})" if was.get("group_name") else "")
+           + ". The removal is recorded, so it can be put back. The figures do not move "
+             "until the catalogue is rebuilt — until then this product still carries what "
+             "the decision produced, and its page says so.")
+    return RedirectResponse(f"/catalogue/{supplier}/{sku}?done={quote(msg)}",
+                            status_code=303)
 
 
 # --------------------------------------------------------------------------- export
