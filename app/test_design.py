@@ -145,8 +145,14 @@ print("\n=== the honesty rules survive into the HTML ===")
 dash = fetch("/")
 P("70%" in dash and "real match" in dash, "the confidence line is on the dashboard")
 P("weighs nothing" in dash or "weighs zero" in dash, "the per-piece gap is on the dashboard")
+# Both of these used to be on the EAT stat card, in the phrase "not yet confirmed". That
+# came off the card on 11 Sep 2026 at Mrigank's request -- it read badly next to a headline
+# figure. The claim itself did not go: it is in the EAT-Lancet section, beside the vector
+# it is about, and in the caveats that travel with every export. So this still checks the
+# page makes it, and no longer checks where.
 P("reconstruction" in dash.lower(), "the EAT-Lancet score is flagged as a reconstruction")
-P("not yet confirmed" in dash.lower(), "and as unconfirmed")
+P("has not been confirmed" in dash.lower() or "not yet confirmed" in dash.lower(),
+  "and as unconfirmed, somewhere a reader will meet it")
 
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]

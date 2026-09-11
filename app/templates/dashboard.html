@@ -50,7 +50,12 @@
         <div class="stat">
           <span class="k">EAT-Lancet score</span>
           <span class="v"><span data-count="{{ h.eat_lancet_score }}" data-dp="3">{{ h.eat_lancet_score }}</span></span>
-          <span class="sub">0 to 1. Reconstruction of TU&nbsp;Delft's method — not yet confirmed.</span>
+          {# The reconstruction caveat was on this card and is now only further down the
+             page, where the vector itself is shown, and in the caveats list that travels
+             with the export. Moved rather than deleted: the claim is still made, in the
+             place where a reader is looking at the thing being claimed about. #}
+          <span class="sub">0 to 1. How close the purchasing sits to the EAT-Lancet
+            reference diet.</span>
         </div>
       </div>
       <div class="card sr d3">
