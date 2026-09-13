@@ -120,7 +120,21 @@ async def gate(request: Request, call_next):
         nxt = quote(path + ("?" + request.url.query if request.url.query else ""))
         return RedirectResponse(f"/login?next={nxt}", status_code=303)
 
-    if any(path == a or path.startswith(a + "/") for a in ADMIN_PATHS) and not me.is_admin:
+    admin_only = any(path == a or path.startswith(a + "/") for a in ADMIN_PATHS)
+
+    # "See what the client sees" has to hold on every page, not only the ones built for
+    # clients. It first changed just the dashboard, Data health and Files, so an admin who
+    # opened Catalogue or Changes mid-preview got the admin page, and it read as though the
+    # client could too. So a preview gets the refusal a client gets -- drawn with the
+    # admin bar, which is the way back. The two switches are what the bar itself posts to.
+    if (admin_only and me.is_admin and request.session.get(AS_CLIENT)
+            and path not in PREVIEW_EXITS):
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "admin only"}, status_code=403)
+        return templates.TemplateResponse(request, "denied.html", ctx(request, "", what=path),
+                                          status_code=403)
+
+    if admin_only and not me.is_admin:
         if path.startswith("/api/"):
             return JSONResponse({"detail": "admin only"}, status_code=403)
         denied_client, denied_caterer = auth.tenant_names(me.tenant)
@@ -176,9 +190,10 @@ def me(request: Request) -> auth.Principal:
     return p
 
 
-# Set by "See what the client sees". Kept in the session, so it survives moving between
-# the dashboard, Data health and Files, which is the whole of what a client can open.
+# Set by "See what the client sees". Kept in the session, so it survives moving from page
+# to page: every page is then drawn as the client gets it (see ctx and gate).
 AS_CLIENT = "as_client"
+PREVIEW_EXITS = ("/admin/as-client", "/admin/viewing")
 
 
 def audience(request: Request, p: auth.Principal) -> tuple[bool, auth.Principal]:
@@ -205,7 +220,10 @@ def ctx(request: Request, page: str, **kw) -> dict:
     tenant = who.tenant if who else None
     all_tenants = auth.tenants()
     client_name, caterer_name = auth.tenant_names(tenant, all_tenants)
-    base = dict(request=request, page=page, me=who,
+    previewing = bool(who and who.is_admin and request.session.get(AS_CLIENT))
+    base = dict(request=request, page=page,
+                me=(dataclasses.replace(who, role="client", _own_tenant=who.tenant)
+                    if previewing else who),
                 tenants=all_tenants if (who and who.is_admin) else [],
                 viewing=tenant,
                 client_name=client_name,
@@ -217,8 +235,7 @@ def ctx(request: Request, page: str, **kw) -> dict:
                                          live=(health or {}).get("catalogue")),
                 # `me` is who the page is drawn for, which a preview changes. The admin
                 # bar needs to know who is really here, so it can offer the way back.
-                real_me=who, as_client=bool(who and who.is_admin
-                                            and request.session.get(AS_CLIENT)),
+                real_me=who, as_client=previewing,
                 pub_state=(publish.state(tenant, ((health or {}).get("catalogue") or {})
                                          .get("etag"))
                            if who and who.is_admin else None),

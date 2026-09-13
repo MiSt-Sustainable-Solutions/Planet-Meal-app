@@ -222,7 +222,21 @@ P("You are seeing exactly what Alpha University sees" in page, "the bar says so"
 P(kg(M) == 600, f"and the admin now reads the published 600 kg ({kg(M)})")
 P('href="/catalogue"' not in page, "drawn as the client's page: no admin navigation")
 P("Alpha summer.xlsx" not in M.get("/files").text, "the Files page is the client's too")
+# Every page, not only the three built for clients: the preview first let Catalogue and
+# Changes through as admin pages, which read as though the client could open them.
+for path in ("/catalogue", "/history", "/admin", "/upload/upl-a1", "/review-sheet.xlsx"):
+    r = M.get(path)
+    P(r.status_code == 403 and "MiSt&#39;s</em> side" in r.text.replace("'", "&#39;"),
+      f"{path:20} is refused, as it is for the client")
+    P("Back to your working view" in r.text, f"{path:20} and the admin bar still offers the way back")
+acct = M.get("/account").text
+P('href="/catalogue"' not in acct and 'href="/history"' not in acct and ">Accounts<" not in acct,
+  "the Account page is drawn without admin navigation too")
+P(M.post("/admin/publish", data={"back": "/"}).status_code == 403,
+  "publishing is not possible from inside the preview")
 M.post("/admin/as-client", data={"on": 0, "back": "/"})
+P(M.get("/catalogue").status_code == 200 and M.get("/history").status_code == 200,
+  "leaving the preview opens MiSt's pages again")
 P(kg(M) == 1500, "and back to the working figures")
 
 print("\n=== a publish that fails leaves the client's copy alone ===")
