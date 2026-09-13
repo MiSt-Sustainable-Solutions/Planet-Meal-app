@@ -84,10 +84,15 @@
   <div class="inner" style="display:flex;gap:14px;align-items:flex-start;">
     <span class="dot error" style="margin-top:8px;"></span>
     <div>
+      {% if me and me.is_admin %}
       <strong>The shared catalogue is not responding.</strong>
       <span class="muted">Uploading and validating still work. Scoring needs the catalogue API at
-      <code>{{ catalogue_api }}</code> — start it with
+      <code>{{ catalogue_api }}</code> &mdash; start it with
       <code>python -m uvicorn api:app --port 8077</code> in the catalogue repo.</span>
+      {% else %}
+      <strong>Figures cannot be calculated right now.</strong>
+      <span class="muted">Please try again in a few minutes.</span>
+      {% endif %}
     </div>
   </div>
 </section>
@@ -99,15 +104,15 @@
     <span class="dot warning" style="margin-top:8px;"></span>
     <div style="flex:1;min-width:280px;">
       {% if stale.reachable %}
-      <strong>{% if stale.behind == 1 %}One decision has landed{% elif stale.behind %}{{ stale.behind }} decisions have landed{% else %}The catalogue has changed{% endif %} since these numbers were worked out.</strong>
-      <span class="muted">They were calculated on {{ stale.since[:10] }} against catalogue
-      <code>{{ stale.was }}</code>; it is now <code>{{ stale.now }}</code>{% if stale.note %} — {{ stale.note }}{% endif %}.
-      Nothing has been changed underneath you. Recalculating takes about half a minute.</span>
+      <strong>There are updates since these figures were calculated on {{ stale.since[:10] }}.</strong>
+      <span class="muted">Recalculate to include them. It takes about 30 seconds.
+      {% if me and me.is_admin %}<br/>Catalogue <code>{{ stale.was }}</code> &rarr;
+      <code>{{ stale.now }}</code>{% if stale.note %} &mdash; {{ stale.note }}{% endif %}{% endif %}</span>
       {% else %}
-      <strong>The shared catalogue cannot be reached, so these are saved numbers.</strong>
-      <span class="muted">Calculated on {{ stale.since[:10] }} against catalogue
-      <code>{{ stale.was }}</code>. They are real results, but any decision made since then
-      is not in them.</span>
+      <strong>Showing saved figures from {{ stale.since[:10] }}.</strong>
+      <span class="muted">Updates made since then are not included.
+      {% if me and me.is_admin %}<br/>The catalogue cannot be reached; saved against
+      <code>{{ stale.was }}</code>.{% endif %}</span>
       {% endif %}
     </div>
     {% if stale.reachable %}<a class="btn-main" href="?refresh=1{% if selected_window %}&amp;window={{ selected_window }}{% endif %}">Recalculate</a>{% endif %}

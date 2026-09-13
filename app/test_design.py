@@ -59,7 +59,7 @@ if "/login" in str(_r.url) or "do not match" in _r.text:
 # this fixture, so: switch until the dashboard has something on it. The checks are about
 # whether a page that HAS data states its caveats; a blank page cannot answer that.
 def _looking_at_data(html):
-    return "Take it away" in html
+    return "Download Excel" in html
 
 
 if not _looking_at_data(_r.text):
@@ -148,7 +148,7 @@ dash = fetch("/")
 # collected for recycling". A check satisfied by an unrelated sentence checks nothing. It
 # now reads the percentage out of the confidence line itself.
 import re as _re
-_m = _re.search(r"(\d{1,3})% is a <em>real match", dash)
+_m = _re.search(r"(\d{1,3})% matched to\s*<em>specific products", dash)
 P(bool(_m) and 0 < int(_m.group(1)) <= 100,
   f"the confidence line is on the dashboard ({_m.group(1) + '%' if _m else 'missing'})")
 # The per-piece gap moved to Data health on 13 Sep 2026, by decision. Most of it was
@@ -160,6 +160,31 @@ P("weighs" in fetch("/data-health").lower(), "the per-piece gap is on Data healt
 # shown on the back of the EAT-Lancet chart instead.
 P("tudelft_reconstruction" not in dash, "no internal profile id is shown to a client")
 P("Adjusted:" in dash, "what MiSt adjusted is still stated on the first page")
+
+print("\n=== a client reads three grades, not the five tiers MiSt works with ===")
+# Renamed 13 Sep 2026. "Curated pin" and "Archetype rule" describe how MiSt resolves a
+# product, not how far to trust the number, and a client could not say what either meant.
+for jargon in ("Curated pin", "Archetype rule", "Name match", "Crude average"):
+    P(jargon not in dash, f"the dashboard does not say {jargon!r}")
+for word in ("Exact", "Close", "Estimated"):
+    P(f"<strong>{word}</strong>" in dash, f"it says {word}")
+
+# The grades are a mapping in charts.py from the catalogue's tier keys. If the catalogue
+# grows a tier the mapping has never heard of, those products quietly become "Not
+# matched" and the precision figure drops for no reason anyone could see.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import charts as _charts
+_run = SESSION.get(BASE + "/api/analysis").json()
+_tiers = (_run.get("headline") or {}).get("confidence", {}).get("by_tier", [])
+_unknown = [t["source"] for t in _tiers
+            if t["source"] != "unmatched" and _charts.grade(t["source"]) == "Not matched"]
+P(bool(_tiers) and not _unknown,
+  f"every tier the catalogue returns has a grade ({_unknown or 'all mapped'})")
+_bar = _charts.grades(_tiers)
+P(abs(sum(b["pct"] for b in _bar) - 100) < 0.5, "the three grades still add up to 100%")
+_specific = sum(b["pct"] for b in _bar if b["label"] in ("Exact", "Close"))
+P(abs(_specific - _run["headline"]["confidence"]["product_specific_pct_of_weight"]) < 0.5,
+  f"Exact + Close is the headline figure ({_specific:.1f}%)")
 
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]

@@ -22,7 +22,8 @@
       {% for win in window_options %}
       <option value="{{ win.key }}"
               {% if win.key == selected_window and not chosen_ids %}selected{% endif %}>
-        {{ win.label }}{% if win.partial %} — {{ win.partial|length }} partial{% endif %}
+        {{ win.label }}{% if win.partial %} — {{ win.partial|length }}
+        month{{ '' if win.partial|length == 1 else 's' }} incomplete{% endif %}
       </option>
       {% endfor %}
       {% if chosen_ids %}
@@ -40,11 +41,8 @@
     </summary>
     <form method="get" action="{{ request.url.path }}" class="pick-body">
       <p class="muted" style="font-size:12.5px;margin:0 0 10px;max-width:38ch;">
-        What these files say, whether or not they are being counted.
-        <br/><br/>
-        Sligro exports all run from January, so two files usually hold some of the same
-        months. A shared month is taken from <em>one</em> of them &mdash; never added
-        together &mdash; and you are told which, and whether the two files agreed about it.
+        Analyse chosen files instead of a period. A month that is in two files is
+        counted once.
       </p>
       {% for u in pickable %}
       <label class="pick-row">

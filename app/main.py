@@ -158,6 +158,7 @@ def relabel(result: dict) -> dict:
         row["food_group"] = charts.food_group_label(row["food_group"])
     for row in result.get("top_contributors", []):
         row["food_group"] = charts.food_group_label(row["food_group"])
+        row["grade"] = charts.grade(row.get("source"))
     return result
 
 
@@ -287,7 +288,7 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
         result=result, selected_window=selected, stale=result.get("stale"),
         window_options=analysis.windows(p.tenant),
         pickable=pickable, chosen_ids=chosen_ids,
-        conf_bar=charts.confidence(result["headline"]["confidence"]["by_tier"]),
+        conf_bar=charts.grades(result["headline"]["confidence"]["by_tier"]),
         trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
         rest_chart=charts.bars(result["by_restaurant"], "restaurant", "co2_kg",
                                secondary_key="intensity_kg_co2_per_kg", limit=20),
@@ -916,10 +917,10 @@ def export_xlsx(request: Request, window: str | None = None):
           [[r["food_group"], r["food_kg"], r["co2_kg"], r["pct_of_weight"], r["pct_of_co2"],
             r["intensity_kg_co2_per_kg"], r["products"]] for r in result["by_food_group"]])
     sheet("top contributors", ["artikelnr", "product", "food group", "food kg", "kg CO2e",
-                               "kg CO2e per kg", "% of CO2", "source", "specific?", "confidence"],
+                               "kg CO2e per kg", "% of CO2", "precision", "confidence"],
           [[r["artikelnr"], r["description"], r["food_group"], r["food_kg"], r["co2_kg"],
-            r["co2_per_kg"], r["pct_of_co2"], r["source_label"],
-            "yes" if r["product_level"] else "no", r["confidence"]]
+            r["co2_per_kg"], r["pct_of_co2"], charts.grade(r.get("source")),
+            r["confidence"]]
            for r in result["top_contributors"]])
     sheet("eat lancet", ["food group", "reference %", "purchased %", "gap"],
           [[r["food_group"], r["reference_pct"], r["purchased_pct"], r["gap_pct"]]

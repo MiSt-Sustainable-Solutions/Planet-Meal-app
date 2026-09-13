@@ -375,9 +375,9 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
     if partial:
         result["headline"]["caveats"].insert(0, dict(
             code="partial_export", severity="error", owner="Sligro",
-            message=("This window includes months that arrived in a partial export "
-                     f"({', '.join(sorted(partial))}). Their volumes are a fraction of a "
-                     "normal month and the totals here understate reality.")))
+            message=("Some months came from an incomplete export "
+                     f"({', '.join(sorted(partial))}), so the totals for this period are "
+                     "too low.")))
     result["piece_items"] = db.piece_items(y0, m0, y1, m1, tenant=tenant, owner=owner)
     result["window"] = dict(key=window or default_window(tenant), label=label,
                             period_from=f"{y0}-{m0:02d}", period_to=f"{y1}-{m1:02d}")
@@ -390,10 +390,8 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
     if chosen:
         result["headline"]["caveats"].insert(0, dict(
             code="chosen_files", severity="info", owner="MiSt",
-            message=(f"These numbers come from {len(chosen)} chosen "
-                     f"file{'' if len(chosen) == 1 else 's'}, not from what is being "
-                     "counted for this period. They are a working answer, not the "
-                     "reported footprint.")))
+            message=(f"Figures for {len(chosen)} chosen "
+                     f"file{'' if len(chosen) == 1 else 's'}, not for a reporting period.")))
     if overlaps:
         # Two separate things, and they must not read alike. Files repeating a month is
         # ordinary -- Sligro's exports all run from January -- and changes no number.
@@ -405,19 +403,15 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
             result["headline"]["caveats"].insert(1, dict(
                 code="chosen_repeat", severity="info", owner="MiSt",
                 message=(f"{len(same)} month{'' if len(same) == 1 else 's'} "
-                         f"appear{'s' if len(same) == 1 else ''} in more than one of the "
-                         "chosen files, holding the same purchases each time — normal, "
-                         "because every Sligro export runs from January. Counted once, "
-                         "not added together, so the total is unaffected: "
+                         f"{'is' if len(same) == 1 else 'are'} in more than one chosen "
+                         "file, with the same purchases. Each is counted once: "
                          + _months_from(same) + ".")))
         if differ:
             result["headline"]["caveats"].insert(1, dict(
                 code="chosen_disagree", severity="error", owner="MiSt",
-                message=("The chosen files DISAGREE about "
+                message=("The chosen files do not agree about "
                          f"{len(differ)} month{'' if len(differ) == 1 else 's'}. Each is "
-                         "counted once, from the file holding the most lines for it, so "
-                         "nothing is doubled — but one of these files is partial or has "
-                         "been restated, and the total depends on which was believed. "
+                         "counted once, from the file with more lines. "
                          + "; ".join(_side_by_side(o) for o in differ[:3])
                          + (f"; and {len(differ) - 3} more" if len(differ) > 3 else "")
                          + ".")))

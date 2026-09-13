@@ -26,7 +26,8 @@
            at it read as part of the client's name. Still on the tenant row; just not
            here. It also left a dangling separator for every client with no caterer set. #}
         <div class="sec-label">{{ client_name }} · {{ result.window.label }}</div>
-        <h1 class="page-h1">What this kitchen <em>actually bought.</em></h1>
+        <h1 class="page-h1">Food purchasing across
+          <em>{{ h.restaurants }} restaurant{{ '' if h.restaurants == 1 else 's' }}</em></h1>
       </div>
       {% include "_picker.html" %}
     </div>
@@ -50,8 +51,7 @@
         <div class="stat">
           <span class="k">EAT-Lancet score</span>
           <span class="v"><span data-count="{{ h.eat_lancet_score }}" data-dp="3">{{ h.eat_lancet_score }}</span></span>
-          <span class="sub">0 to 1. How close the purchasing sits to the EAT-Lancet
-            reference diet.</span>
+          <span class="sub">0 to 1, where 1 matches the EAT-Lancet diet</span>
         </div>
       </div>
       <div class="card sr d3">
@@ -62,12 +62,20 @@
         </div>
       </div>
     </div>
-      {# What MiSt changed about the raw purchases, stated beside the figures it changed.
-       The rest of the old "read this before quoting a number" list went: the per-piece
-       gap is on Data health, and purchased-not-eaten said what every reader knows. #}
+    {# Beside the figures they are about. "Adjusted" is what MiSt changed in the raw
+       purchases; "Note" is only shown when it applies to this view -- incomplete months,
+       or chosen files and whether they agreed. #}
+    {% set notes = h.caveats | selectattr('code', 'in', ['partial_export', 'chosen_files',
+         'chosen_disagree', 'chosen_repeat', 'chosen_overlap']) | list %}
     {% for a in h.caveats if a.code == 'frying_oil_10pct' %}
     <p class="muted" style="font-size:13px;max-width:80ch;margin-top:18px;">
       <strong>Adjusted:</strong> {{ a.message }}
+    </p>
+    {% endfor %}
+    {% for n in notes %}
+    <p style="font-size:13px;max-width:80ch;margin-top:8px;
+              color:{{ 'var(--danger)' if n.severity == 'error' else 'var(--sage)' }};">
+      <strong>Note:</strong> {{ n.message }}
     </p>
     {% endfor %}
   </div>
@@ -76,15 +84,15 @@
 <!-- ============================================ confidence (dark) -->
 <section class="dark tight">
   <div class="inner">
-    <div class="sec-label sl-teal">How good is this number</div>
+    <div class="sec-label sl-teal">How precise is this?</div>
     <div style="display:grid;grid-template-columns:minmax(280px,.9fr) 1.6fr;gap:clamp(24px,4vw,60px);align-items:start;">
       <div>
         <h2 class="sec-h2" style="font-size:clamp(24px,2.4vw,34px);">
-          {{ conf.product_specific_pct_of_weight|round|int }}% is a <em>real match.</em>
+          {{ conf.product_specific_pct_of_weight|round|int }}% matched to
+          <em>specific products</em>
         </h2>
         <p class="muted" style="margin-top:14px;max-width:44ch;">
-          Every figure above carries the tier that produced it. The rest of this bar is a
-          group average — honest, but coarser.
+          Share of food weight, by how its CO<sub>2</sub> figure was found.
         </p>
       </div>
       <div>
@@ -97,13 +105,10 @@
         </div>
         <div class="legend">
           {% for t in conf_bar %}
-          <span><i style="background:{{ tier_swatch[loop.index0] if loop.index0 < tier_swatch|length else 'var(--mist)' }};"></i>{{ t.label }} {{ t.pct }}%</span>
+          <span><i style="background:{{ t.swatch }};"></i><strong>{{ t.label }}</strong>
+            {{ t.pct }}% &middot; {{ t.explain }}</span>
           {% endfor %}
         </div>
-        <p class="muted" style="margin-top:16px;font-size:12.5px;">
-          The first three tiers point at a specific product. The last two are averages —
-          they are what the data-health page exists to shrink.
-        </p>
       </div>
     </div>
   </div>
@@ -113,8 +118,8 @@
 <!-- ============================================ trend (light) -->
 <section class="light">
   <div class="inner">
-    <div class="sec-label">By month</div>
-    <h2 class="sec-h2">The <em>trend.</em></h2>
+    <div class="sec-label">Trend</div>
+    <h2 class="sec-h2">CO<sub>2</sub> by <em>month</em></h2>
     <div class="card sr" style="margin-top:24px;">
       {% if trend.empty %}<p class="muted">No monthly data.</p>{% else %}
       <div class="scroll-x">
@@ -128,7 +133,7 @@
           <path class="line" d="{{ trend.path }}"/>
           {% for p in trend.points %}
           <circle class="pt {{ '' if p.ok else 'partial' }}" cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 4 if p.ok else 5.5 }}">
-            <title>{{ p.label }} — {{ p.display }} kg CO2e{{ '' if p.ok else '  (PARTIAL EXPORT)' }}</title>
+            <title>{{ p.label }} — {{ p.display }} kg CO2e{{ '' if p.ok else '  (incomplete export)' }}</title>
           </circle>
           {% endfor %}
           <line class="axis" x1="{{ trend.pad_l }}" x2="{{ trend.width - trend.pad_r }}" y1="{{ trend.baseline }}" y2="{{ trend.baseline }}"/>
@@ -141,7 +146,7 @@
       <div class="legend">
         <span><i style="background:var(--teal);"></i>kg CO<sub>2</sub>e per month</span>
         {% if trend.points|selectattr('ok','equalto',false)|list %}
-        <span><i style="background:var(--danger);"></i>came from a partial export — not comparable</span>
+        <span><i style="background:var(--danger);"></i>incomplete export, not comparable</span>
         {% endif %}
       </div>
       {% endif %}
@@ -152,12 +157,9 @@
 <!-- ============================================ restaurants (dark) -->
 <section class="dark">
   <div class="inner">
-    <div class="sec-label sl-teal">By restaurant</div>
-    <h2 class="sec-h2">Where the carbon <em>is bought.</em></h2>
-    <p class="muted" style="margin-top:14px;max-width:60ch;">
-      Ranked by total CO<sub>2</sub>e, with intensity alongside — a big kitchen and an
-      inefficient one are not the same problem.
-    </p>
+    <div class="sec-label sl-teal">Restaurants</div>
+    <h2 class="sec-h2">CO<sub>2</sub> by <em>restaurant</em></h2>
+    <p class="muted" style="margin-top:14px;max-width:60ch;">Ranked by total CO<sub>2</sub>e.</p>
     <div class="card sr" style="margin-top:24px;">
       {% if rest_chart.empty %}<p class="muted">No restaurant data.</p>{% else %}
       <div class="scroll-x">
@@ -188,8 +190,8 @@
 <!-- ============================================ food groups (light2) -->
 <section class="light2">
   <div class="inner">
-    <div class="sec-label">By food group</div>
-    <h2 class="sec-h2">Where the carbon <em>sits.</em></h2>
+    <div class="sec-label">Food groups</div>
+    <h2 class="sec-h2">CO<sub>2</sub> by <em>food group</em></h2>
     <div class="grid g2" style="margin-top:24px;align-items:start;">
       <div class="card sr">
         <div class="scroll-x">
@@ -216,12 +218,13 @@
       <div class="card sr d1">
         <div class="h3">Top contributors</div>
         <p class="muted" style="margin:8px 0 16px;">
-          The products driving the footprint, each showing how its number was arrived at.
+          The products with the most CO<sub>2</sub>e.
         </p>
         <div class="scroll-x">
           <table class="tbl">
             <thead><tr>
-              <th>Product</th><th class="num">kg CO<sub>2</sub>e</th><th class="num">%</th><th>Source</th>
+              <th>Product</th><th class="num">kg CO<sub>2</sub>e</th>
+              <th class="num">% of CO<sub>2</sub></th><th>Precision</th>
             </tr></thead>
             <tbody>
             {% for p in result.top_contributors[:12] %}
@@ -229,7 +232,7 @@
               <td class="name">{{ p.description|truncate(38) }}</td>
               <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
               <td class="num">{{ p.pct_of_co2 }}</td>
-              <td><span class="pill {{ 'soft' if p.product_level else '' }}" title="{{ p.source_explain }}">{{ p.source_label }}</span></td>
+              <td><span class="pill {{ 'soft' if p.product_level else '' }}">{{ p.grade }}</span></td>
             </tr>
             {% endfor %}
             </tbody>
@@ -245,7 +248,7 @@
   <div class="inner">
     <div class="sec-label">Diet alignment</div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
-      <h2 class="sec-h2">EAT-Lancet: <em>purchased vs reference.</em></h2>
+      <h2 class="sec-h2">EAT-Lancet: <em>purchased vs reference</em></h2>
       <div style="text-align:right;">
         <div class="stat" style="align-items:flex-end;">
           <span class="k">Score</span>
@@ -278,7 +281,7 @@
       <div class="legend">
         <span><i style="background:var(--mist);"></i>EAT-Lancet reference share</span>
         <span><i style="background:var(--teal);"></i>purchased share</span>
-        <span style="opacity:.75;">right column: percentage points above or below</span>
+        <span style="opacity:.75;">right column: difference, in percentage points</span>
       </div>
     </div>
   </div>
@@ -288,12 +291,10 @@
 <section class="light2 tight">
   <div class="inner" style="display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;">
     <div>
-      <div class="h3">Take it away</div>
+      <div class="h3">Download</div>
       <p class="muted" style="margin-top:6px;max-width:56ch;">
-        The full analysis as a spreadsheet &mdash; and, on its last tab, every purchase
-        line behind it, with where each number came from. Any figure above can be checked
-        back to the rows that made it. A long window is tens of thousands of rows, so give
-        it half a minute.
+        Everything on this page as a spreadsheet, with every purchase line on the last tab.
+        A long period can take up to 30 seconds.
       </p>
     </div>
     <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">

@@ -167,3 +167,39 @@ def food_group_label(key: str) -> str:
 
 
 TIER_SWATCH = [f"var(--tier{i})" for i in range(1, 7)]
+
+
+# --------------------------------------------------------------------------- grades
+# A client needs three words, not five tier names. "Curated pin" and "Archetype rule"
+# describe how MiSt works, not how much to trust a number. The five tiers stay where MiSt
+# works on the data -- Data health, the catalogue, the per-line export -- and the
+# dashboard speaks in these.
+GRADE = {
+    "curated_pin": "Exact",
+    "rivm_archetype": "Close",
+    "rivm_specific": "Close",
+    "rivm_group_avg": "Estimated",
+    "bucket_avg": "Estimated",
+}
+GRADE_ORDER = ("Exact", "Close", "Estimated", "Not matched")
+GRADE_MEANS = {
+    "Exact": "checked for this exact product",
+    "Close": "matched to a similar known product",
+    "Estimated": "average for its food group",
+    "Not matched": "no footprint found",
+}
+_GRADE_CLASS = {"Exact": "t1", "Close": "t2", "Estimated": "t4", "Not matched": "t6"}
+
+
+def grade(source: str | None) -> str:
+    return GRADE.get(source or "", "Not matched")
+
+
+def grades(tiers) -> list[dict]:
+    """The five-tier ladder folded into three grades, as one bar that still sums to 100."""
+    total = {g: 0.0 for g in GRADE_ORDER}
+    for t in tiers:
+        total[grade(t.get("source"))] += float(t.get("pct_of_weight") or 0)
+    return [dict(cls=_GRADE_CLASS[g], swatch=f"var(--tier{_GRADE_CLASS[g][1]})",
+                 label=g, pct=round(v, 1), show=v >= 6, explain=GRADE_MEANS[g])
+            for g, v in total.items() if v > 0]
