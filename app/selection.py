@@ -315,6 +315,17 @@ LEGACY_NOTE = ("Adopted from data that predates file tracking. Re-upload the ori
                "exports and archive this to replace it.")
 
 
+HISTORY_NAME = "Purchase history (imported)"
+
+
+def rename_adopted(con) -> int:
+    """Give files adopted under the old naming the name a client should see. Idempotent."""
+    cur = con.execute(
+        "UPDATE upload SET filename=? WHERE adapter='legacy' AND filename LIKE '%(adopted)'",
+        (HISTORY_NAME,))
+    return cur.rowcount or 0
+
+
 def adopt_orphans() -> int:
     """Give a file to purchase lines that have none. Idempotent; safe to run at startup.
 
@@ -333,12 +344,15 @@ def adopt_orphans() -> int:
         LEFT JOIN upload u ON u.id = l.source_upload AND u.tenant = l.tenant
         WHERE u.id IS NULL
         GROUP BY l.tenant, l.source_upload""").fetchall()
-    made = 0
+    made = rename_adopted(con)
     for r in orphans:
         tenant, src = r["tenant"], r["source_upload"]
         periods = [f"{p // 100}-{p % 100:02d}" for p in
                    sorted({y * 100 + m for y, m in _periods(con, src, tenant)})]
-        name = f"{src} (adopted)"
+        # Shown to clients in the file picker and on the Files page, so it is written
+        # for them. It used to be f"{src} (adopted)", which put "seed:analysis.db
+        # (adopted)" -- a database file name -- in front of TU Delft.
+        name = HISTORY_NAME
         report = json.dumps(dict(verdict="go", findings=[], summary={}, filename=name,
                                  adapter="legacy", lines=r["n"], products=0,
                                  spend_eur=r["spend"] or 0.0, periods=periods,

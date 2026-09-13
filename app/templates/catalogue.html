@@ -1,23 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Catalogue<style>
-.reflist-label{font-family:var(--sans);font-size:11px;font-weight:800;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--sage);margin-bottom:10px;}
-.reflist-tabs{display:flex;gap:10px;flex-wrap:wrap;}
-.reftab{display:flex;flex-direction:column;gap:3px;padding:11px 14px;min-width:190px;
-  border:1px solid var(--mist);border-radius:8px;background:var(--white);
-  text-decoration:none;transition:border-color .15s,background .15s;}
-.reftab:hover{border-color:var(--sage);}
-.reftab.on{border-color:var(--ink);background:var(--linen2);}
-.reftab-name{font-family:var(--sans);font-size:13.5px;font-weight:700;color:var(--ink);}
-.reftab-hint{font-family:var(--sans);font-size:12px;color:var(--sage);}
-.fold-vocab>summary{cursor:pointer;list-style:none;font-family:var(--sans);font-size:13px;
-  font-weight:700;color:var(--sage);display:flex;align-items:center;gap:8px;}
-.fold-vocab>summary::-webkit-details-marker{display:none;}
-.fold-vocab>summary::before{content:"+";font-weight:700;}
-.fold-vocab[open]>summary::before{content:"\2212";}
-</style>
-
-{% endblock %}
+{% block title %}Catalogue{% endblock %}
 {% macro reference_table(rows) %}
 <div class="card scroll-x" style="margin-top:12px;">
   <table class="tbl">
@@ -349,6 +331,24 @@
   </div>
 </section>
 {% endif %}
+
+<style>
+.reflist-label{font-family:var(--sans);font-size:11px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--sage);margin-bottom:10px;}
+.reflist-tabs{display:flex;gap:10px;flex-wrap:wrap;}
+.reftab{display:flex;flex-direction:column;gap:3px;padding:11px 14px;min-width:190px;
+  border:1px solid var(--mist);border-radius:8px;background:var(--white);
+  text-decoration:none;transition:border-color .15s,background .15s;}
+.reftab:hover{border-color:var(--sage);}
+.reftab.on{border-color:var(--ink);background:var(--linen2);}
+.reftab-name{font-family:var(--sans);font-size:13.5px;font-weight:700;color:var(--ink);}
+.reftab-hint{font-family:var(--sans);font-size:12px;color:var(--sage);}
+.fold-vocab>summary{cursor:pointer;list-style:none;font-family:var(--sans);font-size:13px;
+  font-weight:700;color:var(--sage);display:flex;align-items:center;gap:8px;}
+.fold-vocab>summary::-webkit-details-marker{display:none;}
+.fold-vocab>summary::before{content:"+";font-weight:700;}
+.fold-vocab[open]>summary::before{content:"\2212";}
+</style>
 
 {% endblock %}
 

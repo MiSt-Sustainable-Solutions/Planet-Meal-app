@@ -50,10 +50,6 @@
         <div class="stat">
           <span class="k">EAT-Lancet score</span>
           <span class="v"><span data-count="{{ h.eat_lancet_score }}" data-dp="3">{{ h.eat_lancet_score }}</span></span>
-          {# The reconstruction caveat was on this card and is now only further down the
-             page, where the vector itself is shown, and in the caveats list that travels
-             with the export. Moved rather than deleted: the claim is still made, in the
-             place where a reader is looking at the thing being claimed about. #}
           <span class="sub">0 to 1. How close the purchasing sits to the EAT-Lancet
             reference diet.</span>
         </div>
@@ -66,6 +62,14 @@
         </div>
       </div>
     </div>
+      {# What MiSt changed about the raw purchases, stated beside the figures it changed.
+       The rest of the old "read this before quoting a number" list went: the per-piece
+       gap is on Data health, and purchased-not-eaten said what every reader knows. #}
+    {% for a in h.caveats if a.code == 'frying_oil_10pct' %}
+    <p class="muted" style="font-size:13px;max-width:80ch;margin-top:18px;">
+      <strong>Adjusted:</strong> {{ a.message }}
+    </p>
+    {% endfor %}
   </div>
 </section>
 
@@ -80,7 +84,7 @@
         </h2>
         <p class="muted" style="margin-top:14px;max-width:44ch;">
           Every figure above carries the tier that produced it. The rest of this bar is a
-          group average — honest, but coarser. Nobody else in this market publishes this.
+          group average — honest, but coarser.
         </p>
       </div>
       <div>
@@ -105,25 +109,6 @@
   </div>
 </section>
 
-<!-- ============================================ caveats (light2) -->
-{% if h.caveats %}
-<section class="light2 tight">
-  <div class="inner">
-    <div class="sec-label">Read this before quoting a number</div>
-    <div class="grid g2">
-      {% for c in h.caveats %}
-      <div class="finding" style="border-bottom:none;padding:8px 0;">
-        <span class="dot {{ c.severity }}"></span>
-        <div>
-          <div class="code">{{ c.code|replace('_',' ') }} · {{ c.owner }}</div>
-          <div class="msg">{{ c.message }}</div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-</section>
-{% endif %}
 
 <!-- ============================================ trend (light) -->
 <section class="light">
@@ -284,7 +269,7 @@
             <title>{{ b.label }} — purchased {{ b.a }}%</title>
           </rect>
           <text class="tick" x="{{ eat_chart.width - 8 }}" y="{{ b.y + 20 }}" text-anchor="end"
-                style="font-weight:700;fill:{{ 'var(--danger)' if b.over else 'var(--teal-ink)' }};">
+                style="font-weight:700;fill:var(--ink);">
             {{ b.gap_display }}
           </text>
           {% endfor %}
@@ -295,54 +280,12 @@
         <span><i style="background:var(--teal);"></i>purchased share</span>
         <span style="opacity:.75;">right column: percentage points above or below</span>
       </div>
-      <p class="muted" style="margin-top:16px;">
-        Measured against profile <strong>{{ result.eat_lancet.profile }}</strong>.
-        {% if not result.eat_lancet.profile_confirmed %}
-        This vector is our reconstruction and has not been confirmed by {{ client_name }}.
-        {% endif %}
-      </p>
     </div>
   </div>
 </section>
 
-<!-- ============================================ the gap (dark) -->
-<section class="dark tight">
-  <div class="inner">
-    <div class="sec-label sl-teal">What is missing</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:clamp(20px,3vw,44px);">
-      <div>
-        <h2 class="sec-h2" style="font-size:clamp(22px,2.2vw,30px);">
-          {{ result.piece_items.pct_of_spend }}% of spend <em>weighs nothing.</em>
-        </h2>
-        <p class="muted" style="margin-top:12px;">
-          {{ result.piece_items.products }} products are sold per piece and carry no weight in the
-          export, so they contribute zero kg and zero CO<sub>2</sub>e. Only Sligro can close this.
-          It is listed rather than hidden.
-        </p>
-        <p style="margin-top:16px;"><a class="btn-ghost" href="/data-health">See the full list</a></p>
-      </div>
-      <div>
-        <div class="scroll-x">
-          <table class="tbl">
-            <thead><tr><th>Heaviest by spend</th><th class="num">Pieces</th><th class="num">€</th></tr></thead>
-            <tbody>
-            {% for p in result.piece_items.rows[:6] %}
-            <tr>
-              <td class="name">{{ p.description|truncate(34) }}</td>
-              <td class="num">{{ "{:,}".format(p.pieces) }}</td>
-              <td class="num">{{ "{:,}".format(p.spend_eur) }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================ export (light) -->
-<section class="light tight">
+<!-- ============================================ export (light2) -->
+<section class="light2 tight">
   <div class="inner" style="display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;">
     <div>
       <div class="h3">Take it away</div>
@@ -355,7 +298,6 @@
     </div>
     <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">
       <a class="btn-main" href="/export.xlsx?window={{ selected_window|urlencode }}">Download Excel</a>
-      <a class="btn-ghost" href="/api/analysis?window={{ selected_window|urlencode }}">View as JSON</a>
     </div>
   </div>
 </section>

@@ -36,7 +36,7 @@ def _fmt(v: float) -> str:
 
 
 def line(rows, x_key="period", y_key="co2_kg", flag_key="complete",
-         width=980, height=250, pad_l=54, pad_b=34, pad_t=14, pad_r=12) -> dict:
+         width=980, height=250, pad_l=54, pad_b=34, pad_t=14, pad_r=36) -> dict:
     """A trend line with the axis, the gridlines and a marker per point.
 
     Points whose `flag_key` is False are drawn in the danger colour — a month that came

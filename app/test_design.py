@@ -143,16 +143,23 @@ for path in PAGES:
 
 print("\n=== the honesty rules survive into the HTML ===")
 dash = fetch("/")
-P("70%" in dash and "real match" in dash, "the confidence line is on the dashboard")
-P("weighs nothing" in dash or "weighs zero" in dash, "the per-piece gap is on the dashboard")
-# Both of these used to be on the EAT stat card, in the phrase "not yet confirmed". That
-# came off the card on 11 Sep 2026 at Mrigank's request -- it read badly next to a headline
-# figure. The claim itself did not go: it is in the EAT-Lancet section, beside the vector
-# it is about, and in the caveats that travel with every export. So this still checks the
-# page makes it, and no longer checks where.
-P("reconstruction" in dash.lower(), "the EAT-Lancet score is flagged as a reconstruction")
-P("has not been confirmed" in dash.lower() or "not yet confirmed" in dash.lower(),
-  "and as unconfirmed, somewhere a reader will meet it")
+# This looked for "70%". The confidence line has said 64% since soft drinks were counted,
+# and it kept passing anyway -- because the frying-oil note happened to say "roughly 70% is
+# collected for recycling". A check satisfied by an unrelated sentence checks nothing. It
+# now reads the percentage out of the confidence line itself.
+import re as _re
+_m = _re.search(r"(\d{1,3})% is a <em>real match", dash)
+P(bool(_m) and 0 < int(_m.group(1)) <= 100,
+  f"the confidence line is on the dashboard ({_m.group(1) + '%' if _m else 'missing'})")
+# The per-piece gap moved to Data health on 13 Sep 2026, by decision. Most of it was
+# packaging -- 5.2 of the 7.0 points -- so on the dashboard it overstated the gap.
+P("weighs" in fetch("/data-health").lower(), "the per-piece gap is on Data health")
+# The EAT-Lancet reconstruction wording was removed from every client page on 13 Sep 2026,
+# by Mrigank's decision, after it had been raised twice: the same method serves every
+# client and naming one of them on another's page is wrong. The method itself will be
+# shown on the back of the EAT-Lancet chart instead.
+P("tudelft_reconstruction" not in dash, "no internal profile id is shown to a client")
+P("Adjusted:" in dash, "what MiSt adjusted is still stated on the first page")
 
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
