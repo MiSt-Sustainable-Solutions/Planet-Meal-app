@@ -133,6 +133,13 @@ if catalogue.health() is None:
     print("  python -m uvicorn api:app --port 8077   (in the catalogue repo, src/)")
     sys.exit(2)
 
+# A client reads only what was published (publish.py), so publish before signing in
+# as one. What this file checks is what a client can do with published figures.
+import publish   # noqa: E402
+for _t in CLIENTS:
+    _pub = publish.get(publish.start(_t, "mist", wait=True))
+    assert _pub["status"] == "live", _pub.get("error")
+
 
 def client_for(username: str, password: str) -> TestClient:
     c = TestClient(main.app, follow_redirects=False)

@@ -2,7 +2,18 @@
 {% block title %}Dashboard{% endblock %}
 {% block body %}
 
-{% if error %}
+{% if unpublished %}
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">{{ client_name }}</div>
+    <h1 class="page-h1">Your figures are <em>being prepared.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:60ch;">
+      MiSt checks every set of figures before they appear here. You will see them on this
+      page as soon as they are ready.
+    </p>
+  </div>
+</section>
+{% elif error %}
 <section class="light">
   <div class="inner">
     <div class="sec-label">PLANETmeal</div>
@@ -28,6 +39,9 @@
         <div class="sec-label">{{ client_name }} · {{ result.window.label }}</div>
         <h1 class="page-h1">Food purchasing across
           <em>{{ h.restaurants }} restaurant{{ '' if h.restaurants == 1 else 's' }}</em></h1>
+        {% if published %}
+        <p class="muted" style="font-size:13px;margin-top:10px;">Figures of {{ published.on }}</p>
+        {% endif %}
       </div>
       {% include "_picker.html" %}
     </div>

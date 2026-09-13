@@ -155,8 +155,17 @@ else:
     from starlette.routing import Route          # noqa: E402
     import main                                  # noqa: E402
 
+    import publish                               # noqa: E402
+
     auth.create_user("boss", "boss-password-1", "admin", None, "Boss")
     auth.create_user("acmeuser", "acme-password-1", "client", "acme", "Acme")
+    # Publishing writes more than any page does -- the frozen figures, the downloads, and
+    # retiring the copy it replaces -- and a client's pages then read only that. So it is
+    # run twice before the pages are walked: once to create, once to replace.
+    for _ in range(2):
+        pub = publish.get(publish.start("acme", "boss", wait=True))
+    P(pub["status"] == "live", f"a publish runs start to finish, twice ({pub.get('error')})")
+    publish.recover(startup=True)
     for user, pw in (("boss", "boss-password-1"), ("acmeuser", "acme-password-1")):
         c = TestClient(main.app, follow_redirects=False)
         c.post("/login", data={"username": user, "password": pw})

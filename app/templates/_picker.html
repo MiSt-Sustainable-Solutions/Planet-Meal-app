@@ -19,13 +19,22 @@
     <select name="window" id="w" onchange="this.form.submit()"
             style="font-family:var(--sans);font-size:13px;padding:9px 12px;border:1px solid var(--mist);
                    border-radius:6px;background:var(--white);color:var(--ink);">
-      {% for win in window_options %}
+      {# A published copy offers each of its files as well, one at a time. #}
+      {% for win in window_options if not win.file %}
       <option value="{{ win.key }}"
               {% if win.key == selected_window and not chosen_ids %}selected{% endif %}>
         {{ win.label }}{% if win.partial %} — {{ win.partial|length }}
         month{{ '' if win.partial|length == 1 else 's' }} incomplete{% endif %}
       </option>
       {% endfor %}
+      {% set one_file = window_options | selectattr('file') | list %}
+      {% if one_file %}
+      <optgroup label="One file">
+        {% for win in one_file %}
+        <option value="{{ win.key }}" {% if win.key == selected_window %}selected{% endif %}>{{ win.label|truncate(40) }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
       {% if chosen_ids %}
       {# So the dropdown never claims a period while files are chosen. #}
       <option value="" selected>{{ chosen_ids|length }} file{{ '' if chosen_ids|length == 1 else 's' }} chosen</option>

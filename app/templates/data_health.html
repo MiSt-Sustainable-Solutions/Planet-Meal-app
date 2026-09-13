@@ -2,7 +2,18 @@
 {% block title %}Data health{% endblock %}
 {% block body %}
 
-{% if error %}
+{% if unpublished %}
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Data health</div>
+    <h1 class="page-h1">Your figures are <em>being prepared.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:60ch;">
+      MiSt checks every set of figures before they appear here. You will see them on this
+      page as soon as they are ready.
+    </p>
+  </div>
+</section>
+{% elif error %}
 <section class="light">
   <div class="inner">
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">

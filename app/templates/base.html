@@ -8,6 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/mist.css"/>
+{# While a publish runs, look again every few seconds so the bar can say when it is done.
+   Not on a ?refresh=1 address, which would recalculate on every look. #}
+{% if pub_state and pub_state.building and not request.query_params.get('refresh') %}
+<meta http-equiv="refresh" content="6"/>
+{% endif %}
 </head>
 <body>
 <div class="scroll-prog" id="scrollProg" style="position:fixed;top:0;left:0;height:2px;width:0;z-index:300;background:linear-gradient(90deg,var(--gold),var(--teal));transition:width .08s linear;"></div>
@@ -52,7 +57,7 @@
   </div>
 </nav>
 
-{% if me and me.is_admin %}
+{% if real_me and real_me.is_admin %}
 <section class="tight" style="background:var(--ink);padding-block:12px;">
   <div class="inner" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;">
     <span style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--teal-light);">
@@ -73,13 +78,87 @@
     </form>
     <span style="flex:1;"></span>
     <span style="font-size:12.5px;color:rgba(242,248,243,.55);">
-      Signed in as {{ me.display_name }} &mdash; you can see every client
+      Signed in as {{ real_me.display_name }} &mdash; you can see every client
     </span>
   </div>
+
+  {#
+    What the client sees, and whether it still matches what you see. A client is shown a
+    published copy of their figures and nothing else, so counting a file, a catalogue
+    decision or a recalculation changes nothing for them until someone presses Publish.
+    See publish.py.
+  #}
+  {% set ps = pub_state %}
+  {% if ps %}
+  <div class="inner pub-row">
+    {% if as_client %}
+      <span class="dot warning"></span>
+      <span class="pub-say">
+        <strong>You are seeing exactly what {{ client_name }} sees</strong>{% if ps.live %}:
+        the figures published on {{ ps.live.on }} at {{ ps.live.at }}{% endif %}.
+      </span>
+      <form method="post" action="/admin/as-client">
+        <input type="hidden" name="on" value="0"/>
+        <input type="hidden" name="back" value="{{ request.url.path }}"/>
+        <button class="btn-ghost pub-ghost" type="submit">Back to your working view</button>
+      </form>
+    {% else %}
+      <span class="dot {{ 'ok' if ps.live and not ps.changed and not ps.building else 'warning' }}"></span>
+      <span class="pub-say">
+        {% if ps.building %}
+          <strong>Publishing to {{ client_name }}</strong>: {{ ps.building.step or 0 }} of
+          {{ ps.building.steps or '…' }} done{% if ps.building.doing %} (now: {{ ps.building.doing }}){% endif %}.
+          {{ client_name }} keeps seeing
+          {{ 'the figures from ' ~ ps.live.on if ps.live else 'nothing' }} until it finishes.
+        {% elif not ps.live %}
+          <strong>{{ client_name }} sees nothing yet.</strong>
+          {% if not ps.counted %}Count a file first, then publish.{% endif %}
+        {% elif not ps.changed %}
+          <strong>{{ client_name }} sees the figures published on {{ ps.live.on }}</strong>
+          at {{ ps.live.at }}. They match what you see.
+        {% else %}
+          <strong>{{ client_name }} still sees the figures published on {{ ps.live.on }}.</strong>
+          Since then {{ ps.changed | join(', and ') }}.
+        {% endif %}
+        {% if ps.failed and not ps.building %}
+          <br/><span class="pub-bad">The last publish did not finish: {{ ps.failed.error }}</span>
+        {% endif %}
+        {% if pub_error %}<br/><span class="pub-bad">{{ pub_error }}</span>{% endif %}
+        {% if not ps.reachable and ps.counted and not ps.building %}
+          <br/>The catalogue cannot be reached, so publishing has to wait.
+        {% endif %}
+      </span>
+      {% if ps.live %}
+      <form method="post" action="/admin/as-client">
+        <input type="hidden" name="on" value="1"/>
+        <input type="hidden" name="back" value="{{ request.url.path }}"/>
+        <button class="btn-ghost pub-ghost" type="submit">See what {{ client_name }} sees</button>
+      </form>
+      {% endif %}
+      {% if ps.can_publish %}
+      <form method="post" action="/admin/publish"
+            onsubmit="return confirm('Publish to {{ client_name|e }}? From now on they see the figures you see now. It takes a few minutes; they keep seeing the old figures until it is done.');">
+        <input type="hidden" name="back" value="{{ request.url.path }}"/>
+        <button class="btn-main" type="submit">Publish to {{ client_name }}</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+  <style>
+    .pub-row{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;margin-top:10px;
+      padding-top:10px;border-top:1px solid rgba(242,248,243,.14);}
+    .pub-say{flex:1;min-width:260px;font-size:13px;line-height:1.5;color:rgba(242,248,243,.82);}
+    .pub-say strong{color:var(--white);}
+    .pub-bad{color:#f3b7a8;}
+    .pub-ghost{color:var(--white);border-color:var(--mist);}
+    .pub-row form{margin:0;}
+    .pub-row .dot{margin-top:0;}
+  </style>
+  {% endif %}
 </section>
 {% endif %}
 
-{% if not api_up and not stale %}
+{% if not api_up and not stale and real_me and real_me.is_admin and not as_client %}
 <section class="tight light2" style="padding-block:16px;border-bottom:1px solid var(--mist);">
   <div class="inner" style="display:flex;gap:14px;align-items:flex-start;">
     <span class="dot error" style="margin-top:8px;"></span>

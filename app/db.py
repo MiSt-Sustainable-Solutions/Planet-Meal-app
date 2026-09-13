@@ -78,6 +78,27 @@ CREATE TABLE IF NOT EXISTS analysis_run(
   specific_pct REAL, result_json TEXT,
   window_key TEXT, catalogue_version TEXT, data_fingerprint TEXT);
 CREATE INDEX IF NOT EXISTS ix_run ON analysis_run(tenant, ran_at);
+
+-- What a client sees: a frozen copy, made when MiSt presses Publish. See publish.py.
+CREATE TABLE IF NOT EXISTS publication(
+  id TEXT PRIMARY KEY, tenant TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT, finished_at TEXT, published_by TEXT,
+  step INTEGER, steps INTEGER, doing TEXT, error TEXT,
+  catalogue_version TEXT, signature TEXT, parts_json TEXT,
+  default_window TEXT, windows_json TEXT, files_json TEXT, months_json TEXT);
+CREATE INDEX IF NOT EXISTS ix_pub ON publication(tenant, started_at);
+
+CREATE TABLE IF NOT EXISTS publication_view(
+  publication_id TEXT NOT NULL, window_key TEXT NOT NULL, label TEXT, run_id TEXT,
+  result_json TEXT,
+  PRIMARY KEY (publication_id, window_key));
+
+-- The downloads, as the bytes the client receives, base64 so that one TEXT column
+-- serves SQLite and Postgres alike.
+CREATE TABLE IF NOT EXISTS publication_file(
+  publication_id TEXT NOT NULL, name TEXT NOT NULL, filename TEXT, data TEXT,
+  PRIMARY KEY (publication_id, name));
 """
 
 # Runs only after MIGRATIONS, because an index cannot name a column the table does not

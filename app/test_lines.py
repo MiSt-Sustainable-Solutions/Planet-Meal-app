@@ -185,6 +185,11 @@ def signed_in(username, password):
     return c
 
 
+# A client reads only what was published (publish.py), so publish before signing in
+# as one. What this file checks is what a client can do with published figures.
+import publish   # noqa: E402
+_pub = publish.get(publish.start("acme", "boss", wait=True))
+assert _pub["status"] == "live", _pub.get("error")
 client = signed_in("acmeuser", "acme-password-1")
 
 print()

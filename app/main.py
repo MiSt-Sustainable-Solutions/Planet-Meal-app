@@ -14,6 +14,7 @@ scoring say so plainly instead of failing.
 """
 from __future__ import annotations
 
+import dataclasses
 import io
 import os
 import shutil
@@ -40,8 +41,10 @@ import charts
 import config
 import db
 import lines_export
+import publish
 import selection
 import uploads
+import workbooks
 from adapters import mist_template
 
 
@@ -65,6 +68,9 @@ async def lifespan(app: FastAPI):
     # moment "only a selected file counts" took effect. Adopting them keeps every number
     # where it is and puts a row on the Files page saying what it is.
     selection.adopt_orphans()
+    # A publish running when the app last stopped died with it. Say so, rather than
+    # leaving a row that reads "publishing..." for ever and blocks the next one.
+    publish.recover(startup=True)
     yield
 
 
@@ -170,6 +176,25 @@ def me(request: Request) -> auth.Principal:
     return p
 
 
+# Set by "See what the client sees". Kept in the session, so it survives moving between
+# the dashboard, Data health and Files, which is the whole of what a client can open.
+AS_CLIENT = "as_client"
+
+
+def audience(request: Request, p: auth.Principal) -> tuple[bool, auth.Principal]:
+    """-> (does this page show the published copy?, who the page is drawn for)
+
+    A client only ever sees what was published. An admin sees the live, working figures,
+    unless they have asked to see exactly what the client sees -- in which case they get
+    the client's page, drawn as it is drawn for the client, from the same copy.
+    """
+    if not p.is_admin:
+        return True, p
+    if request.session.get(AS_CLIENT):
+        return True, dataclasses.replace(p, role="client", _own_tenant=p.tenant)
+    return False, p
+
+
 def ctx(request: Request, page: str, **kw) -> dict:
     """Everything every template needs."""
     # ONE call to the catalogue per page. /health answers both questions a page asks —
@@ -189,7 +214,15 @@ def ctx(request: Request, page: str, **kw) -> dict:
                 catalogue_api=config.CATALOGUE_API, api_up=health is not None,
                 tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
                 stale=analysis.staleness(tenant=tenant,
-                                         live=(health or {}).get("catalogue")))
+                                         live=(health or {}).get("catalogue")),
+                # `me` is who the page is drawn for, which a preview changes. The admin
+                # bar needs to know who is really here, so it can offer the way back.
+                real_me=who, as_client=bool(who and who.is_admin
+                                            and request.session.get(AS_CLIENT)),
+                pub_state=(publish.state(tenant, ((health or {}).get("catalogue") or {})
+                                         .get("etag"))
+                           if who and who.is_admin else None),
+                pub_error=request.query_params.get("pub_error"))
     base.update(kw)
     return base
 
@@ -236,6 +269,34 @@ def set_viewing(request: Request, tenant: str = Form(...), back: str = Form("/")
     return RedirectResponse(dest, status_code=303)
 
 
+def _back(back: str) -> str:
+    return back if back.startswith("/") and not back.startswith("//") else "/"
+
+
+@app.post("/admin/publish")
+def publish_now(request: Request, back: str = Form("/")):
+    """Start publishing the client's figures as they are now. Runs in the background."""
+    p = me(request)
+    try:
+        publish.start(p.tenant, by=p.username)
+    except publish.PublishError as e:
+        sep = "&" if "?" in _back(back) else "?"
+        return RedirectResponse(f"{_back(back)}{sep}pub_error={quote(str(e))}",
+                                status_code=303)
+    return RedirectResponse(_back(back), status_code=303)
+
+
+@app.post("/admin/as-client")
+def as_client(request: Request, on: int = Form(1), back: str = Form("/")):
+    """Switch between the working figures and exactly what the client sees."""
+    me(request)
+    if on:
+        request.session[AS_CLIENT] = 1
+    else:
+        request.session.pop(AS_CLIENT, None)
+    return RedirectResponse(_back(back), status_code=303)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_home(request: Request, error: str | None = None,
                new_link: str | None = None, new_user: str | None = None,
@@ -271,6 +332,9 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
     sheet all keep working without knowing the difference.
     """
     p = me(request)
+    frozen, viewer = audience(request, p)
+    if frozen:
+        return _published_page(request, p, viewer, "dashboard", window)
     pickable, chosen_ids, selected = chosen_window(p, window, file)
 
     try:
@@ -289,7 +353,11 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
         request, "dashboard",
         result=result, selected_window=selected, stale=result.get("stale"),
         window_options=analysis.windows(p.tenant),
-        pickable=pickable, chosen_ids=chosen_ids,
+        pickable=pickable, chosen_ids=chosen_ids, **_charts(result)))
+
+
+def _charts(result: dict) -> dict:
+    return dict(
         conf_bar=charts.grades(result["headline"]["confidence"]["by_tier"]),
         trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
         rest_chart=charts.bars(result["by_restaurant"], "restaurant", "co2_kg",
@@ -297,7 +365,44 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
         group_chart=charts.bars(result["by_food_group"], "food_group", "co2_kg",
                                 width=620, pad_l=150, pad_r=110,
                                 secondary_key="pct_of_co2", secondary_suffix="%", limit=14),
-        eat_chart=charts.paired(result["eat_lancet"]["rows"])))
+        eat_chart=charts.paired(result["eat_lancet"]["rows"]))
+
+
+def _published_options(pub: dict) -> list[dict]:
+    """The periods a publication holds, then each of its files on its own.
+
+    A client picks one of these rather than ticking files: any combination of files would
+    be a figure nobody published.
+    """
+    return list(pub["windows"]) + [
+        dict(key=f"files:{f['upload_id']}", label=f["filename"], file=True, partial=[])
+        for f in pub["files"]]
+
+
+def _published_page(request: Request, p, viewer, page: str, window: str | None):
+    """The dashboard or Data health, drawn from what was published and nothing else."""
+    template = "dashboard.html" if page == "dashboard" else "data_health.html"
+    pub = publish.live(p.tenant)
+    result = None
+    if pub:
+        win = publish.choose(pub, window)
+        result = publish.view(pub, win)
+    if not pub or result is None:
+        return templates.TemplateResponse(request, template, ctx(
+            request, page, me=viewer, unpublished=True, stale=None, window_options=[],
+            error="Your figures are being prepared."))
+    relabel(result)
+    common = dict(me=viewer, result=result, published=pub, selected_window=win,
+                  stale=None, window_options=_published_options(pub),
+                  pickable=[], chosen_ids=[])
+    if page == "dashboard":
+        return templates.TemplateResponse(request, template, ctx(
+            request, page, **common, **_charts(result)))
+    wq = result.get("work_queue")
+    return templates.TemplateResponse(request, template, ctx(
+        request, page, **common, months=pub["months"], work_queue=wq,
+        work_queue_error=None if wq else "no work queue was published for this window",
+        curated=None, curate_error=None, decisions=None))
 
 
 @app.get("/data-health", response_class=HTMLResponse)
@@ -312,6 +417,9 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
     here, and download a backlog for a different year without being told.
     """
     p = me(request)
+    frozen, viewer = audience(request, p)
+    if frozen:
+        return _published_page(request, p, viewer, "health", window)
     pickable, chosen_ids, selected = chosen_window(p, window, file)
     try:
         # Recalculating is MiSt's job, so only an admin's ?refresh=1 does anything.
@@ -622,6 +730,15 @@ def files_page(request: Request, error: str | None = None):
     look like one.
     """
     p = me(request)
+    frozen, viewer = audience(request, p)
+    if frozen:
+        # The files the published figures were made of, as they were when published --
+        # not the files counted today, which may be ones the client has not been shown.
+        pub = publish.live(p.tenant)
+        return templates.TemplateResponse(request, "files.html", ctx(
+            request, "files", me=viewer, error=error, published=pub,
+            uploads=pub["files"] if pub else [], adapters=[], contested=[],
+            months_held=len(pub["months"]) if pub else 0))
     snap = db.snapshot(p.tenant)
     held = visible_uploads(p)
     return templates.TemplateResponse(request, "files.html", ctx(
@@ -776,6 +893,12 @@ def file_lines_xlsx(request: Request, upload_id: str):
     not off the admin-only /upload.
     """
     p = me(request)
+    frozen, _viewer = audience(request, p)
+    if frozen:
+        got = _published_file(p, f"lines:{upload_id}")
+        if got is None:
+            raise HTTPException(404, f"no file {upload_id}")
+        return _xlsx(*got)
     rep = uploads.get(upload_id, p.tenant)
     if rep is None:
         raise HTTPException(404, f"no file {upload_id}")
@@ -863,98 +986,44 @@ def _version_gap(result: dict, scored: dict) -> list[str]:
 @app.get("/export.xlsx")
 def export_xlsx(request: Request, window: str | None = None):
     """The full analysis as a workbook, on demand."""
-    from openpyxl import Workbook
     p = me(request)
-    from openpyxl.styles import Alignment, Font, PatternFill
-
+    frozen, _viewer = audience(request, p)
+    if frozen:
+        # The workbook made when the figures were published. A window it does not hold is
+        # refused rather than swapped for the default: the file name would say one period
+        # and the sheets another.
+        pub = publish.live(p.tenant)
+        if pub is None:
+            raise HTTPException(404, "nothing has been published yet")
+        win = window or pub["default_window"]
+        got = _published_file(p, f"export:{win}") if publish.choose(pub, win) == win else None
+        if got is None:
+            raise HTTPException(404, f"no published figures for {win}")
+        return _xlsx(*got)
     win = window or analysis.default_window(p.tenant)
     try:
         _label, y0, m0, y1, m1 = analysis.parse_window(win, tenant=p.tenant)
         result = analysis.run(window=win, save=False, top=60, tenant=p.tenant)
+        scored = catalogue.score_lines(
+            analysis.rows_for(win, p.tenant, y0, m0, y1, m1),
+            label=result["headline"]["window"])
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         raise HTTPException(409, str(e))
+    data = workbooks.analysis_workbook(result, scored, client_name_for(p),
+                                       extra_notes=_version_gap(result, scored))
+    return _xlsx(data, workbooks.export_name(p.tenant, result))
 
-    wb = Workbook()
-    head = Font(bold=True, color="FFFFFF")
-    fill = PatternFill("solid", fgColor="1A4A2A")
 
-    def sheet(name, cols, rows):
-        ws = wb.create_sheet(name[:31])
-        ws.append(cols)
-        for c in ws[1]:
-            c.font, c.fill = head, fill
-            c.alignment = Alignment(horizontal="center")
-        for r in rows:
-            ws.append(r)
-        for i, col in enumerate(cols, start=1):
-            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = \
-                max(12, min(46, len(str(col)) + 6))
-        ws.freeze_panes = "A2"
-        return ws
+def _published_file(p, name: str) -> tuple[bytes, str] | None:
+    pub = publish.live(p.tenant)
+    return publish.file(pub, name) if pub else None
 
-    h = result["headline"]
-    wb.remove(wb.active)
-    sheet("summary", ["metric", "value"], [
-        ["window", h["window"]], ["months", h["months"]],
-        ["period from", h["period_from"]], ["period to", h["period_to"]],
-        ["food purchased (kg)", h["food_kg"]], ["non-food (kg)", h["nonfood_kg"]],
-        ["CO2e (kg)", h["co2_kg"]],
-        ["intensity (kg CO2e per kg food)", h["intensity_kg_co2_per_kg"]],
-        ["EAT-Lancet score", h["eat_lancet_score"]],
-        ["EAT-Lancet profile", h.get("eat_profile")],
-        ["spend (EUR)", h["spend_eur"]], ["restaurants", h["restaurants"]],
-        ["products", h["products"]], ["lines", h["lines"]],
-        ["matched to a specific product (% of weight)",
-         h["confidence"]["product_specific_pct_of_weight"]],
-        ["per-piece share of spend (%)", h["piece_spend_pct"]],
-    ])
-    sheet("caveats", ["severity", "owner", "what you must know"],
-          [[c["severity"], c["owner"], c["message"]] for c in h["caveats"]])
-    sheet("by month", ["period", "food kg", "kg CO2e", "intensity", "spend EUR", "quality"],
-          [[r["period"], r["food_kg"], r["co2_kg"], r["intensity_kg_co2_per_kg"],
-            r["spend_eur"], r.get("quality", "")] for r in result["by_month"]])
-    sheet("by restaurant", ["restaurant", "food kg", "kg CO2e", "intensity", "spend EUR", "products"],
-          [[r["restaurant"], r["food_kg"], r["co2_kg"], r["intensity_kg_co2_per_kg"],
-            r["spend_eur"], r["products"]] for r in result["by_restaurant"]])
-    sheet("by food group", ["food group", "food kg", "kg CO2e", "% of weight", "% of CO2",
-                            "intensity", "products"],
-          [[r["food_group"], r["food_kg"], r["co2_kg"], r["pct_of_weight"], r["pct_of_co2"],
-            r["intensity_kg_co2_per_kg"], r["products"]] for r in result["by_food_group"]])
-    sheet("top contributors", ["artikelnr", "product", "food group", "food kg", "kg CO2e",
-                               "kg CO2e per kg", "% of CO2", "precision", "confidence"],
-          [[r["artikelnr"], r["description"], r["food_group"], r["food_kg"], r["co2_kg"],
-            r["co2_per_kg"], r["pct_of_co2"], charts.grade(r.get("source")),
-            r["confidence"]]
-           for r in result["top_contributors"]])
-    sheet("eat lancet", ["food group", "reference %", "purchased %", "gap"],
-          [[r["food_group"], r["reference_pct"], r["purchased_pct"], r["gap_pct"]]
-           for r in result["eat_lancet"]["rows"]])
-    sheet("data health", ["tier", "what it means", "% of weight", "% of CO2", "products", "specific?"],
-          [[t["label"], t["explain"], t["pct_of_weight"], t["pct_of_co2"], t["products"],
-            "yes" if t["product_level"] else "no"] for t in result["data_health"]["by_tier"]])
-    sheet("zero weight", ["artikelnr", "product", "category", "pack", "unit", "pieces", "spend EUR"],
-          [[r["artikelnr"], r["description"], r["category"], r["vp"], r["eenh"],
-            r["pieces"], r["spend_eur"]] for r in result["piece_items"]["rows"]])
 
-    # Every line the sheets above are made of. This is the point of the whole download:
-    # a reader who doubts a figure can open the rows underneath it here, in the same
-    # file, rather than being sent somewhere else to fetch them.
-    try:
-        scored = catalogue.score_lines(
-            analysis.rows_for(win, p.tenant, y0, m0, y1, m1), label=h["window"])
-    except catalogue.CatalogueDown as e:
-        raise HTTPException(409, str(e))
-    lines_export.add_sheet(wb, scored["rows"], client_name_for(p), h["window"],
-                           version=scored.get("catalogue_version"),
-                           extra_notes=_version_gap(result, scored))
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    name = f"PLANETmeal_{p.tenant}_{h['window'].replace(' ', '')}.xlsx"
+def _xlsx(data: bytes, filename: str) -> StreamingResponse:
     return StreamingResponse(
-        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # --------------------------------------------------------------------------- json
@@ -975,6 +1044,13 @@ def api_health():
 @app.get("/api/analysis")
 def api_analysis(request: Request, window: str | None = None):
     p = me(request)
+    frozen, _viewer = audience(request, p)
+    if frozen:
+        pub = publish.live(p.tenant)
+        got = publish.view(pub, publish.choose(pub, window)) if pub else None
+        if got is None:
+            return JSONResponse({"error": "nothing has been published yet"}, status_code=404)
+        return got
     try:
         return analysis.run(window=window or analysis.default_window(p.tenant),
                             tenant=p.tenant)
@@ -985,9 +1061,17 @@ def api_analysis(request: Request, window: str | None = None):
 @app.get("/api/run/{run_id}")
 def api_run(request: Request, run_id: str):
     p = me(request)
-    # An admin may read any client's saved run; a client only their own. Passing None
-    # here for a client would hand them somebody else's analysis for a guessed id.
-    out = analysis.saved(run_id, None if p.is_admin else p.tenant)
+    frozen, _viewer = audience(request, p)
+    if frozen:
+        # Only a run that was published. Their own tenant is not enough any more: MiSt's
+        # working runs belong to the same tenant and have not been shown to anybody.
+        pub = publish.live(p.tenant)
+        out = publish.view_by_run(pub, run_id) if pub else None
+        if out is None:
+            raise HTTPException(404, f"no analysis run {run_id}")
+        return out
+    # Only an admin gets this far, and an admin may read any client's saved run.
+    out = analysis.saved(run_id, None)
     if out is None:
         raise HTTPException(404, f"no analysis run {run_id}")
     return out
@@ -997,9 +1081,18 @@ def api_run(request: Request, run_id: str):
 def api_catalogue_version(request: Request):
     """What the catalogue is on now, and whether the saved numbers are behind it."""
     p = me(request)
-    return {"live": catalogue.version(), "stale": analysis.staleness(tenant=p.tenant)}
+    frozen, _viewer = audience(request, p)
+    return {"live": catalogue.version(),
+            "stale": None if frozen else analysis.staleness(tenant=p.tenant)}
 
 
 @app.get("/api/months")
 def api_months(request: Request):
-    return {"rows": db.months()}
+    # This used to call db.months() with no tenant, which answers for whichever client
+    # MIST_TENANT names -- every client was handed that one's months.
+    p = me(request)
+    frozen, _viewer = audience(request, p)
+    if frozen:
+        pub = publish.live(p.tenant)
+        return {"rows": pub["months"] if pub else []}
+    return {"rows": db.months(p.tenant)}
