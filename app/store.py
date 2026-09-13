@@ -49,14 +49,17 @@ class Placeholders:
     comment that caused it. This walks the string rather than using a regular expression
     precisely because these cases have to be handled explicitly.
 
-    A LITERAL % MUST BE DOUBLED, and that is not obvious either. psycopg reads every `%` in
-    a query as the start of a placeholder -- inside a string literal and inside a comment
-    as much as anywhere -- and accepts only %s, %b and %t. SQLite ignores the character,
-    so nothing local ever noticed. The first time it mattered, a startup query containing
-    LIKE '%(adopted)' was read as a named parameter, the app failed to start on Railway,
-    and the deploy was refused. psycopg turns %% back into %, so doubling every literal
-    one changes nothing about what the query means and lets any SQL -- including a
-    comment reading "10% counted" -- reach Postgres intact.
+    NEVER WRITE A LITERAL % INTO SQL. Pass it as a parameter instead. psycopg reads every
+    `%` in a query as the start of a placeholder -- inside a string literal or a comment
+    as much as anywhere -- and SQLite ignores the character, so a local run cannot tell.
+    LIKE '%(adopted)' written inline passed every suite and stopped the app starting on
+    Railway (13 Sep 2026).
+
+    And do not "fix" that here by escaping % to %%. It was tried the same day and it
+    broke far more: the Postgres branches of upsert(), columns() and table_exists() write
+    %s by hand, which this function is meant to pass through untouched, and doubling
+    turned each into a literal "%s" -- so the app still could not start, and every write
+    the catalogue made on Postgres failed. test_pg_dialect.py checks both directions.
     """
 
     @staticmethod
@@ -67,19 +70,19 @@ class Placeholders:
         while i < n:
             ch = sql[i]
             if quote:
-                out.append("%%" if ch == "%" else ch)
+                out.append(ch)
                 if ch == quote:
                     quote = None
                 i += 1
             elif ch == "-" and sql.startswith("--", i):
                 end = sql.find(chr(10), i)
                 end = n if end == -1 else end
-                out.append(sql[i:end].replace("%", "%%"))   # a line comment
+                out.append(sql[i:end])          # a line comment, copied verbatim
                 i = end
             elif ch == "/" and sql.startswith("/*", i):
                 end = sql.find("*/", i + 2)
                 end = n if end == -1 else end + 2
-                out.append(sql[i:end].replace("%", "%%"))   # a block comment
+                out.append(sql[i:end])          # a block comment, copied verbatim
                 i = end
             elif ch in ("'", '"'):
                 quote = ch
@@ -89,7 +92,7 @@ class Placeholders:
                 out.append("%s")
                 i += 1
             else:
-                out.append("%%" if ch == "%" else ch)
+                out.append(ch)
                 i += 1
         return "".join(out)
 

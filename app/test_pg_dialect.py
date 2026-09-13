@@ -18,6 +18,14 @@ This does not need a database server. It wraps store.connect so each statement i
 handed to psycopg's own query parser -- the same code that raised in production -- and
 then drives the startup path and every page. Anything Postgres would refuse is listed.
 
+That alone was not enough, and the reason is the second lesson. The first fix escaped
+every % in the converter. This test passed. The next deploy failed anyway -- and the
+catalogue, which deployed, could no longer write -- because store.py's Postgres branches
+(upsert, columns, table_exists) write %s by hand and the escaping turned each into
+literal text. Those branches never run on SQLite, so a test that only watches SQLite
+queries cannot see them. So this also drives those branches through the real
+store.Connection and store.Cursor, with psycopg's parser standing in for the server.
+
     python test_pg_dialect.py        (needs the catalogue API running, for the pages)
 """
 import json
@@ -163,17 +171,92 @@ else:
         print(f"        {why}\n          in: {sql}")
 
 print()
-print("=== and the check is real ===")
-# A guard that cannot fail is worse than none, because it gets counted. So it is shown the
-# query that broke production, and a comment with a percent sign in it.
+print("=== the Postgres-only branches, which never run on SQLite ===")
+
+
+class _FakeRawCursor:
+    """Stands in for a psycopg cursor: parses as psycopg would, sends nothing anywhere."""
+    rowcount = 0
+    description = None
+
+    def execute(self, sql, params=None):
+        if params is not None:
+            PostgresQuery(Transformer()).convert(sql, params)
+
+    def executemany(self, sql, rows):
+        for r in rows:
+            PostgresQuery(Transformer()).convert(sql, r)
+
+    def fetchall(self):
+        return []
+
+    def fetchone(self):
+        return None
+
+
+class _FakeRaw:
+    def cursor(self, row_factory=None):
+        return _FakeRawCursor()
+
+
+def postgres_branches() -> dict[str, str]:
+    """Run store.py's Postgres-only code through the real Connection. -> {name: error}."""
+    was = store.IS_POSTGRES
+    store.IS_POSTGRES = True
+    pg = store.Connection(_FakeRaw())
+    probes = {
+        "store.columns": lambda: store.columns(pg, "upload"),
+        "store.table_exists": lambda: store.table_exists(pg, "upload"),
+        "store.upsert, replacing": lambda: store.upsert(
+            pg, "t", ["a", "b"], [(1, 2)], conflict=["a"]),
+        "store.upsert, ignoring": lambda: store.upsert(
+            pg, "t", ["a", "b"], [(1, 2)], conflict=["a"], update=False),
+    }
+    broken = {}
+    try:
+        for name, probe in probes.items():
+            try:
+                probe()
+            except Exception as e:           # noqa: BLE001
+                broken[name] = str(e)
+    finally:
+        store.IS_POSTGRES = was
+    return broken
+
+
+broken = postgres_branches()
+P(not broken, f"upsert, columns and table_exists work on Postgres ({len(broken)} broken)")
+for name, why in broken.items():
+    print(f"        {name}: {why}")
+
+print()
+print("=== and both checks are real ===")
+# Two misses in one day, so each guard is shown the mistake it exists for.
 P(postgres_would_refuse(
     "UPDATE upload SET filename=? WHERE adapter='legacy' AND filename LIKE '%(adopted)'",
-    ("x",)) is None,
-  "the query that broke Railway is now accepted, because the converter escapes a literal %")
-P(postgres_would_refuse("SELECT 1 -- only 10% counted\nWHERE a=?", (1,)) is None,
-  "and so is a comment with a percent sign in it")
-P(postgres_would_refuse("SELECT ? WHERE a LIKE ?", (1, "%x%")) is None,
-  "a pattern passed as a parameter was always fine")
+    ("x",)) is not None,
+  "the query that stopped Railway, written inline, is refused")
+P(postgres_would_refuse(
+    "UPDATE upload SET filename=? WHERE adapter='legacy' AND filename LIKE ?",
+    ("x", "%(adopted)")) is None,
+  "and the same query with the pattern as a parameter is accepted")
+
+# The first attempted fix escaped every % in the converter. Put it back for a moment and
+# confirm the branch check notices the damage it did.
+_real_convert = store.Placeholders.convert
+
+
+def _escaping_convert(sql):
+    return _real_convert(sql.replace("%", "%%"))
+
+
+store.Placeholders.convert = staticmethod(_escaping_convert)
+try:
+    damaged = postgres_branches()
+finally:
+    store.Placeholders.convert = staticmethod(_real_convert)
+P(len(damaged) == 4,
+  f"escaping % in the converter would be caught ({len(damaged)} of 4 branches break)")
 print(f"  ({SEEN:,} statements checked)")
 
 print()
