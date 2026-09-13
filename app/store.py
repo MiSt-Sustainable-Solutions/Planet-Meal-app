@@ -48,6 +48,15 @@ class Placeholders:
     is "the query has 0 placeholders but 1 parameters were passed", a long way from the
     comment that caused it. This walks the string rather than using a regular expression
     precisely because these cases have to be handled explicitly.
+
+    A LITERAL % MUST BE DOUBLED, and that is not obvious either. psycopg reads every `%` in
+    a query as the start of a placeholder -- inside a string literal and inside a comment
+    as much as anywhere -- and accepts only %s, %b and %t. SQLite ignores the character,
+    so nothing local ever noticed. The first time it mattered, a startup query containing
+    LIKE '%(adopted)' was read as a named parameter, the app failed to start on Railway,
+    and the deploy was refused. psycopg turns %% back into %, so doubling every literal
+    one changes nothing about what the query means and lets any SQL -- including a
+    comment reading "10% counted" -- reach Postgres intact.
     """
 
     @staticmethod
@@ -58,19 +67,19 @@ class Placeholders:
         while i < n:
             ch = sql[i]
             if quote:
-                out.append(ch)
+                out.append("%%" if ch == "%" else ch)
                 if ch == quote:
                     quote = None
                 i += 1
             elif ch == "-" and sql.startswith("--", i):
                 end = sql.find(chr(10), i)
                 end = n if end == -1 else end
-                out.append(sql[i:end])          # a line comment, copied verbatim
+                out.append(sql[i:end].replace("%", "%%"))   # a line comment
                 i = end
             elif ch == "/" and sql.startswith("/*", i):
                 end = sql.find("*/", i + 2)
                 end = n if end == -1 else end + 2
-                out.append(sql[i:end])          # a block comment, copied verbatim
+                out.append(sql[i:end].replace("%", "%%"))   # a block comment
                 i = end
             elif ch in ("'", '"'):
                 quote = ch
@@ -80,7 +89,7 @@ class Placeholders:
                 out.append("%s")
                 i += 1
             else:
-                out.append(ch)
+                out.append("%%" if ch == "%" else ch)
                 i += 1
         return "".join(out)
 

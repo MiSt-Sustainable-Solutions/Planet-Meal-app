@@ -320,9 +320,11 @@ HISTORY_NAME = "Purchase history (imported)"
 
 def rename_adopted(con) -> int:
     """Give files adopted under the old naming the name a client should see. Idempotent."""
+    # The pattern is a parameter, not a literal. Written inline as LIKE '%(adopted)' it was
+    # read by psycopg as a named placeholder and took the Railway deploy down at startup.
     cur = con.execute(
-        "UPDATE upload SET filename=? WHERE adapter='legacy' AND filename LIKE '%(adopted)'",
-        (HISTORY_NAME,))
+        "UPDATE upload SET filename=? WHERE adapter='legacy' AND filename LIKE ?",
+        (HISTORY_NAME, "%(adopted)"))
     return cur.rowcount or 0
 
 
