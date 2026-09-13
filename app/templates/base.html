@@ -98,7 +98,9 @@
 </section>
 {% endif %}
 
-{% if stale and page in ('dashboard', 'health') %}
+{# Admin only (13 Sep 2026). Keeping figures current is MiSt's job; a client shown
+   "there are updates, recalculate" is asked to do it for us. #}
+{% if stale and page in ('dashboard', 'health') and me and me.is_admin %}
 <section class="tight light2" style="padding-block:16px;border-bottom:1px solid var(--mist);">
   <div class="inner" style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">
     <span class="dot warning" style="margin-top:8px;"></span>

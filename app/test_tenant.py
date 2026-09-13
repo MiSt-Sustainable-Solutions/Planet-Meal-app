@@ -262,6 +262,37 @@ for tenant, spec in CLIENTS.items():
     P(f'<span class="tenant">{spec["name"]}</span>' in body,
       f"{spec['name']:18} is named in the header, not the deployment's seed client")
 
+print("\n=== keeping figures current is MiSt's job, not the client's ===")
+BANNER = "There are updates since these figures were calculated"
+A.get("/")
+M.post("/admin/viewing", data={"tenant": "alpha", "back": "/"})
+_real_version = catalogue.version
+_live = _real_version()
+catalogue.version = lambda: dict(_live, version=_live["version"] + 1,
+                                 etag=f"cat-{_live['version'] + 1}.{_live['fingerprint']}")
+
+
+def _runs():
+    con = db.connect()
+    n = con.execute("SELECT COUNT(*) FROM analysis_run WHERE tenant='alpha'").fetchone()[0]
+    con.close()
+    return n
+
+
+try:
+    P(BANNER in M.get("/").text, "with the catalogue moved on, the admin is told")
+    body = A.get("/").text
+    P(BANNER not in body and "Recalculate" not in body,
+      "the client is not asked to recalculate")
+    n = _runs()
+    A.get("/?refresh=1")
+    A.get("/data-health?refresh=1")
+    P(_runs() == n, "and a client's ?refresh=1 recalculates nothing")
+    M.get("/?refresh=1")
+    P(_runs() == n + 1, "while the admin's does")
+finally:
+    catalogue.version = _real_version
+
 print("\n=== signing out actually signs out ===")
 A.get("/logout")
 P(A.get("/api/analysis").status_code == 401, "the session is gone")

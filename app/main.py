@@ -274,7 +274,9 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
     pickable, chosen_ids, selected = chosen_window(p, window, file)
 
     try:
-        result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
+        # Recalculating is MiSt's job, so only an admin's ?refresh=1 does anything.
+        result = analysis.run(window=selected, force=bool(refresh) and p.is_admin,
+                              tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             request, "dashboard.html", ctx(request, "dashboard", error=str(e),
@@ -312,7 +314,9 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
     p = me(request)
     pickable, chosen_ids, selected = chosen_window(p, window, file)
     try:
-        result = analysis.run(window=selected, force=bool(refresh), tenant=p.tenant)
+        # Recalculating is MiSt's job, so only an admin's ?refresh=1 does anything.
+        result = analysis.run(window=selected, force=bool(refresh) and p.is_admin,
+                              tenant=p.tenant)
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             request, "data_health.html", ctx(request, "health", error=str(e),
