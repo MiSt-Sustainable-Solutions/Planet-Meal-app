@@ -44,6 +44,8 @@ COLUMNS = [
     ("aantal",         "Quantity",            "#,##0.##",  10),
     ("omzet",          "Spend EUR",           "#,##0.00",  12),
     ("kg",             "Kilograms",           "#,##0.###", 12),
+    ("share",          "Share counted",       "0%",        13),
+    ("adjustment",     "Adjustment",          None,        20),
     ("kg_eff",         "Kilograms counted",   "#,##0.###", 17),
     ("is_food",        "Food?",               None,         8),
     ("bucket",         "EAT-Lancet group",    None,        18),
@@ -82,9 +84,10 @@ def _sheet_notes(ws, client: str, label: str, rows: int, version, extra) -> int:
         "Confidence is 1.00 for a decision made about this exact product and falls as the "
         "match gets coarser. A line with no weight contributes 0 kg and 0 kg CO2e; it is "
         "not dropped, it is here with zeros so the gap is visible.",
-        "'Kilograms counted' is what the footprint was calculated from and is what the "
-        "dashboard totals; 'Kilograms' is what the file said. They differ where a line "
-        "was sold by the piece.",
+        "'Kilograms' is what the file said was bought. 'Kilograms counted' is what the "
+        "footprint was calculated from and what the dashboard totals. They differ only "
+        "where MiSt has adjusted how much of a product counts: 'Share counted' says how "
+        "much, and 'Adjustment' names it.",
         "HOW TO RECONCILE THIS WITH THE DASHBOARD. Filter Food? = food, then sum "
         "'Kilograms counted' and 'kg CO2e' — those two totals are the headline exactly. "
         "Non-food lines are in this sheet as well, and they carry a footprint of their "

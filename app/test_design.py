@@ -159,7 +159,13 @@ P("weighs" in fetch("/data-health").lower(), "the per-piece gap is on Data healt
 # client and naming one of them on another's page is wrong. The method itself will be
 # shown on the back of the EAT-Lancet chart instead.
 P("tudelft_reconstruction" not in dash, "no internal profile id is shown to a client")
-P("Adjusted:" in dash, "what MiSt adjusted is still stated on the first page")
+# Until 13 Sep 2026 every client carried "Only 10% of purchased frying oil is counted",
+# because the catalogue applied it to everyone. Adjustments are per client now, so the line
+# is there exactly when one of this client's adjustments changed a figure on the page.
+_adj = [c for c in SESSION.get(BASE + "/api/analysis").json()["headline"]["caveats"]
+        if c["code"] in ("adjustment", "frying_oil_10pct")]
+P(("Adjusted:" in dash) == bool(_adj),
+  f"what MiSt adjusted is stated on the first page when anything was ({len(_adj)} adjustment line(s))")
 
 print("\n=== a client reads three grades, not the five tiers MiSt works with ===")
 # Renamed 13 Sep 2026. "Curated pin" and "Archetype rule" describe how MiSt resolves a

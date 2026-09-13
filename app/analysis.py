@@ -361,6 +361,10 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
     result = catalogue.score(lines, label=label, profile=profile, top=top)
     result["cached"] = False
     result["stale"] = None
+    # What MiSt changed about how much of a product counts, said beside the figures it
+    # changed. Only the adjustments these lines were actually counted with.
+    import adjustments
+    result["headline"]["caveats"][0:0] = adjustments.notes(lines, tenant)
 
     # the app knows things the catalogue cannot: which months arrived partial, and which
     # products weigh nothing. Attach them so the page has one object to render.

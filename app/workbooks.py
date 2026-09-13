@@ -54,6 +54,12 @@ def analysis_workbook(result: dict, scored: dict, client: str,
         ["matched to a specific product (% of weight)",
          h["confidence"]["product_specific_pct_of_weight"]],
         ["per-piece share of spend (%)", h["piece_spend_pct"]],
+        # Adjusted and unadjusted side by side, from the same lines as the last tab.
+        ["food bought, before adjustments (kg)", round(sum(
+            r.get("kg") or 0 for r in scored["rows"] if r.get("is_food")))],
+        ["food not counted because of adjustments (kg)", round(sum(
+            (r.get("kg") or 0) - (r.get("kg_eff") or 0)
+            for r in scored["rows"] if r.get("is_food")))],
     ])
     sheet("caveats", ["severity", "owner", "what you must know"],
           [[c["severity"], c["owner"], c["message"]] for c in h["caveats"]])

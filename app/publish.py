@@ -34,6 +34,7 @@ import json
 import threading
 import uuid
 
+import adjustments
 import analysis
 import auth
 import catalogue
@@ -102,12 +103,14 @@ def signature(tenant: str, etag: str | None) -> tuple[str, dict]:
     def h(xs):
         return hashlib.sha1("|".join(xs).encode()).hexdigest()[:12]
 
-    parts = dict(files=h(ids + own), data=h(data), catalogue=etag or "")
-    return h([parts["files"], parts["data"], parts["catalogue"]]), parts
+    parts = dict(files=h(ids + own), data=h(data),
+                 adjustments=adjustments.digest(tenant), catalogue=etag or "")
+    return h([parts[k] for k in ("files", "data", "adjustments", "catalogue")]), parts
 
 
 REASONS = dict(files="the counted files changed",
                data="the purchases in them changed",
+               adjustments="the product adjustments changed",
                catalogue="the catalogue or the way figures are calculated changed")
 
 
@@ -188,8 +191,9 @@ def state(tenant: str | None, etag: str | None) -> dict | None:
     sig, parts = signature(tenant, etag)
     changed = []
     if now:
-        before = now["parts"] or {}
-        changed = [REASONS[k] for k in ("files", "data", "catalogue")
+        # A copy published before adjustments existed has no record of them, and had none.
+        before = dict(dict(adjustments=adjustments.NONE), **(now["parts"] or {}))
+        changed = [REASONS[k] for k in ("files", "data", "adjustments", "catalogue")
                    if before.get(k) != parts[k] and not (k == "catalogue" and not etag)]
     building = last if last and last["status"] == "building" else None
     failed = last if last and last["status"] == "failed" else None
@@ -315,6 +319,7 @@ def _build(pid: str, tenant: str) -> None:
             _progress(pid, step, steps, w["label"])
             result = _fresh(w["key"], tenant)
             scored = _scored(w["key"], tenant, result["headline"]["window"])
+            adjustments.label_rows(scored["rows"], tenant)
             for x in (result, scored):
                 if _etag(x) != etag:
                     raise PublishError("the catalogue changed while publishing. "
@@ -333,6 +338,7 @@ def _build(pid: str, tenant: str) -> None:
             # every row the file holds -- the same rows its Lines download lists. Scored
             # once, both workbooks come from them.
             scored = _scored(key, tenant, f["filename"])
+            adjustments.label_rows(scored["rows"], tenant)
             for x in (result, scored):
                 if _etag(x) != etag:
                     raise PublishError("the catalogue changed while publishing. "

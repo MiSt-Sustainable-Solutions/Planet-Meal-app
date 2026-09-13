@@ -15,6 +15,7 @@ scoring say so plainly instead of failing.
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 import io
 import os
 import shutil
@@ -34,6 +35,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.templating import Jinja2Templates
 
 import adapters
+import adjustments
 import analysis
 import auth
 import catalogue
@@ -104,7 +106,7 @@ PUBLIC_PREFIXES = ("/static", "/set-password")
 # times a week it reads as churn rather than candour. When a month passes where the only
 # changes are the client's own files, take it out of this tuple and un-hide the nav link.
 ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner",
-               "/history", "/catalogue")
+               "/history", "/catalogue", "/adjustments")
 
 
 @app.middleware("http")
@@ -886,6 +888,7 @@ def _lines_workbook(request: Request, rows, label: str, filename: str):
     if not rows:
         raise HTTPException(400, "there are no purchase lines to export")
     scored = catalogue.score_lines(rows, label=label)
+    adjustments.label_rows(scored["rows"], p.tenant)
     data = lines_export.workbook(
         scored["rows"], client_name_for(p), label,
         version=scored.get("catalogue_version"))
@@ -981,6 +984,58 @@ def catalogue_retract(request: Request, supplier: str, sku: str, why: str = Form
                             status_code=303)
 
 
+# --------------------------------------------------------------------------- adjustments
+@app.get("/adjustments", response_class=HTMLResponse)
+def adjustments_page(request: Request, q: str = "", done: str | None = None,
+                     error: str | None = None):
+    """How much of a product counts, for the client being looked at. MiSt's page."""
+    return _adjustments_view(request, q=q, done=done, error=error)
+
+
+def _adjustments_view(request: Request, q: str = "", done: str | None = None,
+                      error: str | None = None, form: dict | None = None,
+                      picked: list[str] | None = None):
+    p = me(request)
+    held = db.months(p.tenant)
+    defaults = dict(share="10", label="", reason="", to_period="",
+                    from_period=held[0]["period"] if held else dt.date.today().strftime("%Y-%m"))
+    return templates.TemplateResponse(request, "adjustments.html", ctx(
+        request, "adjustments", q=q, done=done, error=error,
+        current=adjustments.active(p.tenant), earlier=adjustments.removed(p.tenant),
+        found=adjustments.products(p.tenant, q) if q.strip() else [],
+        form=dict(defaults, **(form or {})), picked=picked or []))
+
+
+@app.post("/adjustments")
+def adjustments_add(request: Request, artikelnr: list[str] = Form([]),
+                    share: str = Form(""), label: str = Form(""), reason: str = Form(""),
+                    from_period: str = Form(""), to_period: str = Form(""), q: str = Form("")):
+    p = me(request)
+    try:
+        ids = adjustments.add(p.tenant, artikelnr, share, label, reason, from_period,
+                              to_period, by=p.username)
+    except adjustments.AdjustmentError as e:
+        # Back to the same search with everything that was typed still in place.
+        return _adjustments_view(request, q=q, error=str(e), picked=artikelnr,
+                                form=dict(share=share, label=label, reason=reason,
+                                          from_period=from_period, to_period=to_period))
+    msg = (f"Adjusted {len(ids)} product{'' if len(ids) == 1 else 's'}. Your working figures "
+           "use it from now on; the client sees it when you next publish.")
+    return RedirectResponse(f"/adjustments?done={quote(msg)}", status_code=303)
+
+
+@app.post("/adjustments/{adjustment_id}/remove")
+def adjustments_remove(request: Request, adjustment_id: str, why: str = Form("")):
+    p = me(request)
+    try:
+        was = adjustments.remove(p.tenant, adjustment_id, by=p.username, why=why)
+    except adjustments.AdjustmentError as e:
+        return RedirectResponse(f"/adjustments?error={quote(str(e))}", status_code=303)
+    msg = (f"Removed. Article {was['artikelnr']} counts in full again; the client sees that "
+           "when you next publish. The adjustment is kept under Removed adjustments.")
+    return RedirectResponse(f"/adjustments?done={quote(msg)}", status_code=303)
+
+
 # --------------------------------------------------------------------------- export
 def _version_gap(result: dict, scored: dict) -> list[str]:
     """Say so when the summary sheets and the lines came from different catalogues.
@@ -1026,6 +1081,7 @@ def export_xlsx(request: Request, window: str | None = None):
             label=result["headline"]["window"])
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         raise HTTPException(409, str(e))
+    adjustments.label_rows(scored["rows"], p.tenant)
     data = workbooks.analysis_workbook(result, scored, client_name_for(p),
                                        extra_notes=_version_gap(result, scored))
     return _xlsx(data, workbooks.export_name(p.tenant, result))

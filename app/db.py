@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS analysis_run(
   window_key TEXT, catalogue_version TEXT, data_fingerprint TEXT);
 CREATE INDEX IF NOT EXISTS ix_run ON analysis_run(tenant, ran_at);
 
+-- How much of a product counts, for one client, over a range of months. Never edited or
+-- deleted: removing one stamps it. See adjustments.py.
+CREATE TABLE IF NOT EXISTS adjustment(
+  id TEXT PRIMARY KEY, tenant TEXT NOT NULL, artikelnr TEXT NOT NULL,
+  share REAL NOT NULL, label TEXT, reason TEXT,
+  from_period TEXT NOT NULL, to_period TEXT,
+  created_at TEXT, created_by TEXT, removed_at TEXT, removed_by TEXT, removed_why TEXT);
+CREATE INDEX IF NOT EXISTS ix_adj ON adjustment(tenant, artikelnr);
+
 -- What a client sees: a frozen copy, made when MiSt presses Publish. See publish.py.
 CREATE TABLE IF NOT EXISTS publication(
   id TEXT PRIMARY KEY, tenant TEXT NOT NULL,
@@ -192,6 +201,9 @@ def window_fingerprint(y0: int, m0: int, y1: int, m1: int,
     # The product table feeds matching — a barcode arriving on a later upload changes the
     # answer without touching a single purchase line.
     parts.append(f"products:{snap['products']}:{snap['last_seen']}")
+    # And so do the client's adjustments, without touching a single purchase line either.
+    import adjustments
+    parts.append(f"adjustments:{adjustments.digest(tenant or config.TENANT)}")
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
 
 
@@ -301,13 +313,24 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
     # barcode belongs to the product, so it is the only identifier that survives a change
     # of wholesaler — and the only one that lets a decision made for one client be reused
     # for another.
-    return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
-                 category=r["category"] or "", restaurant=r["restaurant"] or "",
-                 klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
-                 aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
-                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
-                 ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
-            for r in rows]
+    return _adjusted([dict(artikelnr=r["artikelnr"], description=r["description"] or "",
+                           category=r["category"] or "", restaurant=r["restaurant"] or "",
+                           klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
+                           aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
+                           kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
+                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+                      for r in rows], tenant)
+
+
+def _adjusted(lines: list[dict], tenant: str | None) -> list[dict]:
+    """Every line read for scoring carries this client's share for it.
+
+    Here, in the three readers, rather than in each caller: a period, a chosen set of files
+    and one file's lines must all be counted the same way, and a caller that forgot would
+    publish a figure with the frying oil counted in full.
+    """
+    import adjustments
+    return adjustments.apply(lines, tenant or config.TENANT)
 
 
 def lines_picked(owner: dict, tenant: str | None = None) -> list[dict]:
@@ -333,14 +356,14 @@ def lines_picked(owner: dict, tenant: str | None = None) -> list[dict]:
         WHERE l.tenant=? AND l.source_upload IN ({marks})""",
         (tenant or config.TENANT, *ids)).fetchall()
     con.close()
-    return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
-                 category=r["category"] or "", restaurant=r["restaurant"] or "",
-                 klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
-                 aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
-                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
-                 ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
-            for r in rows
-            if owner.get((r["year"], r["month"])) == r["source_upload"]]
+    return _adjusted([dict(artikelnr=r["artikelnr"], description=r["description"] or "",
+                           category=r["category"] or "", restaurant=r["restaurant"] or "",
+                           klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
+                           aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
+                           kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
+                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+                      for r in rows
+                      if owner.get((r["year"], r["month"])) == r["source_upload"]], tenant)
 
 
 def picked_fingerprint(upload_ids: list[str], tenant: str | None = None) -> str:
@@ -361,6 +384,8 @@ def picked_fingerprint(upload_ids: list[str], tenant: str | None = None) -> str:
         "ORDER BY source_upload", (tenant or config.TENANT, *upload_ids)).fetchall()
     con.close()
     parts = [f"{r[0]}:{r[1]}:{r[2]}:{r[3]}" for r in rows]
+    import adjustments
+    parts.append(f"adjustments:{adjustments.digest(tenant or config.TENANT)}")
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
 
 
@@ -380,13 +405,13 @@ def lines_from_upload(upload_id: str, tenant: str | None = None) -> list[dict]:
         LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
         WHERE l.tenant=? AND l.source_upload=?""", (tenant, upload_id)).fetchall()
     con.close()
-    return [dict(artikelnr=r["artikelnr"], description=r["description"] or "",
-                 category=r["category"] or "", restaurant=r["restaurant"] or "",
-                 klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
-                 aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
-                 kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
-                 ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
-            for r in rows]
+    return _adjusted([dict(artikelnr=r["artikelnr"], description=r["description"] or "",
+                           category=r["category"] or "", restaurant=r["restaurant"] or "",
+                           klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
+                           aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
+                           kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
+                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+                      for r in rows], tenant)
 
 
 def _owner_clause(owner: dict) -> tuple[str, list]:

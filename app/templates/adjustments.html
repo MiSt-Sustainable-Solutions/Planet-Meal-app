@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Adjustments{% endblock %}
+{% block body %}
+
+{#
+  How much of a product counts, for this client. MiSt's page: an adjustment changes the
+  client's figures, and the client sees only what it does ("Only 10% of purchased frying
+  oil is counted"), never the reason. See adjustments.py.
+#}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Adjustments · {{ client_name }}</div>
+    <h1 class="page-h1">How much of a product <em>counts.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:64ch;">
+      Some of what {{ client_name }} buys should count only in part &mdash; most frying oil
+      is not eaten, for example. An adjustment sets the share that counts for chosen
+      products, over the months you choose, for {{ client_name }} only. It is matched by
+      article number, so a product counts the same way whatever its name on the invoice.
+    </p>
+
+    {% if done %}
+    <div class="card" style="margin-top:22px;border-color:var(--teal);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot ok"></span><div><div class="msg">{{ done }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="card" style="margin-top:22px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">not saved</div><div class="msg">{{ error }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">In force</div>
+    <h2 class="sec-h2">What is adjusted <em>now.</em></h2>
+    {% if current %}
+    <div class="card scroll-x" style="margin-top:22px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Shown to the client as</th><th>Article</th><th>Product</th>
+          <th class="num">Counted</th><th>Months</th><th>Why (MiSt only)</th><th>Added</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for a in current %}
+        <tr>
+          <td class="name">{{ a.label }}</td>
+          <td>{{ a.artikelnr }}</td>
+          <td class="muted">{{ (a.description or '')|truncate(36) }}</td>
+          <td class="num"><strong>{{ a.pct }}%</strong></td>
+          <td>{{ a.from_period }} &rarr; {{ a.to_period or 'onwards' }}</td>
+          <td class="muted" style="max-width:28ch;">{{ a.reason }}</td>
+          <td class="muted">{{ (a.created_at or '')[:10] }}<br/>{{ a.created_by }}</td>
+          <td>
+            <form method="post" action="/adjustments/{{ a.id }}/remove"
+                  onsubmit="var w = prompt('Remove this adjustment? {{ a.artikelnr }} will count in full again. Why? (kept for the record)'); if (w === null) return false; this.why.value = w; return true;">
+              <input type="hidden" name="why" value=""/>
+              <button class="btn-ghost" type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:14px;max-width:70ch;">
+      The client sees one line per name and share, only for the periods it applies to.
+      Changes reach the client when you next publish.
+    </p>
+    {% else %}
+    <p class="lede" style="margin-top:18px;">Nothing is adjusted for {{ client_name }}. Every product counts in full.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Add</div>
+    <h2 class="sec-h2">Find the products, <em>then set the share.</em></h2>
+
+    <form method="get" action="/adjustments" style="margin-top:22px;display:flex;gap:12px;flex-wrap:wrap;">
+      <input class="inp" type="search" name="q" value="{{ q }}"
+             placeholder="part of a name, a category, an article number or a barcode"
+             style="flex:1;min-width:260px;max-width:520px;"/>
+      <button class="btn-ghost" type="submit">Search</button>
+    </form>
+    <p class="muted" style="font-size:13px;margin-top:10px;max-width:70ch;">
+      Only products {{ client_name }} has bought. Names on invoices vary &mdash; one frying
+      fat is sold as <em>KERN FR.VET VLB NEUTRAAL</em> &mdash; so try the category too.
+    </p>
+
+    {% if q %}
+    {% if found %}
+    <form method="post" action="/adjustments" style="margin-top:22px;">
+      <input type="hidden" name="q" value="{{ q }}"/>
+      <div class="card scroll-x">
+        <table class="tbl">
+          <thead><tr>
+            <th></th><th>Article</th><th>Product</th><th>Supplier category</th>
+            <th class="num">kg bought</th><th>Bought</th><th>Already adjusted</th>
+          </tr></thead>
+          <tbody>
+          {% for p in found %}
+          <tr>
+            <td><input type="checkbox" name="artikelnr" value="{{ p.artikelnr }}"
+                       {% if p.artikelnr in picked %}checked{% endif %}/></td>
+            <td>{{ p.artikelnr }}</td>
+            <td class="name">{{ (p.description or '')|truncate(40) }}</td>
+            <td class="muted">{{ (p.category or '')|truncate(28) }}</td>
+            <td class="num">{{ "{:,}".format(p.kg) }}</td>
+            <td class="muted">{% if p.first %}{{ p.first }} &rarr; {{ p.last }}{% else %}&mdash;{% endif %}</td>
+            <td class="muted">
+              {% for a in p.adjusted %}{{ a.pct }}% from {{ a.from_period }}{% if a.to_period %} to {{ a.to_period }}{% endif %}{% if not loop.last %}; {% endif %}
+              {% else %}&mdash;{% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid g2 adj-fields" style="margin-top:22px;">
+        <label><span class="k">Share that counts (%)</span>
+          <input class="inp" type="number" name="share" min="0" max="99.9" step="0.1"
+                 value="{{ form.share }}" required/>
+          <span class="muted hint">10 means one kilogram in ten counts. 0 means none does.</span></label>
+        <label><span class="k">Shown to the client as</span>
+          <input class="inp" type="text" name="label" value="{{ form.label }}" maxlength="60"
+                 placeholder="frying oil"/>
+          <span class="muted hint">Reads &ldquo;Only 10% of purchased <em>frying oil</em> is counted.&rdquo; Left empty, each product&rsquo;s own name.</span></label>
+        <label><span class="k">From month</span>
+          <input class="inp" type="month" name="from_period" value="{{ form.from_period }}" required/></label>
+        <label><span class="k">To month</span>
+          <input class="inp" type="month" name="to_period" value="{{ form.to_period }}"/>
+          <span class="muted hint">Leave empty to keep it going, including for files added later.</span></label>
+        <label style="grid-column:1/-1;"><span class="k">Why</span>
+          <input class="inp" type="text" name="reason" value="{{ form.reason }}" maxlength="300" required
+                 placeholder="e.g. used oil collected for recycling, agreed with the client on ..."/>
+          <span class="muted hint">For MiSt&rsquo;s record. Not shown to the client.</span></label>
+      </div>
+      <div style="margin-top:20px;"><button class="btn-main" type="submit">Add adjustment</button></div>
+    </form>
+    {% else %}
+    <p class="lede" style="margin-top:22px;">Nothing {{ client_name }} bought matches &ldquo;{{ q }}&rdquo;.</p>
+    {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+{% if earlier %}
+<section class="light2">
+  <div class="inner">
+    <details>
+      <summary class="sec-label" style="cursor:pointer;">Removed adjustments ({{ earlier|length }})</summary>
+      <div class="card scroll-x" style="margin-top:16px;">
+        <table class="tbl">
+          <thead><tr><th>Name</th><th>Article</th><th class="num">Counted</th><th>Months</th>
+            <th>Why it was added</th><th>Removed</th><th>Why removed</th></tr></thead>
+          <tbody>
+          {% for a in earlier %}
+          <tr>
+            <td class="name">{{ a.label }}</td><td>{{ a.artikelnr }}</td>
+            <td class="num">{{ a.pct }}%</td>
+            <td>{{ a.from_period }} &rarr; {{ a.to_period or 'onwards' }}</td>
+            <td class="muted">{{ a.reason }}</td>
+            <td class="muted">{{ (a.removed_at or '')[:10] }} {{ a.removed_by }}</td>
+            <td class="muted">{{ a.removed_why or '—' }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</section>
+{% endif %}
+
+<style>
+.inp{width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);background:var(--white);
+  border:1px solid var(--mist);border-radius:8px;padding:11px 13px;}
+.inp:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(45,158,117,.16);}
+.adj-fields label{display:flex;flex-direction:column;gap:6px;}
+.adj-fields .k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--sage);}
+.adj-fields .hint{font-size:12.5px;}
+</style>
+{% endblock %}

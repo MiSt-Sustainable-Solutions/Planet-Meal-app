@@ -81,7 +81,9 @@
        or chosen files and whether they agreed. #}
     {% set notes = h.caveats | selectattr('code', 'in', ['partial_export', 'chosen_files',
          'chosen_disagree', 'chosen_repeat', 'chosen_overlap']) | list %}
-    {% for a in h.caveats if a.code == 'frying_oil_10pct' %}
+    {# 'frying_oil_10pct' is the catalogue-wide rule this replaced, still inside figures
+       saved or published before 13 Sep 2026. #}
+    {% for a in h.caveats if a.code in ('adjustment', 'frying_oil_10pct') %}
     <p class="muted" style="font-size:13px;max-width:80ch;margin-top:18px;">
       <strong>Adjusted:</strong> {{ a.message }}
     </p>

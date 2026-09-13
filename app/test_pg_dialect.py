@@ -162,6 +162,18 @@ else:
     # Publishing writes more than any page does -- the frozen figures, the downloads, and
     # retiring the copy it replaces -- and a client's pages then read only that. So it is
     # run twice before the pages are walked: once to create, once to replace.
+    # An adjustment first, so the publish, the pages and the cache keys all read one.
+    import adjustments                           # noqa: E402
+    _c = db.connect()
+    store.upsert(_c, "product", ["tenant", "artikelnr", "description", "category"],
+                 [("acme", "194072", "MEYERIJ VOLLE MELK", "ZUIVEL")],
+                 conflict=["tenant", "artikelnr"])
+    _c.commit()
+    _c.close()
+    _aid = adjustments.add("acme", ["194072"], "10", "milk", "test", "2025-01", None, "boss")[0]
+    adjustments.products("acme", "melk")
+    adjustments.remove("acme", _aid, "boss", "test")
+    adjustments.add("acme", ["194072"], "10", "milk", "test", "2025-01", "2025-06", "boss")
     for _ in range(2):
         pub = publish.get(publish.start("acme", "boss", wait=True))
     P(pub["status"] == "live", f"a publish runs start to finish, twice ({pub.get('error')})")
