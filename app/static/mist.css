@@ -219,6 +219,23 @@ h1.page-h1 em{color:var(--teal);font-style:italic;}
 .dark .legend i.dash{border-top-color:var(--white);}
 .pick-select{font-family:var(--sans);font-size:13px;padding:8px 10px;border:1px solid var(--mist);
   border-radius:6px;background:var(--white);color:var(--ink);max-width:280px;}
+/* The turn is only while .turning is set, so the scroll-reveal's own transition on .sr
+   is left alone the rest of the time. */
+.flip.turning{transition:transform .16s ease-in;transform:perspective(900px) rotateY(90deg);}
+/* .stat is display:flex, which would otherwise override the hidden attribute. */
+.flip [hidden]{display:none !important;}
+/* The turned card is taller; the other three keep their own height rather than stretching
+   into empty boxes beside it. */
+.grid:has(.flip.flipped){align-items:start;}
+.flip.sr.in{transition:transform .18s ease-out, opacity .6s cubic-bezier(.4,0,.2,1);}
+.flip-btn{margin-top:12px;align-self:flex-start;background:none;border:none;padding:0;cursor:pointer;
+  font-family:var(--sans);font-size:12.5px;font-weight:700;color:var(--teal-ink);text-decoration:underline;}
+.flip-back .k{display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--sage);}
+.flip-back ol{margin:10px 0 0 16px;padding:0;font-size:12.5px;line-height:1.45;color:var(--ink);}
+.flip-back li{margin:0 0 6px;}
+.flip-links{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12.5px;}
+.flip-links a{color:var(--teal-ink);font-weight:700;}
+.flip-links .flip-btn{margin-top:0;}
 .tip{position:fixed;z-index:400;pointer-events:none;background:var(--ink);color:var(--white);
   font-family:var(--sans);font-size:12px;line-height:1.4;padding:6px 9px;border-radius:6px;
   max-width:340px;box-shadow:0 4px 16px rgba(10,32,16,.22);}

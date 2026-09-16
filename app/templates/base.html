@@ -283,6 +283,25 @@ document.addEventListener('mouseover', function(e){
 document.addEventListener('mousemove', function(e){ if (!tip.hidden) placeTip(e); });
 window.addEventListener('scroll', function(){ tip.hidden = true; }, {passive:true});
 
+/* A card that turns over: a quarter turn, swap the side, a quarter turn back. The two
+   sides differ in height, so this swaps content rather than rotating two stacked faces. */
+document.querySelectorAll('[data-flip]').forEach(function(b){
+  b.addEventListener('click', function(){
+    var card = document.getElementById(b.getAttribute('data-flip'));
+    var front = card.querySelector('.flip-front'), back = card.querySelector('.flip-back');
+    var toBack = back.hidden;
+    function swap(){
+      front.hidden = toBack; back.hidden = !toBack;
+      card.classList.toggle('flipped', toBack);
+      var next = (toBack ? back : front).querySelector('[data-flip]');
+      if (next) next.focus({preventScroll:true});
+    }
+    if (reduce) { swap(); return; }
+    card.classList.add('turning');
+    setTimeout(function(){ swap(); card.classList.remove('turning'); }, 160);
+  });
+});
+
 var pick = document.getElementById('trendPick');
 if (pick) pick.addEventListener('change', function(){
   document.querySelectorAll('.trend-series').forEach(function(el){

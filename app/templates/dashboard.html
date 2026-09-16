@@ -61,12 +61,34 @@
           <span class="sub">kg CO<sub>2</sub>e per kg of food purchased</span>
         </div>
       </div>
-      <div class="card sr d2">
-        <div class="stat">
+      {# Turns over to show how the score was worked out, with this period's numbers. The
+         formula used to sit under the EAT-Lancet chart as notation (16 Sep 2026). #}
+      <div class="card sr d2 flip" id="eatCard">
+        <div class="stat flip-front">
           <span class="k">EAT-Lancet score</span>
           <span class="v"><span data-count="{{ h.eat_lancet_score }}" data-dp="3">{{ h.eat_lancet_score }}</span></span>
           <span class="sub">0 to 1, where 1 matches the EAT-Lancet diet</span>
+          {% if eat_explain %}
+          <button type="button" class="flip-btn" data-flip="eatCard" aria-expanded="false">How is this worked out?</button>
+          {% endif %}
         </div>
+        {% if eat_explain %}{% set e = eat_explain %}
+        <div class="flip-back" hidden>
+          <span class="k">How the score is worked out</span>
+          <ol>
+            <li>Food bought is sorted into the diet&rsquo;s {{ e.groups }} food groups{% if e.intake_pct is not none %}
+              ({{ e.intake_pct }}% of it; drinks, fats, sauces, sweets and ready meals are left out){% endif %}.</li>
+            <li>Each group&rsquo;s share is compared with the diet&rsquo;s.
+              {% for b in e.biggest %}{{ b.group|capitalize }}: {{ b.purchased }}% bought, {{ b.reference }}% in the diet{{ '; ' if not loop.last else '.' }}{% endfor %}</li>
+            <li>All differences are added up, too much and too little alike: <strong>{{ e.deviation }} points</strong>.</li>
+            <li>1 &minus; {{ e.deviation }} &divide; 100 = <strong>{{ e.score }}</strong></li>
+          </ol>
+          <div class="flip-links">
+            <a href="#eat-lancet">Every group &darr;</a>
+            <button type="button" class="flip-btn" data-flip="eatCard" aria-expanded="true">Back</button>
+          </div>
+        </div>
+        {% endif %}
       </div>
       <div class="card sr d3">
         <div class="stat">
@@ -334,7 +356,7 @@
 </section>
 
 <!-- ============================================ EAT-Lancet (light) -->
-<section class="light">
+<section class="light" id="eat-lancet">
   <div class="inner">
     <div class="sec-label">Diet alignment</div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
@@ -346,8 +368,11 @@
         </div>
       </div>
     </div>
-    <p class="lede" style="margin-top:16px;">
-      {{ result.eat_lancet.method }}
+    <p class="lede" style="margin-top:16px;max-width:66ch;">
+      Each pair of bars is one food group: its share of the food bought, against its share
+      in the EAT-Lancet diet. The number on the right is the difference.
+      {% if eat_explain %}Added up, too much and too little alike, the differences come to
+      {{ eat_explain.deviation }} points, which gives the score of {{ eat_explain.score }}.{% endif %}
     </p>
     <div class="card sr" style="margin-top:24px;">
       <div class="scroll-x">

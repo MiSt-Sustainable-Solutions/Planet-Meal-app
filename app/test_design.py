@@ -268,6 +268,31 @@ _axis = [g["label"] for g in _charts.trend(
     [{"period": "2025-01", "co2_kg": 2400, "complete": True}])["series"][0]["chart"]["gridlines"]]
 P(len(set(_axis)) == len(_axis), f"no two gridlines share a label ({', '.join(_axis)})")
 
+print("\n=== the EAT-Lancet score explains itself, in words and with its own numbers ===")
+# 16 Sep 2026. The method was one line of notation under the chart. It is now the back of
+# the score card, and the chart's own paragraph is plain words.
+_eat = _run.get("eat_lancet") or {}
+_ex = _charts.eat_explain(_eat)
+P(_ex is not None and 'class="flip-back" hidden' in dash and "How is this worked out?" in dash,
+  "the score card has a back, hidden until asked for")
+if _ex:
+    P(f"= <strong>{_ex['score']}</strong>" in dash
+      and abs(float(_ex["score"]) - _run["headline"]["eat_lancet_score"]) < 0.0005,
+      f"the working ends in the headline score ({_ex['score']})")
+    P(f"<strong>{_ex['deviation']} points</strong>" in dash
+      and abs(1 - float(_ex["deviation"]) / 100 - float(_ex["score"])) < 0.0015,
+      f"and the points it adds up really give that score (1 - {_ex['deviation']}/100)")
+    _gaps = sorted(abs(r["gap_pct"]) for r in _eat["rows"])
+    P(len(_ex["biggest"]) == 2 and all(
+        abs(abs(float(b["purchased"]) - float(b["reference"])) - _gaps[-1 - i]) < 0.15
+        for i, b in enumerate(_ex["biggest"])),
+      "the two groups it names are the two furthest from the diet")
+P("sum|" not in dash, "no formula notation is left on the page")
+_old_eat = _charts.eat_explain({"score": 0.7, "total_abs_deviation": 30.0, "rows": [
+    {"food_group": "Fish", "purchased_pct": 1, "reference_pct": 3, "gap_pct": -2}]})
+P(_old_eat and _old_eat["intake_pct"] is None,
+  "figures saved before the covered share existed still explain themselves, without it")
+
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
 for path in PAGES:

@@ -398,7 +398,8 @@ def _charts(result: dict) -> dict:
         group_chart=charts.bars(result["by_food_group"], "food_group", "co2_kg",
                                 width=620, pad_l=150, pad_r=110,
                                 secondary_key="pct_of_co2", secondary_suffix="%", limit=14),
-        eat_chart=charts.paired(result["eat_lancet"]["rows"]))
+        eat_chart=charts.paired(result["eat_lancet"]["rows"]),
+        eat_explain=charts.eat_explain(result.get("eat_lancet")))
 
 
 def _published_options(pub: dict) -> list[dict]:

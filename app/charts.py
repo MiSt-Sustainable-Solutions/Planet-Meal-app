@@ -245,6 +245,32 @@ def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> di
                 hit_w=round(max(step, 12), 2))
 
 
+def eat_explain(eat: dict | None) -> dict | None:
+    """The EAT-Lancet score worked out in words, with this period's own numbers.
+
+    For the back of the score card. The method used to be one line of notation under the
+    chart -- "score = 1 - sum|purchased% - recommended%| / 100" -- which is correct and which
+    nobody outside MiSt could read (16 Sep 2026).
+    """
+    if not eat or eat.get("score") is None or not eat.get("rows"):
+        return None
+    rows = eat["rows"]
+    biggest = sorted(rows, key=lambda r: -abs(float(r.get("gap_pct") or 0)))[:2]
+
+    def pct(v):
+        return f"{float(v):.1f}".rstrip("0").rstrip(".")
+
+    return dict(
+        groups=len(rows),
+        intake_pct=(round(eat["intake_pct_of_food"]) if eat.get("intake_pct_of_food")
+                    is not None else None),
+        deviation=pct(eat["total_abs_deviation"]),
+        score=f"{float(eat['score']):.3f}",
+        biggest=[dict(group=(r["food_group"] or "").lower(),
+                      purchased=pct(r["purchased_pct"]), reference=pct(r["reference_pct"]),
+                      more=float(r["gap_pct"]) > 0) for r in biggest])
+
+
 def _thousands(v) -> str:
     return f"{round(float(v)):,}"
 
