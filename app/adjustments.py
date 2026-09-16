@@ -97,6 +97,11 @@ def add(tenant: str, artikelnrs: list[str], share_pct: float, label: str, reason
     if to_period and _key(to_period) < _key(from_period):
         raise AdjustmentError("the last month is before the first month")
     label = " ".join((label or "").split())
+    if len(arts) > 1 and not label:
+        # Without one, each product would be named on its own line on the client's dashboard:
+        # nine frying oils became nine "Adjusted:" lines (16 Sep 2026).
+        raise AdjustmentError(f"give the {len(arts)} ticked products one name the client "
+                              "will read, for example 'frying oil'")
     reason = " ".join((reason or "").split())
     if not reason:
         raise AdjustmentError("say why, for the record -- it is not shown to the client")

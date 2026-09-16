@@ -132,9 +132,10 @@
                  value="{{ form.share }}" required/>
           <span class="muted hint">10 means one kilogram in ten counts. 0 means none does.</span></label>
         <label><span class="k">Shown to the client as</span>
-          <input class="inp" type="text" name="label" value="{{ form.label }}" maxlength="60"
-                 placeholder="frying oil"/>
-          <span class="muted hint">Reads &ldquo;Only 10% of purchased <em>frying oil</em> is counted.&rdquo; Left empty, each product&rsquo;s own name.</span></label>
+          {# No placeholder. A grey "frying oil" in this box read as already filled in, and
+             nine oils were saved under nine product names instead (16 Sep 2026). #}
+          <input class="inp" type="text" name="label" value="{{ form.label }}" maxlength="60"/>
+          <span class="muted hint">One name for everything ticked, for example <em>frying oil</em>. The client reads &ldquo;Only 10% of purchased frying oil is counted.&rdquo; Needed when you tick more than one product.</span></label>
         <label><span class="k">From month</span>
           <input class="inp" type="month" name="from_period" value="{{ form.from_period }}" required/></label>
         <label><span class="k">To month</span>

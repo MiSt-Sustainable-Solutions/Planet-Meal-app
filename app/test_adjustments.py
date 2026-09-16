@@ -224,6 +224,10 @@ P(refused(share="-5")[0] and refused(share="lots")[0], "a negative share, or not
 P(refused(reason="  ")[0], "no reason given")
 P(refused(artikelnr=["999999"])[0], "an article this client never bought")
 P(refused(artikelnr=[])[0], "no product ticked")
+ok, text = refused(artikelnr=[MILK, FRVET], label="", from_period="2024-01", to_period="2024-06")
+P(ok and "one name" in text, "several products ticked with no name for them")
+P('placeholder="frying oil"' not in M.get("/adjustments?q=olie").text,
+  "and the name box shows no grey example that looks already filled in")
 P(refused(artikelnr=[OMEGA], from_period="2025-01", to_period="2025-06")[0] is False,
   "(months that do not overlap are fine: the same oil at 50% for January to June)")
 P(kg(M) == 2520 - 300, f"and that one is counted too (-300 kg: {kg(M)})")
