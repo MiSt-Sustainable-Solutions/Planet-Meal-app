@@ -227,6 +227,15 @@ P(refused(artikelnr=[])[0], "no product ticked")
 P(refused(artikelnr=[OMEGA], from_period="2025-01", to_period="2025-06")[0] is False,
   "(months that do not overlap are fine: the same oil at 50% for January to June)")
 P(kg(M) == 2520 - 300, f"and that one is counted too (-300 kg: {kg(M)})")
+# Two adjustment lines now apply. On 16 Sep 2026 nine frying oils, each under its own
+# name, filled the first page with nine of these; more than one is folded into one line.
+dash = M.get("/").text
+P("<strong>Adjusted:</strong> 2 purchases count only in part." in dash
+  and "Show which" in dash and dash.count("<strong>Adjusted:</strong>") == 1,
+  "with more than one, the first page shows one folded line, not one line each")
+P("<li>Only 10% of purchased frying oil is counted.</li>" in dash
+  and "<li>Only 50% of purchased milk is counted.</li>" in dash,
+  "and the list inside it names every one")
 
 print("\n=== removing keeps the record ===")
 kg_now = kg(M)

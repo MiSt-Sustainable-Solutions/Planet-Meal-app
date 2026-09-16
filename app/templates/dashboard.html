@@ -83,11 +83,32 @@
          'chosen_disagree', 'chosen_repeat', 'chosen_overlap']) | list %}
     {# 'frying_oil_10pct' is the catalogue-wide rule this replaced, still inside figures
        saved or published before 13 Sep 2026. #}
-    {% for a in h.caveats if a.code in ('adjustment', 'frying_oil_10pct') %}
+    {% set adjusted = h.caveats | selectattr('code', 'in', ['adjustment', 'frying_oil_10pct']) | list %}
+    {% if adjusted|length == 1 %}
     <p class="muted" style="font-size:13px;max-width:80ch;margin-top:18px;">
-      <strong>Adjusted:</strong> {{ a.message }}
+      <strong>Adjusted:</strong> {{ adjusted[0].message }}
     </p>
-    {% endfor %}
+    {% elif adjusted %}
+    {# More than one, folded. Nine frying oils each named on the first page pushed the
+       figures they qualify off the screen (16 Sep 2026). One line says there are some;
+       the list is a click away. #}
+    <details class="adj-fold">
+      <summary><strong>Adjusted:</strong> {{ adjusted|length }} purchases count only in part.
+        <span class="adj-show">Show which</span></summary>
+      <ul>
+        {% for a in adjusted %}<li>{{ a.message }}</li>{% endfor %}
+      </ul>
+    </details>
+    <style>
+      .adj-fold{font-size:13px;max-width:80ch;margin-top:18px;color:var(--sage);}
+      .adj-fold>summary{cursor:pointer;list-style:none;}
+      .adj-fold>summary::-webkit-details-marker{display:none;}
+      .adj-show{color:var(--teal-ink);font-weight:700;margin-left:6px;text-decoration:underline;}
+      .adj-fold[open] .adj-show{display:none;}
+      .adj-fold ul{margin:8px 0 0 18px;padding:0;}
+      .adj-fold li{margin:3px 0;}
+    </style>
+    {% endif %}
     {% for n in notes %}
     <p style="font-size:13px;max-width:80ch;margin-top:8px;
               color:{{ 'var(--danger)' if n.severity == 'error' else 'var(--sage)' }};">
