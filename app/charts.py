@@ -28,8 +28,12 @@ def _nice(v: float) -> float:
 def _fmt(v: float) -> str:
     if v >= 1_000_000:
         return f"{v/1_000_000:.1f}M".replace(".0M", "M")
-    if v >= 1_000:
+    if v >= 10_000:
         return f"{v/1_000:.0f}k"
+    if v >= 1_000:
+        # One decimal below 10k. Rounded to whole thousands, an axis of 625 / 1250 / 1875 /
+        # 2500 read "625, 1k, 2k, 2k" -- two gridlines with the same label (16 Sep 2026).
+        return f"{v/1_000:.1f}k".replace(".0k", "k")
     if v >= 10:
         return f"{v:.0f}"
     return f"{v:.2f}".rstrip("0").rstrip(".")
@@ -144,7 +148,8 @@ def trend(by_month, by_restaurant_month=None, restaurants=None,
     """CO2 per month on the left axis and the EAT-Lancet score per month on the right.
 
     One series for all restaurants and one for each restaurant, all drawn on the same months
-    so switching between them never moves the axis under the reader. A restaurant with no
+    so switching between them keeps every month in the same place. Each series has its own
+    CO2 scale: one faculty on the scale of the whole university would be a flat line. A restaurant with no
     purchases in a month is 0 kg for that month and has no score, so its line breaks rather
     than dropping to a score of zero.
 
@@ -203,7 +208,11 @@ def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> di
     for i, r in enumerate(rows):
         x = round(pad_l + i * step, 2)
         tip = f"{r['period']} · {_thousands(r['co2_kg'])} kg CO₂e"
-        if has_eat:
+        if not r["co2_kg"] and r["eat"] is None:
+            # Nothing in the purchase data for this month, which is not the same thing as a
+            # month with a small footprint -- say which it is.
+            tip = f"{r['period']} · nothing bought this month"
+        elif has_eat:
             tip += (f" · EAT-Lancet {r['eat']:.2f}" if r["eat"] is not None
                     else " · EAT-Lancet: no food counted")
         if not r["complete"]:

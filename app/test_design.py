@@ -262,8 +262,11 @@ _a = _new["series"][1]["chart"]
 P([pt["y2"] is None for pt in _a["points"]] == [False, True, False]
   and _a["eat_path"].count("M") == 2,
   "a restaurant's missing month breaks its EAT line instead of dropping it to zero")
-P("0 kg CO₂e" in _a["points"][1]["tip"] and "no food counted" in _a["points"][1]["tip"],
-  "and says so when pointed at")
+P(_a["points"][1]["tip"].endswith("nothing bought this month"),
+  "and says nothing was bought, when pointed at")
+_axis = [g["label"] for g in _charts.trend(
+    [{"period": "2025-01", "co2_kg": 2400, "complete": True}])["series"][0]["chart"]["gridlines"]]
+P(len(set(_axis)) == len(_axis), f"no two gridlines share a label ({', '.join(_axis)})")
 
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
