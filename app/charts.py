@@ -195,6 +195,39 @@ def grade(source: str | None) -> str:
     return GRADE.get(source or "", "Not matched")
 
 
+def precision(data_health: dict | None) -> dict:
+    """The "How precise is this?" table: each grade's share of weight, CO2 and spend.
+
+    Three measures because they answer different questions. Weight is how much of what was
+    bought has a specific match; CO2 is how much of the footprint does, which is the figure
+    that matters when quoting it; spend is the only one that sees food sold by the piece,
+    which has a price and no weight -- so that food gets its own row, "No weight".
+
+    Figures saved or published before spend was added (16 Sep 2026) carry no spend. The
+    column is then left out rather than shown as zeros.
+    """
+    dh = data_health or {}
+    tiers = dh.get("by_tier") or []
+    has_spend = bool(tiers) and all("pct_of_spend" in t for t in tiers)
+    sums = {g: dict(weight=0.0, co2=0.0, spend=0.0) for g in GRADE_ORDER}
+    for t in tiers:
+        s = sums[grade(t.get("source"))]
+        s["weight"] += float(t.get("pct_of_weight") or 0)
+        s["co2"] += float(t.get("pct_of_co2") or 0)
+        s["spend"] += float(t.get("pct_of_spend") or 0)
+    rows = [dict(label=g, explain=GRADE_MEANS[g], swatch=f"var(--tier{_GRADE_CLASS[g][1]})",
+                 weight=round(s["weight"]), co2=round(s["co2"]),
+                 spend=round(s["spend"]) if has_spend else None)
+            for g, s in sums.items() if s["weight"] or s["co2"] or s["spend"]]
+    nw = dh.get("no_weight") or {}
+    if has_spend and nw.get("pct_of_spend"):
+        rows.append(dict(label="No weight", explain="food sold per piece, counted as 0 kg",
+                         swatch="transparent", weight=None, co2=None,
+                         spend=round(nw["pct_of_spend"])))
+    return dict(rows=rows, has_spend=has_spend,
+                specific_co2=round(sums["Exact"]["co2"] + sums["Close"]["co2"]))
+
+
 def grades(tiers) -> list[dict]:
     """The five-tier ladder folded into three grades, as one bar that still sums to 100."""
     total = {g: 0.0 for g in GRADE_ORDER}

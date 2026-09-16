@@ -129,26 +129,51 @@
           <em>specific products</em>
         </h2>
         <p class="muted" style="margin-top:14px;max-width:44ch;">
-          Share of food weight, by how its CO<sub>2</sub> figure was found.
+          {% if precision.rows %}And {{ precision.specific_co2 }}% of the CO<sub>2</sub>.
+          {% endif %}Every product&rsquo;s CO<sub>2</sub> figure was found one of three ways.
         </p>
       </div>
       <div>
-        <div class="confbar">
-          {% for t in conf_bar %}
-          <div class="{{ t.cls }}" style="width:{{ t.pct }}%;" title="{{ t.label }} — {{ t.pct }}% of weight. {{ t.explain }}">
-            {% if t.show %}{{ t.pct }}%{% endif %}
-          </div>
-          {% endfor %}
+        {# One table rather than one bar (16 Sep 2026): the share of weight was the only
+           measure shown, and it understates how precise the footprint itself is --
+           the most carefully checked products are the ones with the most CO2. #}
+        <div class="scroll-x">
+          <table class="tbl precise">
+            <thead><tr>
+              <th>Precision</th><th class="num">Weight</th><th class="num">CO<sub>2</sub></th>
+              {% if precision.has_spend %}<th class="num">Spend</th>{% endif %}
+            </tr></thead>
+            <tbody>
+            {% for r in precision.rows %}
+            <tr>
+              <td><span class="swatch" style="background:{{ r.swatch }};"></span>
+                <strong>{{ r.label }}</strong>
+                <span class="why">{{ r.explain }}</span></td>
+              <td class="num">{{ '%d%%'|format(r.weight) if r.weight is not none else '&mdash;'|safe }}</td>
+              <td class="num">{{ '%d%%'|format(r.co2) if r.co2 is not none else '&mdash;'|safe }}</td>
+              {% if precision.has_spend %}<td class="num">{{ '%d%%'|format(r.spend) }}</td>{% endif %}
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
         </div>
-        <div class="legend">
-          {% for t in conf_bar %}
-          <span><i style="background:{{ t.swatch }};"></i><strong>{{ t.label }}</strong>
-            {{ t.pct }}% &middot; {{ t.explain }}</span>
-          {% endfor %}
-        </div>
+        <p style="margin-top:12px;font-size:12px;color:rgba(242,248,243,.7);max-width:70ch;">
+          Shares of the food counted in this period.{% if precision.has_spend %} Spend also
+          includes food sold per piece, which has no weight and so no CO<sub>2</sub>.{% endif %}
+        </p>
       </div>
     </div>
   </div>
+  <style>
+    .precise{width:100%;}
+    .precise td{vertical-align:middle;}
+    .precise .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .precise td.num{font-size:15px;font-weight:700;color:var(--white);}
+    .precise .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;
+      border:1px solid rgba(242,248,243,.45);vertical-align:middle;}
+    .precise strong{color:var(--white);}
+    .precise .why{display:block;margin:2px 0 0 18px;font-size:12px;color:rgba(242,248,243,.62);}
+  </style>
 </section>
 
 

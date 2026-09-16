@@ -378,6 +378,7 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
 def _charts(result: dict) -> dict:
     return dict(
         conf_bar=charts.grades(result["headline"]["confidence"]["by_tier"]),
+        precision=charts.precision(result.get("data_health")),
         trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
         rest_chart=charts.bars(result["by_restaurant"], "restaurant", "co2_kg",
                                secondary_key="intensity_kg_co2_per_kg", limit=20),

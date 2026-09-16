@@ -192,6 +192,30 @@ _specific = sum(b["pct"] for b in _bar if b["label"] in ("Exact", "Close"))
 P(abs(_specific - _run["headline"]["confidence"]["product_specific_pct_of_weight"]) < 0.5,
   f"Exact + Close is the headline figure ({_specific:.1f}%)")
 
+print("\n=== how precise: weight, CO2 and spend, not weight alone ===")
+# 16 Sep 2026. The section showed only the share of weight, which understates how precise
+# the footprint itself is. A figure saved before spend existed must still render, without
+# a column of zeros pretending to be data.
+P('<th class="num">Weight</th>' in dash and '<th class="num">CO<sub>2</sub></th>' in dash,
+  "the table has a Weight and a CO2 column")
+_pr = _charts.precision(_run.get("data_health"))
+P(('<th class="num">Spend</th>' in dash) == _pr["has_spend"],
+  f"and a Spend column exactly when the figures carry spend ({_pr['has_spend']})")
+if _pr["has_spend"]:
+    _sp = sum(r["spend"] for r in _pr["rows"])
+    P(abs(_sp - 100) <= 2, f"the spend column, No weight included, adds up to 100 ({_sp})")
+    P(any(r["label"] == "No weight" for r in _pr["rows"]) == bool(
+        (_run["data_health"].get("no_weight") or {}).get("pct_of_spend")),
+      "food with no weight is its own row when there is any")
+P(f"And {_pr['specific_co2']}% of the CO<sub>2</sub>." in dash,
+  f"the headline also says how much of the CO2 is matched specifically ({_pr['specific_co2']}%)")
+_old = _charts.precision({"by_tier": [
+    {"source": "curated_pin", "pct_of_weight": 60, "pct_of_co2": 70},
+    {"source": "bucket_avg", "pct_of_weight": 40, "pct_of_co2": 30}]})
+P(not _old["has_spend"] and all(r["spend"] is None for r in _old["rows"])
+  and [r["label"] for r in _old["rows"]] == ["Exact", "Estimated"],
+  "figures saved before spend existed get no Spend column, not zeros")
+
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
 for path in PAGES:

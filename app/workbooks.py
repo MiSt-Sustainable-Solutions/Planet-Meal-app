@@ -82,9 +82,16 @@ def analysis_workbook(result: dict, scored: dict, client: str,
     sheet("eat lancet", ["food group", "reference %", "purchased %", "gap"],
           [[r["food_group"], r["reference_pct"], r["purchased_pct"], r["gap_pct"]]
            for r in result["eat_lancet"]["rows"]])
-    sheet("data health", ["tier", "what it means", "% of weight", "% of CO2", "products", "specific?"],
-          [[t["label"], t["explain"], t["pct_of_weight"], t["pct_of_co2"], t["products"],
-            "yes" if t["product_level"] else "no"] for t in result["data_health"]["by_tier"]])
+    dh = result["data_health"]
+    sheet("data health", ["tier", "precision", "what it means", "% of weight", "% of CO2",
+                          "% of food spend", "products", "specific?"],
+          [[t["label"], charts.grade(t.get("source")), t["explain"], t["pct_of_weight"],
+            t["pct_of_co2"], t.get("pct_of_spend"), t["products"],
+            "yes" if t["product_level"] else "no"] for t in dh["by_tier"]]
+          # Food sold by the piece: a price, no weight, so no tier's kilograms or CO2.
+          + ([["no weight", "No weight", "food sold per piece, counted as 0 kg", None, None,
+               dh["no_weight"]["pct_of_spend"], dh["no_weight"]["products"], "no"]]
+             if dh.get("no_weight") else []))
     sheet("zero weight", ["artikelnr", "product", "category", "pack", "unit", "pieces", "spend EUR"],
           [[r["artikelnr"], r["description"], r["category"], r["vp"], r["eenh"],
             r["pieces"], r["spend_eur"]] for r in result["piece_items"]["rows"]])
