@@ -109,6 +109,137 @@ def bars(rows, label_key, value_key, width=980, row_h=30, pad_l=270, pad_r=90,
                 pad_l=pad_l, pad_r=pad_r, vmax=vmax)
 
 
+def bars_dual(rows, label_key, a_key, b_key, width=980, row_h=30, pad_l=270,
+              a_width=440, gap=90, limit=None) -> dict:
+    """Two bar columns per row, each on its own scale: total CO2, then CO2 per kg of food.
+
+    The second figure was a number at the far right. A number cannot be compared at a
+    glance; a bar can -- a small restaurant buying mostly meat stands out on the right even
+    when it is short on the left. Two columns rather than a second axis over the same bars,
+    because two scales drawn over one set of bars read as one scale.
+    """
+    rows = list(rows)[:limit] if limit else list(rows)
+    if not rows:
+        return dict(empty=True, width=width, height=60)
+    head = 26
+    a_max = max(float(r.get(a_key) or 0) for r in rows) or 1
+    b_max = max(float(r.get(b_key) or 0) for r in rows) or 1
+    b_x = pad_l + a_width + gap
+    b_width = width - b_x - 60
+    out = []
+    for i, r in enumerate(rows):
+        a = float(r.get(a_key) or 0)
+        b = r.get(b_key)
+        out.append(dict(
+            y=head + i * row_h, h=row_h - 9, label=str(r.get(label_key, "")),
+            a_w=max(1.5, round(a_width * a / a_max, 2)), a_display=_fmt(a),
+            b_w=max(1.5, round(b_width * float(b) / b_max, 2)) if b is not None else 0,
+            b_display=f"{float(b):.2f}" if b is not None else "—"))
+    return dict(empty=False, width=width, height=head + len(out) * row_h + 6, rows=out,
+                pad_l=pad_l, b_x=b_x, head=head)
+
+
+def trend(by_month, by_restaurant_month=None, restaurants=None,
+          width=980, height=260, pad_l=54, pad_b=34, pad_t=14, pad_r=58) -> dict:
+    """CO2 per month on the left axis and the EAT-Lancet score per month on the right.
+
+    One series for all restaurants and one for each restaurant, all drawn on the same months
+    so switching between them never moves the axis under the reader. A restaurant with no
+    purchases in a month is 0 kg for that month and has no score, so its line breaks rather
+    than dropping to a score of zero.
+
+    Figures saved before 16 Sep 2026 have no EAT per month and no restaurant breakdown; they
+    get the CO2 line alone and no picker.
+    """
+    months = list(by_month or [])
+    if not months:
+        return dict(empty=True, width=width, height=height, series=[])
+    periods = [m["period"] for m in months]
+    complete = {m["period"]: m.get("complete", True) for m in months}
+    has_eat = any(m.get("eat_lancet_score") is not None for m in months)
+
+    def one(key, label, rows):
+        by = {r["period"]: r for r in rows}
+        pts_rows = [dict(period=p, co2_kg=(by.get(p) or {}).get("co2_kg") or 0,
+                         eat=(by.get(p) or {}).get("eat_lancet_score"),
+                         complete=complete[p]) for p in periods]
+        return dict(key=key, label=label,
+                    chart=_trend_chart(pts_rows, has_eat, width, height, pad_l, pad_b,
+                                       pad_t, pad_r))
+
+    series = [one("all", "All restaurants", months)]
+    rm = list(by_restaurant_month or [])
+    if rm:
+        grouped: dict[str, list] = {}
+        for r in rm:
+            grouped.setdefault(r["restaurant"], []).append(r)
+        order = [r for r in (restaurants or []) if r in grouped] + \
+                sorted(r for r in grouped if r not in (restaurants or []))
+        for name in order:
+            series.append(one(f"r{len(series)}", name, grouped[name]))
+    return dict(empty=False, width=width, height=height, series=series, has_eat=has_eat,
+                has_partial=not all(complete.values()))
+
+
+def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> dict:
+    vals = [float(r["co2_kg"]) for r in rows]
+    ymax = _nice(max(vals) or 1)
+    plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
+    n = len(rows)
+    step = plot_w / max(n - 1, 1)
+    scores = [r["eat"] for r in rows if r["eat"] is not None]
+    # 0 to 1 is the scale the score is explained on. It only extends below 0 when a month
+    # actually does, which the method allows.
+    lo2 = min(0.0, (min(scores) // 0.25) * 0.25) if scores else 0.0
+    hi2 = 1.0
+
+    def y1(v):
+        return round(pad_t + plot_h * (1 - v / ymax), 2)
+
+    def y2(v):
+        return round(pad_t + plot_h * (1 - (v - lo2) / (hi2 - lo2)), 2)
+
+    pts = []
+    for i, r in enumerate(rows):
+        x = round(pad_l + i * step, 2)
+        tip = f"{r['period']} · {_thousands(r['co2_kg'])} kg CO₂e"
+        if has_eat:
+            tip += (f" · EAT-Lancet {r['eat']:.2f}" if r["eat"] is not None
+                    else " · EAT-Lancet: no food counted")
+        if not r["complete"]:
+            tip += " · incomplete export"
+        pts.append(dict(x=x, y=y1(float(r["co2_kg"])), ok=r["complete"], label=r["period"],
+                        y2=y2(r["eat"]) if r["eat"] is not None else None, tip=tip))
+
+    path = "M" + " L".join(f"{p['x']},{p['y']}" for p in pts)
+    base = round(pad_t + plot_h, 2)
+    area = f"M{pts[0]['x']},{base} L" + " L".join(f"{p['x']},{p['y']}" for p in pts) + \
+           f" L{pts[-1]['x']},{base} Z"
+    # Broken wherever a month has no score, so a gap reads as a gap.
+    eat_path, pen = "", False
+    for p in pts:
+        if p["y2"] is None:
+            pen = False
+            continue
+        eat_path += f"{'L' if pen else 'M'}{p['x']},{p['y2']} "
+        pen = True
+    gridlines = [dict(y=round(pad_t + plot_h * (1 - i / 4), 2), label=_fmt(ymax * i / 4),
+                      label2=f"{lo2 + (hi2 - lo2) * i / 4:.2f}".rstrip("0").rstrip(".")
+                      if has_eat else None)
+                 for i in range(5)]
+    every = max(1, n // 12)
+    xlabels = [dict(x=p["x"], label=p["label"][-7:], ok=p["ok"])
+               for i, p in enumerate(pts) if i % every == 0 or i == n - 1]
+    return dict(width=width, height=height, points=pts, path=path, area=area,
+                eat_path=eat_path.strip(), gridlines=gridlines, xlabels=xlabels,
+                baseline=base, pad_l=pad_l, pad_r=pad_r, has_eat=has_eat,
+                hit_w=round(max(step, 12), 2))
+
+
+def _thousands(v) -> str:
+    return f"{round(float(v)):,}"
+
+
 def paired(rows, label_key="food_group", a_key="purchased_pct", b_key="reference_pct",
            width=980, row_h=38, pad_l=180, pad_r=120) -> dict:
     """Purchased share against the reference share, one pair per food group.

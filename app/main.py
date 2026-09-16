@@ -81,6 +81,18 @@ app = FastAPI(title="PLANETmeal", docs_url="/api/docs", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 
+
+def _asset_version() -> str:
+    """A fingerprint of the stylesheet, added to its address so a deploy is never styled by
+    a browser's old copy. A cached stylesheet without the rule that made the trend chart's
+    hover areas see-through drew them solid black (16 Sep 2026)."""
+    import hashlib
+    with open(os.path.join(HERE, "static", "mist.css"), "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest()[:10]
+
+
+templates.env.globals["asset_v"] = _asset_version()
+
 # Everything needs a login EXCEPT these. The list is short and explicit so that a route
 # added later is protected by default -- the failure mode of forgetting is "nobody can
 # reach it", not "everybody can".
@@ -379,9 +391,10 @@ def _charts(result: dict) -> dict:
     return dict(
         conf_bar=charts.grades(result["headline"]["confidence"]["by_tier"]),
         precision=charts.precision(result.get("data_health")),
-        trend=charts.line(result["by_month"], "period", "co2_kg", "complete"),
-        rest_chart=charts.bars(result["by_restaurant"], "restaurant", "co2_kg",
-                               secondary_key="intensity_kg_co2_per_kg", limit=20),
+        trend=charts.trend(result["by_month"], result.get("by_restaurant_month"),
+                           [r["restaurant"] for r in result["by_restaurant"]]),
+        rest_chart=charts.bars_dual(result["by_restaurant"], "restaurant", "co2_kg",
+                                    "intensity_kg_co2_per_kg", limit=20),
         group_chart=charts.bars(result["by_food_group"], "food_group", "co2_kg",
                                 width=620, pad_l=150, pad_r=110,
                                 secondary_key="pct_of_co2", secondary_suffix="%", limit=14),

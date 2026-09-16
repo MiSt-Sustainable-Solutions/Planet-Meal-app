@@ -181,33 +181,59 @@
 <section class="light">
   <div class="inner">
     <div class="sec-label">Trend</div>
-    <h2 class="sec-h2">CO<sub>2</sub> by <em>month</em></h2>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;">
+      <h2 class="sec-h2">CO<sub>2</sub>{% if trend.has_eat %} and EAT-Lancet{% endif %} by <em>month</em></h2>
+      {# One restaurant at a time. Every series is drawn on the server and hidden, so the
+         picker only shows one -- no chart is computed in the browser. #}
+      {% if trend.series|length > 1 %}
+      <label class="muted" style="display:flex;gap:10px;align-items:center;font-size:13px;">
+        Restaurant
+        <select id="trendPick" class="pick-select">
+          {% for s in trend.series %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+    </div>
     <div class="card sr" style="margin-top:24px;">
       {% if trend.empty %}<p class="muted">No monthly data.</p>{% else %}
-      <div class="scroll-x">
-        <svg class="chart" viewBox="0 0 {{ trend.width }} {{ trend.height }}" role="img"
-             aria-label="Monthly CO2 in kilograms">
-          {% for g in trend.gridlines %}
-          <line class="grid-line" x1="{{ trend.pad_l }}" x2="{{ trend.width - trend.pad_r }}" y1="{{ g.y }}" y2="{{ g.y }}"/>
-          <text class="tick" x="{{ trend.pad_l - 10 }}" y="{{ g.y + 3.5 }}" text-anchor="end">{{ g.label }}</text>
+      {% for s in trend.series %}{% set c = s.chart %}
+      <div class="scroll-x trend-series" data-series="{{ s.key }}" {% if not loop.first %}hidden{% endif %}>
+        <svg class="chart" viewBox="0 0 {{ c.width }} {{ c.height }}" role="img"
+             aria-label="{{ s.label }}: CO2 per month{% if c.has_eat %} and EAT-Lancet score{% endif %}">
+          {% for g in c.gridlines %}
+          <line class="grid-line" x1="{{ c.pad_l }}" x2="{{ c.width - c.pad_r }}" y1="{{ g.y }}" y2="{{ g.y }}"/>
+          <text class="tick" x="{{ c.pad_l - 10 }}" y="{{ g.y + 3.5 }}" text-anchor="end">{{ g.label }}</text>
+          {% if g.label2 is not none %}
+          <text class="tick" x="{{ c.width - c.pad_r + 10 }}" y="{{ g.y + 3.5 }}" text-anchor="start">{{ g.label2 }}</text>
+          {% endif %}
           {% endfor %}
-          <path class="area" d="{{ trend.area }}"/>
-          <path class="line" d="{{ trend.path }}"/>
-          {% for p in trend.points %}
-          <circle class="pt {{ '' if p.ok else 'partial' }}" cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 4 if p.ok else 5.5 }}">
-            <title>{{ p.label }} — {{ p.display }} kg CO2e{{ '' if p.ok else '  (incomplete export)' }}</title>
-          </circle>
+          <path class="area" d="{{ c.area }}"/>
+          <path class="line" d="{{ c.path }}"/>
+          {% if c.eat_path %}<path class="line2" d="{{ c.eat_path }}"/>{% endif %}
+          {% for p in c.points %}
+          <circle class="pt {{ '' if p.ok else 'partial' }}" cx="{{ p.x }}" cy="{{ p.y }}" r="{{ 4 if p.ok else 5.5 }}"/>
+          {% if p.y2 is not none %}<circle class="pt2" cx="{{ p.x }}" cy="{{ p.y2 }}" r="3"/>{% endif %}
           {% endfor %}
-          <line class="axis" x1="{{ trend.pad_l }}" x2="{{ trend.width - trend.pad_r }}" y1="{{ trend.baseline }}" y2="{{ trend.baseline }}"/>
-          {% for l in trend.xlabels %}
-          <text class="tick" x="{{ l.x }}" y="{{ trend.baseline + 18 }}" text-anchor="middle"
+          <line class="axis" x1="{{ c.pad_l }}" x2="{{ c.width - c.pad_r }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}"/>
+          {% for l in c.xlabels %}
+          <text class="tick" x="{{ l.x }}" y="{{ c.baseline + 18 }}" text-anchor="middle"
                 {% if not l.ok %}style="fill:var(--danger);font-weight:700;"{% endif %}>{{ l.label }}</text>
+          {% endfor %}
+          {# A column per month you can point anywhere in, not a 4px dot you have to find. #}
+          {% for p in c.points %}
+          {# fill set here as well as in the stylesheet: without it an SVG rect is black. #}
+          <rect class="hit" fill="transparent" x="{{ p.x - c.hit_w / 2 }}" y="0" width="{{ c.hit_w }}" height="{{ c.baseline }}"
+                data-tip="{{ s.label }} · {{ p.tip }}"/>
           {% endfor %}
         </svg>
       </div>
+      {% endfor %}
       <div class="legend">
-        <span><i style="background:var(--teal);"></i>kg CO<sub>2</sub>e per month</span>
-        {% if trend.points|selectattr('ok','equalto',false)|list %}
+        <span><i style="background:var(--teal);"></i>kg CO<sub>2</sub>e per month (left)</span>
+        {% if trend.has_eat %}
+        <span><i class="dash"></i>EAT-Lancet score (right; 1 matches the diet)</span>
+        {% endif %}
+        {% if trend.has_partial %}
         <span><i style="background:var(--danger);"></i>incomplete export, not comparable</span>
         {% endif %}
       </div>
@@ -221,28 +247,31 @@
   <div class="inner">
     <div class="sec-label sl-teal">Restaurants</div>
     <h2 class="sec-h2">CO<sub>2</sub> by <em>restaurant</em></h2>
-    <p class="muted" style="margin-top:14px;max-width:60ch;">Ranked by total CO<sub>2</sub>e.</p>
+    <p class="muted" style="margin-top:14px;max-width:60ch;">
+      Ranked by total CO<sub>2</sub>e. The right-hand bars compare restaurants of different
+      sizes: CO<sub>2</sub>e for each kilogram of food bought.
+    </p>
     <div class="card sr" style="margin-top:24px;">
       {% if rest_chart.empty %}<p class="muted">No restaurant data.</p>{% else %}
       <div class="scroll-x">
         <svg class="chart" viewBox="0 0 {{ rest_chart.width }} {{ rest_chart.height }}" role="img"
-             aria-label="CO2 by restaurant">
+             aria-label="CO2 by restaurant, and CO2 per kilogram of food">
+          <text class="tick colhead" x="{{ rest_chart.pad_l }}" y="14">kg CO₂e</text>
+          <text class="tick colhead" x="{{ rest_chart.b_x }}" y="14">kg CO₂e per kg of food</text>
           {% for b in rest_chart.rows %}
           <text class="tick" x="{{ rest_chart.pad_l - 12 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.label }}</text>
-          <rect class="bar" x="{{ rest_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.w }}" height="{{ b.h }}" rx="3">
-            <title>{{ b.label }} — {{ b.display }} kg CO2e</title>
-          </rect>
-          <text class="tick" x="{{ rest_chart.pad_l + b.w + 10 }}" y="{{ b.y + 15 }}"
-                style="fill:var(--white);font-weight:700;">{{ b.display }}</text>
-          {% if b.secondary %}
-          <text class="tick" x="{{ rest_chart.width - 8 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.secondary }}</text>
+          <rect class="bar" x="{{ rest_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.a_w }}" height="{{ b.h }}" rx="3"
+                data-tip="{{ b.label }} · {{ b.a_display }} kg CO₂e"/>
+          <text class="tick" x="{{ rest_chart.pad_l + b.a_w + 10 }}" y="{{ b.y + 15 }}"
+                style="fill:var(--white);font-weight:700;">{{ b.a_display }}</text>
+          {% if b.b_w %}
+          <rect class="bar alt" x="{{ rest_chart.b_x }}" y="{{ b.y + 3 }}" width="{{ b.b_w }}" height="{{ b.h }}" rx="3"
+                data-tip="{{ b.label }} · {{ b.b_display }} kg CO₂e per kg of food"/>
           {% endif %}
+          <text class="tick" x="{{ rest_chart.b_x + b.b_w + 10 }}" y="{{ b.y + 15 }}"
+                style="fill:var(--white);font-weight:700;">{{ b.b_display }}</text>
           {% endfor %}
         </svg>
-      </div>
-      <div class="legend">
-        <span><i style="background:var(--teal);"></i>kg CO<sub>2</sub>e</span>
-        <span style="opacity:.75;">right column: kg CO<sub>2</sub>e per kg of food</span>
       </div>
       {% endif %}
     </div>
@@ -261,9 +290,8 @@
                aria-label="CO2 by food group">
             {% for b in group_chart.rows %}
             <text class="tick" x="{{ group_chart.pad_l - 12 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.label }}</text>
-            <rect class="bar" x="{{ group_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.w }}" height="{{ b.h }}" rx="3">
-              <title>{{ b.label }} — {{ b.display }} kg CO2e</title>
-            </rect>
+            <rect class="bar" x="{{ group_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.w }}" height="{{ b.h }}" rx="3"
+                  data-tip="{{ b.label }} · {{ b.display }} kg CO₂e{% if b.secondary %} · {{ b.secondary }} of all CO₂e{% endif %}"/>
             <text class="tick" x="{{ group_chart.pad_l + b.w + 10 }}" y="{{ b.y + 15 }}"
                   style="fill:var(--ink);font-weight:700;">{{ b.display }}</text>
             {% if b.secondary %}
@@ -327,12 +355,10 @@
              aria-label="Purchased share versus EAT-Lancet reference share">
           {% for b in eat_chart.rows %}
           <text class="tick" x="{{ eat_chart.pad_l - 12 }}" y="{{ b.y + 20 }}" text-anchor="end">{{ b.label }}</text>
-          <rect class="bar ref" x="{{ eat_chart.pad_l }}" y="{{ b.y + 4 }}" width="{{ b.b_w }}" height="11" rx="2">
-            <title>{{ b.label }} — reference {{ b.b }}%</title>
-          </rect>
-          <rect class="bar" x="{{ eat_chart.pad_l }}" y="{{ b.y + 18 }}" width="{{ b.a_w }}" height="11" rx="2">
-            <title>{{ b.label }} — purchased {{ b.a }}%</title>
-          </rect>
+          <rect class="bar ref" x="{{ eat_chart.pad_l }}" y="{{ b.y + 4 }}" width="{{ b.b_w }}" height="11" rx="2"
+                data-tip="{{ b.label }} · EAT-Lancet reference {{ b.b }}% · purchased {{ b.a }}%"/>
+          <rect class="bar" x="{{ eat_chart.pad_l }}" y="{{ b.y + 18 }}" width="{{ b.a_w }}" height="11" rx="2"
+                data-tip="{{ b.label }} · purchased {{ b.a }}% · EAT-Lancet reference {{ b.b }}%"/>
           <text class="tick" x="{{ eat_chart.width - 8 }}" y="{{ b.y + 20 }}" text-anchor="end"
                 style="font-weight:700;fill:var(--ink);">
             {{ b.gap_display }}

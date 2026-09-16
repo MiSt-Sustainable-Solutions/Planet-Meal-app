@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Almarai:wght@300;400;700;800&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/mist.css"/>
+<link rel="stylesheet" href="/static/mist.css?v={{ asset_v }}"/>
 {# While a publish runs, look again every few seconds so the bar can say when it is done.
    Not on a ?refresh=1 address, which would recalculate on every look. #}
 {% if pub_state and pub_state.building and not request.query_params.get('refresh') %}
@@ -263,6 +263,31 @@ btn.addEventListener('click', function(){
   if(o){ b[0].style.transform='translateY(7px) rotate(45deg)'; b[1].style.opacity='0';
          b[2].style.transform='translateY(-7px) rotate(-45deg)'; }
   else { b[0].style.transform=''; b[1].style.opacity=''; b[2].style.transform=''; }
+});
+
+/* Chart values on hover, at once. The browser's own tooltip (an SVG title element) waits a
+   second or two before it appears, which reads as the chart not answering. */
+var tip = document.createElement('div');
+tip.className = 'tip'; tip.hidden = true; document.body.appendChild(tip);
+function placeTip(e){
+  var x = e.clientX + 14, y = e.clientY + 14, r = tip.getBoundingClientRect();
+  if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+document.addEventListener('mouseover', function(e){
+  var t = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (!t) { tip.hidden = true; return; }
+  tip.textContent = t.getAttribute('data-tip'); tip.hidden = false; placeTip(e);
+});
+document.addEventListener('mousemove', function(e){ if (!tip.hidden) placeTip(e); });
+window.addEventListener('scroll', function(){ tip.hidden = true; }, {passive:true});
+
+var pick = document.getElementById('trendPick');
+if (pick) pick.addEventListener('change', function(){
+  document.querySelectorAll('.trend-series').forEach(function(el){
+    el.hidden = el.getAttribute('data-series') !== pick.value;
+  });
 });
 
 var io = new IntersectionObserver(function(es){

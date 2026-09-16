@@ -111,7 +111,7 @@ for path in PAGES:
     tag = f"{path:14}"
 
     P("Libre+Baskerville" in html and "Almarai" in html, tag + "loads both typefaces")
-    P('href="/static/mist.css"' in html, tag + "uses the shared stylesheet")
+    P('href="/static/mist.css?v=' in html, tag + "uses the shared stylesheet")
 
     # CO2 must always be a subscript, never bare "CO2"
     body = re.sub(r"<title>.*?</title>", "", html, flags=re.S)
@@ -215,6 +215,55 @@ _old = _charts.precision({"by_tier": [
 P(not _old["has_spend"] and all(r["spend"] is None for r in _old["rows"])
   and [r["label"] for r in _old["rows"]] == ["Exact", "Estimated"],
   "figures saved before spend existed get no Spend column, not zeros")
+
+print("\n=== charts answer at once, per restaurant, with EAT-Lancet beside CO2 ===")
+# 16 Sep 2026. Hover used the browser's own tooltip, which waits a second or two; the trend
+# had no restaurant filter and no EAT-Lancet; the restaurant chart gave CO2 per kg as a
+# bare number.
+_charts_html = dash[dash.index("trend (light)"):dash.index("top contributors") if "top contributors" in dash else len(dash)]
+P("<title>" not in _charts_html, "no chart uses the slow browser tooltip")
+P('data-tip="' in _charts_html and "placeTip" in dash, "they use the instant one")
+# Seen on 16 Sep 2026: every month of the trend a solid black block. The hover areas were
+# see-through only by a stylesheet rule, and the browser still held the stylesheet from
+# before that rule existed. Both halves of that are now closed.
+P(_charts_html.count('class="hit" fill="transparent"') == _charts_html.count('class="hit"'),
+  "the hover areas are see-through without needing the stylesheet")
+import hashlib as _hl
+_v = _hl.sha1(SESSION.get(BASE + "/static/mist.css").content).hexdigest()[:10]
+P(f'href="/static/mist.css?v={_v}"' in dash,
+  "the stylesheet address changes whenever the stylesheet does, so no browser keeps an old one")
+_rm = _run.get("by_restaurant_month") or []
+if _rm:
+    _names = {r["restaurant"] for r in _rm}
+    P('id="trendPick"' in dash and dash.count('class="scroll-x trend-series"') == len(_names) + 1,
+      f"the trend offers all restaurants and each of the {len(_names)} on its own")
+    P(dash.count('class="scroll-x trend-series"') - dash.count('trend-series" data-series') == 0
+      and 'data-series="all" >' in dash.replace('data-series="all"  >', 'data-series="all" >')
+      or 'data-series="all" ' in dash, "all restaurants is the one shown first")
+if any(m.get("eat_lancet_score") is not None for m in _run.get("by_month", [])):
+    P('class="line2"' in dash and "EAT-Lancet score (right" in dash,
+      "EAT-Lancet per month is drawn on its own right-hand axis")
+P("kg CO₂e per kg of food" in dash and 'class="bar alt"' in dash,
+  "the restaurant chart has a second column of bars for CO2 per kg of food")
+
+# Figures saved before this change have neither breakdown. They must still draw a trend.
+_old = _charts.trend([{"period": "2025-01", "co2_kg": 10, "complete": True},
+                      {"period": "2025-02", "co2_kg": 20, "complete": True}])
+P(len(_old["series"]) == 1 and not _old["has_eat"] and not _old["series"][0]["chart"]["eat_path"],
+  "an old saved figure gets the CO2 line alone, and no picker")
+# A restaurant that bought nothing in a month: 0 kg that month, and a break in its EAT line
+# rather than a plunge to a score of zero.
+_new = _charts.trend(
+    [{"period": p, "co2_kg": 100, "eat_lancet_score": 0.7, "complete": True}
+     for p in ("2025-01", "2025-02", "2025-03")],
+    [{"restaurant": "A", "period": "2025-01", "co2_kg": 50, "eat_lancet_score": 0.6},
+     {"restaurant": "A", "period": "2025-03", "co2_kg": 40, "eat_lancet_score": 0.5}], ["A"])
+_a = _new["series"][1]["chart"]
+P([pt["y2"] is None for pt in _a["points"]] == [False, True, False]
+  and _a["eat_path"].count("M") == 2,
+  "a restaurant's missing month breaks its EAT line instead of dropping it to zero")
+P("0 kg CO₂e" in _a["points"][1]["tip"] and "no food counted" in _a["points"][1]["tip"],
+  "and says so when pointed at")
 
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
