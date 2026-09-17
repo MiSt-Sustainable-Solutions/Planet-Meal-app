@@ -288,6 +288,22 @@ if _ex:
         for i, b in enumerate(_ex["biggest"])),
       "the two groups it names are the two furthest from the diet")
 P("sum|" not in dash, "no formula notation is left on the page")
+# 17 Sep 2026: the back said "drinks, fats, sauces, sweets and ready meals are left out" as
+# fixed words, true of TU Delft and of nobody in particular. It now lists what this period's
+# own lines leave out.
+P("drinks, fats, sauces, sweets and ready meals" not in dash,
+  "what is left out is not a sentence written for one client")
+if _ex and _ex["left_out"]:
+    _said = "; left out: " + ", ".join(f"{x['words']} {x['pct']}%" for x in _ex["left_out"])
+    P(_said in dash, f"it is read from the figures{_said}")
+_mix = _charts.eat_explain({"score": 0.5, "total_abs_deviation": 50, "intake_pct_of_food": 80,
+                            "rows": [{"food_group": "Fish", "purchased_pct": 1,
+                                      "reference_pct": 3, "gap_pct": -2}],
+                            "left_out": [{"bucket": "sugar_sweet", "pct_of_food": 12},
+                                         {"bucket": "oil_healthy", "pct_of_food": 5},
+                                         {"bucket": "oil_unhealthy", "pct_of_food": 3}]})
+P([(x["words"], x["pct"]) for x in _mix["left_out"]] == [("sugar and sweets", 12), ("oils and fats", 8)],
+  "a client who buys mostly sweets is told so, in that order")
 _old_eat = _charts.eat_explain({"score": 0.7, "total_abs_deviation": 30.0, "rows": [
     {"food_group": "Fish", "purchased_pct": 1, "reference_pct": 3, "gap_pct": -2}]})
 P(_old_eat and _old_eat["intake_pct"] is None,

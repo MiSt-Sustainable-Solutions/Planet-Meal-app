@@ -245,6 +245,15 @@ def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> di
                 hit_w=round(max(step, 12), 2))
 
 
+# The food groups the EAT-Lancet comparison leaves out, as a sentence names them. Which of
+# them appear, in what order and with what share comes from the client's own lines.
+LEFT_OUT_WORDS = {
+    "other": "other food and drinks", "ultra_processed": "ultra-processed food",
+    "oil_healthy": "oils and fats", "oil_unhealthy": "oils and fats",
+    "sugar_sweet": "sugar and sweets",
+}
+
+
 def eat_explain(eat: dict | None) -> dict | None:
     """The EAT-Lancet score worked out in words, with this period's own numbers.
 
@@ -260,7 +269,15 @@ def eat_explain(eat: dict | None) -> dict | None:
     def pct(v):
         return f"{float(v):.1f}".rstrip("0").rstrip(".")
 
+    merged: dict[str, float] = {}
+    for x in eat.get("left_out") or []:
+        words = LEFT_OUT_WORDS.get(x["bucket"], food_group_label(x["bucket"]).lower())
+        merged[words] = merged.get(words, 0.0) + float(x.get("pct_of_food") or 0)
+    left_out = [dict(words=w, pct=round(v)) for w, v in
+                sorted(merged.items(), key=lambda kv: -kv[1]) if round(v) >= 1][:3]
+
     return dict(
+        left_out=left_out,
         groups=len(rows),
         intake_pct=(round(eat["intake_pct_of_food"]) if eat.get("intake_pct_of_food")
                     is not None else None),

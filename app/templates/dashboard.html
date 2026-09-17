@@ -76,8 +76,10 @@
         <div class="flip-back" hidden>
           <span class="k">How the score is worked out</span>
           <ol>
+            {# Every number and every name here comes from this period's lines; nothing
+               about what is left out is written in (17 Sep 2026). #}
             <li>Food bought is sorted into the diet&rsquo;s {{ e.groups }} food groups{% if e.intake_pct is not none %}
-              ({{ e.intake_pct }}% of it; drinks, fats, sauces, sweets and ready meals are left out){% endif %}.</li>
+              ({{ e.intake_pct }}% of it{% if e.left_out %}; left out: {% for x in e.left_out %}{{ x.words }} {{ x.pct }}%{{ ', ' if not loop.last }}{% endfor %}{% endif %}){% endif %}.</li>
             <li>Each group&rsquo;s share is compared with the diet&rsquo;s.
               {% for b in e.biggest %}{{ b.group|capitalize }}: {{ b.purchased }}% bought, {{ b.reference }}% in the diet{{ '; ' if not loop.last else '.' }}{% endfor %}</li>
             <li>All differences are added up, too much and too little alike: <strong>{{ e.deviation }} points</strong>.</li>
