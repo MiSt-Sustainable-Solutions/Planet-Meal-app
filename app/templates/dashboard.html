@@ -141,7 +141,10 @@
     {% endfor %}
     {# The sections below are folded; this names them. Kept inside the headline section so
      the page still alternates light and dark. #}
-    <div class="sec-label overview-head">In detail</div>
+    <div class="overview-head">
+      <h2 class="sec-h2">In <em>detail</em></h2>
+      <p class="muted">Open any section for the full picture.</p>
+    </div>
   </div>
 </section>
 
@@ -149,11 +152,12 @@
    below them is one line saying what it is, and opens in place. It was one long page
    of charts, and the one number a reader came for was a scroll away from the next. #}
 <details class="panel" id="precision">
-  <summary><div class="inner">
-    <span class="p-t">How precise</span>
-    <span class="p-d">How exactly the CO<sub>2</sub> of each product was found.</span>
+  <summary><div class="inner"><div class="p-card">
+    <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg></span>
+    <span class="p-txt"><span class="p-t">How precise</span>
+    <span class="p-d">How exactly the CO<sub>2</sub> of each product was found.</span></span>
     <span class="p-o" aria-hidden="true"></span>
-  </div></summary>
+  </div></div></summary>
 <!-- ============================================ confidence (dark) -->
 <section class="dark tight">
   <div class="inner">
@@ -214,11 +218,12 @@
 </details>
 
 <details class="panel" id="trend">
-  <summary><div class="inner">
-    <span class="p-t">Trend</span>
-    <span class="p-d">CO<sub>2</sub> and the EAT-Lancet score month by month, for all restaurants or one.</span>
+  <summary><div class="inner"><div class="p-card">
+    <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg></span>
+    <span class="p-txt"><span class="p-t">Trend</span>
+    <span class="p-d">CO<sub>2</sub> and the EAT-Lancet score month by month, for all restaurants or one.</span></span>
     <span class="p-o" aria-hidden="true"></span>
-  </div></summary>
+  </div></div></summary>
 <!-- ============================================ trend (light) -->
 <section class="light">
   <div class="inner">
@@ -286,11 +291,12 @@
 </details>
 
 <details class="panel" id="restaurants">
-  <summary><div class="inner">
-    <span class="p-t">Restaurants</span>
-    <span class="p-d">CO<sub>2</sub> per restaurant, in total and per kilogram of food.</span>
+  <summary><div class="inner"><div class="p-card">
+    <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10l8-6 8 6"/><path d="M6 9v11h12V9"/><path d="M10 20v-5h4v5"/></svg></span>
+    <span class="p-txt"><span class="p-t">Restaurants</span>
+    <span class="p-d">CO<sub>2</sub> per restaurant, in total and per kilogram of food.</span></span>
     <span class="p-o" aria-hidden="true"></span>
-  </div></summary>
+  </div></div></summary>
 <!-- ============================================ restaurants (dark) -->
 <section class="dark">
   <div class="inner">
@@ -329,11 +335,12 @@
 </details>
 
 <details class="panel" id="food-groups">
-  <summary><div class="inner">
-    <span class="p-t">Food groups</span>
-    <span class="p-d">CO<sub>2</sub> per food group, and the products with the most CO<sub>2</sub>.</span>
+  <summary><div class="inner"><div class="p-card">
+    <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></span>
+    <span class="p-txt"><span class="p-t">Food groups</span>
+    <span class="p-d">CO<sub>2</sub> per food group, and the products with the most CO<sub>2</sub>.</span></span>
     <span class="p-o" aria-hidden="true"></span>
-  </div></summary>
+  </div></div></summary>
 <!-- ============================================ food groups (light2) -->
 <section class="light2">
   <div class="inner">
@@ -391,11 +398,12 @@
 </details>
 
 <details class="panel" id="eat-lancet">
-  <summary><div class="inner">
-    <span class="p-t">EAT-Lancet</span>
-    <span class="p-d">How the food bought compares with the EAT-Lancet diet, group by group.</span>
+  <summary><div class="inner"><div class="p-card">
+    <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M5 19l8-8"/></svg></span>
+    <span class="p-txt"><span class="p-t">EAT-Lancet</span>
+    <span class="p-d">How the food bought compares with the EAT-Lancet diet, group by group.</span></span>
     <span class="p-o" aria-hidden="true"></span>
-  </div></summary>
+  </div></div></summary>
 <!-- ============================================ EAT-Lancet (light) -->
 <section class="light">
   <div class="inner">
@@ -459,23 +467,43 @@
 </section>
 
 <style>
-.overview-head{margin-top:clamp(40px,5vw,64px);margin-bottom:-24px;}
-details.panel{border-top:1px solid var(--mist);background:var(--linen);}
-details.panel:last-of-type{border-bottom:1px solid var(--mist);}
+.overview-head{margin-top:clamp(48px,6vw,80px);margin-bottom:-24px;}
+.overview-head .sec-h2{font-size:clamp(26px,2.6vw,36px);}
+.overview-head p{margin-top:6px;font-size:15px;}
+/* The lines are white cards on the page, not more green bands: the page already
+   alternates linen and ink, and a third green made it look like one colour. */
+details.panel{background:var(--linen);padding-block:6px;}
+details.panel:first-of-type{padding-top:0;}
+details.panel:last-of-type{padding-bottom:clamp(40px,5vw,64px);}
 details.panel > summary{list-style:none;cursor:pointer;padding-inline:var(--pad);}
 details.panel > summary::-webkit-details-marker{display:none;}
-details.panel > summary .inner{display:flex;align-items:center;gap:20px;padding-block:20px;}
-details.panel > summary:hover{background:var(--linen2);}
-details.panel > summary:focus-visible{outline:2px solid var(--teal);outline-offset:-2px;}
-.p-t{font-family:var(--serif);font-size:clamp(19px,1.8vw,24px);color:var(--ink);min-width:170px;}
-.p-d{flex:1;font-size:14px;color:var(--sage);}
-.p-o{width:30px;height:30px;border-radius:50%;border:1px solid var(--mist);flex-shrink:0;position:relative;}
-.p-o::before,.p-o::after{content:"";position:absolute;left:50%;top:50%;background:var(--ink);
-  transform:translate(-50%,-50%);}
-.p-o::before{width:12px;height:2px;}
-.p-o::after{width:2px;height:12px;transition:transform .15s;}
-details.panel[open] > summary .p-o::after{transform:translate(-50%,-50%) scaleY(0);}
-details.panel[open] > summary{background:var(--linen2);}
+details.panel > summary:focus-visible{outline:none;}
+details.panel > summary:focus-visible .p-card{outline:2px solid var(--teal);outline-offset:2px;}
+.p-card{display:flex;align-items:center;gap:18px;padding:16px 20px;background:#fff;
+  border:1px solid rgba(26,74,42,.12);border-radius:14px;box-shadow:0 1px 2px rgba(26,74,42,.05);
+  transition:border-color .15s,box-shadow .15s,transform .15s;}
+details.panel > summary:hover .p-card{border-color:var(--teal);box-shadow:0 6px 18px rgba(26,74,42,.08);}
+.p-i{width:42px;height:42px;border-radius:11px;background:rgba(45,158,117,.1);color:var(--teal-ink);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.p-i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+.p-txt{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;}
+.p-t{font-family:var(--sans);font-size:16px;font-weight:800;color:var(--ink);}
+.p-d{font-size:14px;color:var(--sage);line-height:1.45;}
+.p-o{width:30px;height:30px;border-radius:50%;background:var(--linen);flex-shrink:0;position:relative;}
+.p-o::before{content:"";position:absolute;left:50%;top:45%;width:8px;height:8px;
+  border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);
+  transform:translate(-50%,-50%) rotate(45deg);transition:transform .2s,top .2s;}
+/* Open: the card keeps its colour, gains a teal edge, and the mark turns over. */
+details.panel[open] > summary .p-card{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal);}
+details.panel[open] > summary .p-i{background:var(--teal);color:#fff;}
+details.panel[open] > summary .p-o::before{top:55%;transform:translate(-50%,-50%) rotate(225deg);}
+details.panel[open] > summary{padding-bottom:16px;}
+details.panel[open] + details.panel{padding-top:16px;}
+@media (max-width:640px){
+  .p-card{gap:12px;padding:14px;}
+  .p-i{width:36px;height:36px;}
+  .p-d{font-size:13px;}
+}
 </style>
 <script>
 /* A link to a folded section opens it first, so "Every group" on the EAT-Lancet card lands on
