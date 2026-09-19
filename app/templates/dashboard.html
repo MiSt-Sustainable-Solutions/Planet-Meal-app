@@ -139,9 +139,21 @@
       <strong>Note:</strong> {{ n.message }}
     </p>
     {% endfor %}
+    {# The sections below are folded; this names them. Kept inside the headline section so
+     the page still alternates light and dark. #}
+    <div class="sec-label overview-head">In detail</div>
   </div>
 </section>
 
+{# Group 7 (19 Sep 2026): an overview. The headline figures stay open; every section
+   below them is one line saying what it is, and opens in place. It was one long page
+   of charts, and the one number a reader came for was a scroll away from the next. #}
+<details class="panel" id="precision">
+  <summary><div class="inner">
+    <span class="p-t">How precise</span>
+    <span class="p-d">How exactly the CO<sub>2</sub> of each product was found.</span>
+    <span class="p-o" aria-hidden="true"></span>
+  </div></summary>
 <!-- ============================================ confidence (dark) -->
 <section class="dark tight">
   <div class="inner">
@@ -199,8 +211,14 @@
     .precise .why{display:block;margin:2px 0 0 18px;font-size:12px;color:rgba(242,248,243,.62);}
   </style>
 </section>
+</details>
 
-
+<details class="panel" id="trend">
+  <summary><div class="inner">
+    <span class="p-t">Trend</span>
+    <span class="p-d">CO<sub>2</sub> and the EAT-Lancet score month by month, for all restaurants or one.</span>
+    <span class="p-o" aria-hidden="true"></span>
+  </div></summary>
 <!-- ============================================ trend (light) -->
 <section class="light">
   <div class="inner">
@@ -265,7 +283,14 @@
     </div>
   </div>
 </section>
+</details>
 
+<details class="panel" id="restaurants">
+  <summary><div class="inner">
+    <span class="p-t">Restaurants</span>
+    <span class="p-d">CO<sub>2</sub> per restaurant, in total and per kilogram of food.</span>
+    <span class="p-o" aria-hidden="true"></span>
+  </div></summary>
 <!-- ============================================ restaurants (dark) -->
 <section class="dark">
   <div class="inner">
@@ -301,7 +326,14 @@
     </div>
   </div>
 </section>
+</details>
 
+<details class="panel" id="food-groups">
+  <summary><div class="inner">
+    <span class="p-t">Food groups</span>
+    <span class="p-d">CO<sub>2</sub> per food group, and the products with the most CO<sub>2</sub>.</span>
+    <span class="p-o" aria-hidden="true"></span>
+  </div></summary>
 <!-- ============================================ food groups (light2) -->
 <section class="light2">
   <div class="inner">
@@ -356,9 +388,16 @@
     </div>
   </div>
 </section>
+</details>
 
+<details class="panel" id="eat-lancet">
+  <summary><div class="inner">
+    <span class="p-t">EAT-Lancet</span>
+    <span class="p-d">How the food bought compares with the EAT-Lancet diet, group by group.</span>
+    <span class="p-o" aria-hidden="true"></span>
+  </div></summary>
 <!-- ============================================ EAT-Lancet (light) -->
-<section class="light" id="eat-lancet">
+<section class="light">
   <div class="inner">
     <div class="sec-label">Diet alignment</div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
@@ -401,6 +440,7 @@
     </div>
   </div>
 </section>
+</details>
 
 <!-- ============================================ export (light2) -->
 <section class="light2 tight">
@@ -418,5 +458,48 @@
   </div>
 </section>
 
+<style>
+.overview-head{margin-top:clamp(40px,5vw,64px);margin-bottom:-24px;}
+details.panel{border-top:1px solid var(--mist);background:var(--linen);}
+details.panel:last-of-type{border-bottom:1px solid var(--mist);}
+details.panel > summary{list-style:none;cursor:pointer;padding-inline:var(--pad);}
+details.panel > summary::-webkit-details-marker{display:none;}
+details.panel > summary .inner{display:flex;align-items:center;gap:20px;padding-block:20px;}
+details.panel > summary:hover{background:var(--linen2);}
+details.panel > summary:focus-visible{outline:2px solid var(--teal);outline-offset:-2px;}
+.p-t{font-family:var(--serif);font-size:clamp(19px,1.8vw,24px);color:var(--ink);min-width:170px;}
+.p-d{flex:1;font-size:14px;color:var(--sage);}
+.p-o{width:30px;height:30px;border-radius:50%;border:1px solid var(--mist);flex-shrink:0;position:relative;}
+.p-o::before,.p-o::after{content:"";position:absolute;left:50%;top:50%;background:var(--ink);
+  transform:translate(-50%,-50%);}
+.p-o::before{width:12px;height:2px;}
+.p-o::after{width:2px;height:12px;transition:transform .15s;}
+details.panel[open] > summary .p-o::after{transform:translate(-50%,-50%) scaleY(0);}
+details.panel[open] > summary{background:var(--linen2);}
+</style>
+<script>
+/* A link to a folded section opens it first, so "Every group" on the EAT-Lancet card lands on
+   the chart instead of on a closed line. Also on arrival with #eat-lancet in the address. */
+(function(){
+  function openAt(id){
+    var el = id && document.getElementById(id);
+    if (el && el.tagName === 'DETAILS') { el.open = true; return el; }
+    return null;
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if (a) openAt(a.getAttribute('href').slice(1));
+  });
+  window.addEventListener('hashchange', function(){ openAt(location.hash.slice(1)); });
+  var first = openAt(location.hash.slice(1));
+  if (first) setTimeout(function(){ first.scrollIntoView(); }, 0);
+  /* Anything revealed on scroll inside a section that was folded when the page loaded. */
+  document.querySelectorAll('details.panel').forEach(function(d){
+    d.addEventListener('toggle', function(){
+      if (d.open) d.querySelectorAll('.sr').forEach(function(x){ x.classList.add('in'); });
+    });
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}

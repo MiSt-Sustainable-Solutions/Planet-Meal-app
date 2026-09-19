@@ -309,6 +309,23 @@ _old_eat = _charts.eat_explain({"score": 0.7, "total_abs_deviation": 30.0, "rows
 P(_old_eat and _old_eat["intake_pct"] is None,
   "figures saved before the covered share existed still explain themselves, without it")
 
+print("\n=== the dashboard is an overview: headline open, every section one line ===")
+# Group 7, 19 Sep 2026. It was one long page of charts; the headline figures now stand alone
+# and each section below is a single line that opens in place.
+import re as _re7
+_panels = _re7.findall(r'<details class="panel" id="([a-z-]+)"( open)?>', dash)
+P([pid for pid, _ in _panels] == ["precision", "trend", "restaurants", "food-groups", "eat-lancet"],
+  f"five sections, in order ({', '.join(pid for pid, _ in _panels)})")
+P(not any(o for _, o in _panels), "all folded when the page opens")
+P(dash.index('class="grid g4"') < dash.index('<details class="panel"'),
+  "the headline figures come before them, open")
+_lines = _re7.findall(r'<span class="p-d">(.*?)</span>', dash)
+P(len(_lines) == 5 and not any(_re7.search(r"\d", l.replace("CO<sub>2</sub>", "")) for l in _lines),
+  "each has one plain line about what it is, with no figures in it")
+P('href="#eat-lancet"' in dash and 'id="eat-lancet"' in dash and "openAt(" in dash,
+  "the EAT-Lancet card's link targets the folded section, and opens it")
+P(dash.index("Download Excel") > dash.rindex("</details>"), "the download stays at the bottom, open")
+
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
 for path in PAGES:
