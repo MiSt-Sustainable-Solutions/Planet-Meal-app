@@ -336,6 +336,20 @@ P(len(_bars) >= 3, f"one bar per restaurant ({len(_bars)} of them)")
 P(any(n for n in _bars), "a score below zero is drawn as one, in the warning colour")
 P("<table" not in _rest, "and no table underneath: the figures are read off one chart")
 
+print("\n=== the charts show every restaurant and every food group ===")
+# 20 Sep 2026: the headline said "across 21 restaurants" while the chart drew 20 of them,
+# because it was capped. A page that argues with itself costs more than a long chart.
+_api = SESSION.get(BASE + "/api/analysis?window=all", timeout=900).json()
+_all = fetch("/?window=all")
+_arest = _all[_all.index('id="restaurants"'):_all.index('id="food-groups"')]
+_agroup = _all[_all.index('id="food-groups"'):_all.index('id="eat-lancet"')]
+_n_rest = len(_re7.findall(r'class="bar" x="[\d.]+" y="[\d.]+" width="[\d.]+" height="\d+" rx="3"', _arest))
+_n_group = len(_re7.findall(r'class="bar" x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" rx="3"', _agroup))
+P(_n_rest == _api["headline"]["restaurants"],
+  f"one bar per restaurant the headline counts ({_n_rest} of {_api['headline']['restaurants']})")
+P(_n_group == len(_api["by_food_group"]),
+  f"and one per food group ({_n_group} of {len(_api['by_food_group'])})")
+
 print("\n=== the EAT-Lancet comparison can be read one canteen at a time ===")
 # 20 Sep 2026, TU Delft: the university's own chart cannot tell a kitchen what to change.
 _eat = dash[dash.index('id="eat-lancet"'):]

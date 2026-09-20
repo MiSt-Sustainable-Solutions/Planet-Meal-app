@@ -393,11 +393,14 @@ def _charts(result: dict) -> dict:
         precision=charts.precision(result.get("data_health")),
         trend=charts.trend(result["by_month"], result.get("by_restaurant_month"),
                            [r["restaurant"] for r in result["by_restaurant"]]),
+        # No limit on either: the headline says "across 21 restaurants" and a chart of 20 of
+        # them makes the page argue with itself (20 Sep 2026, spotted by counting the bars).
+        # Every food group likewise -- there are sixteen, and two were being dropped.
         rest_chart=charts.bars_dual(result["by_restaurant"], "restaurant", "co2_kg",
-                                    "intensity_kg_co2_per_kg", "eat_lancet_score", limit=20),
+                                    "intensity_kg_co2_per_kg", "eat_lancet_score"),
         group_chart=charts.bars(result["by_food_group"], "food_group", "co2_kg",
                                 width=620, pad_l=150, pad_r=110,
-                                secondary_key="pct_of_co2", secondary_suffix="%", limit=14),
+                                secondary_key="pct_of_co2", secondary_suffix="%"),
         eat_chart=charts.paired(result["eat_lancet"]["rows"]),
         eat_series=charts.paired_series(result["eat_lancet"]),
         eat_explain=charts.eat_explain(result.get("eat_lancet")))
