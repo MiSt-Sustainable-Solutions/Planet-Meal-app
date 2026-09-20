@@ -311,45 +311,36 @@
   <div class="inner">
     <div class="sec-label sl-teal">Restaurants</div>
     <h2 class="sec-h2">CO<sub>2</sub> and diet by <em>restaurant</em></h2>
-    <p class="muted" style="margin-top:14px;max-width:66ch;">
-      Ranked by total CO<sub>2</sub>e. The middle bars compare restaurants of different sizes:
-      CO<sub>2</sub>e for each kilogram of food bought.{% if rest_chart.has_c %} The right-hand
-      bars are the EAT-Lancet score, which runs up to 1 and can fall below zero.{% endif %}
+    <p class="muted" style="margin-top:14px;max-width:72ch;">
+      Ranked by total CO<sub>2</sub>e. Beside it, the food each one buys &mdash; a big total is
+      what you would expect of a big kitchen. Then CO<sub>2</sub>e for each kilogram of that
+      food, which compares kitchens of different sizes, and the EAT-Lancet score, which runs
+      up to 1 and can fall below zero.
     </p>
     <div class="card sr" style="margin-top:24px;">
       {% if rest_chart.empty %}<p class="muted">No restaurant data.</p>{% else %}
       <div class="scroll-x">
         <svg class="chart" viewBox="0 0 {{ rest_chart.width }} {{ rest_chart.height }}" role="img"
-             aria-label="CO2 by restaurant, and CO2 per kilogram of food">
-          <text class="tick colhead" x="{{ rest_chart.pad_l }}" y="14">kg CO₂e</text>
-          <text class="tick colhead" x="{{ rest_chart.b_x }}" y="14">kg CO₂e per kg of food</text>
-          {% if rest_chart.has_c %}
-          <text class="tick colhead" x="{{ rest_chart.c_x }}" y="14">EAT-Lancet score</text>
+             aria-label="Per restaurant: CO2, food bought, CO2 per kilogram of food, EAT-Lancet score">
+          {% for c in rest_chart.cols %}{% if c.used %}
+          <text class="tick colhead" x="{{ c.x }}" y="14">{{ c.head }}</text>
+          {% if c.zero_x is not none %}
           {# The zero line: scores below it grow to the left, so a negative reads as one. #}
-          <line class="axis" x1="{{ rest_chart.zero_x }}" y1="20"
-                x2="{{ rest_chart.zero_x }}" y2="{{ rest_chart.height - 4 }}"/>
+          <line class="axis" x1="{{ c.zero_x }}" y1="20"
+                x2="{{ c.zero_x }}" y2="{{ rest_chart.height - 4 }}"/>
           {% endif %}
+          {% endif %}{% endfor %}
           {% for b in rest_chart.rows %}
           <text class="tick" x="{{ rest_chart.pad_l - 12 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.label }}</text>
-          <rect class="bar" x="{{ rest_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.a_w }}" height="{{ b.h }}" rx="3"
-                data-tip="{{ b.label }} · {{ b.a_display }} kg CO₂e"/>
-          <text class="tick" x="{{ rest_chart.pad_l + b.a_w + 10 }}" y="{{ b.y + 15 }}"
-                style="fill:var(--white);font-weight:700;">{{ b.a_display }}</text>
-          {% if b.b_w %}
-          <rect class="bar alt" x="{{ rest_chart.b_x }}" y="{{ b.y + 3 }}" width="{{ b.b_w }}" height="{{ b.h }}" rx="3"
-                data-tip="{{ b.label }} · {{ b.b_display }} kg CO₂e per kg of food"/>
+          {% for cell in b.cells %}{% if rest_chart.cols[loop.index0].used %}
+          {% if cell.w %}
+          <rect class="{{ cell.cls }}{% if cell.neg %} neg{% endif %}" x="{{ cell.x }}" y="{{ b.y + 3 }}"
+                width="{{ cell.w }}" height="{{ b.h }}" rx="3"
+                data-tip="{{ b.label }} · {{ cell.display }} {{ rest_chart.cols[loop.index0].head }}"/>
           {% endif %}
-          <text class="tick" x="{{ rest_chart.b_x + b.b_w + 10 }}" y="{{ b.y + 15 }}"
-                style="fill:var(--white);font-weight:700;">{{ b.b_display }}</text>
-          {% if rest_chart.has_c %}
-          {% if b.c_w %}
-          <rect class="bar eat{% if b.c_neg %} neg{% endif %}" x="{{ b.c_x }}" y="{{ b.y + 3 }}"
-                width="{{ b.c_w }}" height="{{ b.h }}" rx="3"
-                data-tip="{{ b.label }} · EAT-Lancet {{ b.c_display }}"/>
-          {% endif %}
-          <text class="tick" x="{{ b.c_end + 10 }}" y="{{ b.y + 15 }}"
-                style="fill:var(--white);font-weight:700;">{{ b.c_display }}</text>
-          {% endif %}
+          <text class="tick" x="{{ cell.end + 10 }}" y="{{ b.y + 15 }}"
+                style="fill:var(--white);font-weight:700;">{{ cell.display }}</text>
+          {% endif %}{% endfor %}
           {% endfor %}
         </svg>
       </div>

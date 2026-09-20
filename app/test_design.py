@@ -346,8 +346,9 @@ _arest = _all[_all.index('id="restaurants"'):_all.index('id="food-groups"')]
 _agroup = _all[_all.index('data-series="all"', _all.index('id="food-groups"')):
                _all.index('id="top-contributors"')]
 _agroup = _agroup[:_agroup.index("</svg>")]     # the chart for all restaurants, not each one
-_n_rest = len(_re7.findall(r'class="bar" x="[\d.]+" y="[\d.]+" width="[\d.]+" height="\d+" rx="3"', _arest))
-_n_group = len(_re7.findall(r'class="bar" x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" rx="3"', _agroup))
+# Only the CO2 column is a plain "bar"; the others carry a second class.
+_n_rest = _arest.count('class="bar" x=')
+_n_group = _agroup.count('class="bar" x=')
 P(_n_rest == _api["headline"]["restaurants"],
   f"one bar per restaurant the headline counts ({_n_rest} of {_api['headline']['restaurants']})")
 P(_n_group == len(_api["by_food_group"]),

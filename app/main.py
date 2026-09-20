@@ -396,8 +396,16 @@ def _charts(result: dict) -> dict:
         # No limit on either: the headline says "across 21 restaurants" and a chart of 20 of
         # them makes the page argue with itself (20 Sep 2026, spotted by counting the bars).
         # Every food group likewise -- there are sixteen, and two were being dropped.
-        rest_chart=charts.bars_dual(result["by_restaurant"], "restaurant", "co2_kg",
-                                    "intensity_kg_co2_per_kg", "eat_lancet_score"),
+        # Impact, then size, then efficiency, then diet: a big total is expected of a big
+        # kitchen, so the food it buys belongs beside its CO2 (21 Sep 2026).
+        rest_chart=charts.compare(result["by_restaurant"], "restaurant", [
+            dict(key="co2_kg", head="kg CO₂e", width=200, fmt="si", cls="bar"),
+            dict(key="food_kg", head="kg of food", width=150, fmt="si", cls="bar soft"),
+            dict(key="intensity_kg_co2_per_kg", head="kg CO₂e per kg of food",
+                 width=110, fmt="2dp", cls="bar alt"),
+            dict(key="eat_lancet_score", head="EAT-Lancet score",
+                 width=180, fmt="score", cls="bar eat"),
+        ]),
         group_series=charts.group_series(
             result["by_food_group"], result.get("food_group_by_restaurant"),
             label_key="food_group", value_key="co2_kg", width=980, pad_l=200, pad_r=130,
