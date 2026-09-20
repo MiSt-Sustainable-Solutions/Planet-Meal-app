@@ -303,7 +303,7 @@
   <summary><div class="inner"><div class="p-card">
     <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10l8-6 8 6"/><path d="M6 9v11h12V9"/><path d="M10 20v-5h4v5"/></svg></span>
     <span class="p-txt"><span class="p-t">Restaurants</span>
-    <span class="p-d">CO<sub>2</sub> per restaurant, in total and per kilogram of food.</span></span>
+    <span class="p-d">CO<sub>2</sub> and the EAT-Lancet score per restaurant, with a table you can read across.</span></span>
     <span class="p-o" aria-hidden="true"></span>
   </div></div></summary>
 <!-- ============================================ restaurants (dark) -->
@@ -339,6 +339,42 @@
       </div>
       {% endif %}
     </div>
+    {# 20 Sep 2026. The EAT-Lancet score per restaurant was calculated and shown nowhere:
+       the bars answer "how much CO2", and the first thing anyone asks next is "and which
+       restaurant eats best". One row per restaurant, so the two can be read across. #}
+    {% set has_rest_eat = result.by_restaurant | selectattr('eat_lancet_score', 'defined')
+                          | rejectattr('eat_lancet_score', 'none') | list | length > 0 %}
+    {% if has_rest_eat %}
+    <div class="card sr" style="margin-top:22px;">
+      <div class="h3">CO<sub>2</sub> and diet, side by side</div>
+      <p class="muted" style="margin-top:6px;max-width:66ch;">
+        The EAT-Lancet score runs from 1, which matches the diet, downwards. It can fall below
+        zero when what a kitchen buys is far from it.
+      </p>
+      <div class="scroll-x" style="margin-top:16px;">
+        <table class="tbl">
+          <thead><tr>
+            <th>Restaurant</th>
+            <th class="num">t CO<sub>2</sub>e</th>
+            <th class="num">kg CO<sub>2</sub>e / kg</th>
+            <th class="num">Food (t)</th>
+            <th class="num">EAT-Lancet</th>
+          </tr></thead>
+          <tbody>
+          {% for r in result.by_restaurant %}
+          <tr>
+            <td class="name">{{ r.restaurant }}</td>
+            <td class="num">{{ '%.1f'|format(r.co2_kg / 1000) }}</td>
+            <td class="num">{{ '%.2f'|format(r.intensity_kg_co2_per_kg) }}</td>
+            <td class="num">{{ '%.1f'|format(r.food_kg / 1000) }}</td>
+            <td class="num">{% if r.eat_lancet_score is none %}&mdash;{% else %}{{ '%.3f'|format(r.eat_lancet_score) }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </section>
 </details>

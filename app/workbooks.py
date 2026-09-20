@@ -63,12 +63,30 @@ def analysis_workbook(result: dict, scored: dict, client: str,
     ])
     sheet("caveats", ["severity", "owner", "what you must know"],
           [[c["severity"], c["owner"], c["message"]] for c in h["caveats"]])
-    sheet("by month", ["period", "food kg", "kg CO2e", "intensity", "spend EUR", "quality"],
+    # The EAT-Lancet score sits beside the CO2 in every cut: the question asked of these
+    # sheets is "which restaurant, which month, and how do they compare". A month or a
+    # restaurant with no food from the eleven groups has no score and gets an empty cell --
+    # zero is a real score, and a bad one.
+    sheet("by month", ["period", "food kg", "kg CO2e", "intensity", "EAT-Lancet",
+                       "spend EUR", "quality"],
           [[r["period"], r["food_kg"], r["co2_kg"], r["intensity_kg_co2_per_kg"],
-            r["spend_eur"], r.get("quality", "")] for r in result["by_month"]])
-    sheet("by restaurant", ["restaurant", "food kg", "kg CO2e", "intensity", "spend EUR", "products"],
+            r.get("eat_lancet_score"), r["spend_eur"], r.get("quality", "")]
+           for r in result["by_month"]])
+    sheet("by restaurant", ["restaurant", "food kg", "kg CO2e", "intensity", "EAT-Lancet",
+                            "spend EUR", "products"],
           [[r["restaurant"], r["food_kg"], r["co2_kg"], r["intensity_kg_co2_per_kg"],
-            r["spend_eur"], r["products"]] for r in result["by_restaurant"]])
+            r.get("eat_lancet_score"), r["spend_eur"], r["products"]]
+           for r in result["by_restaurant"]])
+    # Figures saved before 16 Sep 2026 carry no per-restaurant month breakdown: the sheet is
+    # left out rather than written empty.
+    if result.get("by_restaurant_month"):
+        sheet("by restaurant per month",
+              ["restaurant", "period", "food kg", "kg CO2e", "intensity", "EAT-Lancet"],
+              # This cut carries no intensity of its own; it is the two columns beside it.
+              [[r["restaurant"], r["period"], r["food_kg"], r["co2_kg"],
+                round(r["co2_kg"] / r["food_kg"], 3) if r["food_kg"] else None,
+                r.get("eat_lancet_score")]
+               for r in result["by_restaurant_month"]])
     sheet("by food group", ["food group", "food kg", "kg CO2e", "% of weight", "% of CO2",
                             "intensity", "products"],
           [[r["food_group"], r["food_kg"], r["co2_kg"], r["pct_of_weight"], r["pct_of_co2"],

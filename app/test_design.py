@@ -326,6 +326,16 @@ P('href="#eat-lancet"' in dash and 'id="eat-lancet"' in dash and "openAt(" in da
   "the EAT-Lancet card's link targets the folded section, and opens it")
 P(dash.index("Download Excel") > dash.rindex("</details>"), "the download stays at the bottom, open")
 
+print("\n=== every restaurant's EAT-Lancet score is on the page ===")
+# 20 Sep 2026, asked for by TU Delft: the score per restaurant was computed and displayed
+# nowhere. The bars say how much CO2; the table beside them says how the diet compares.
+_rest = dash[dash.index('id="restaurants"'):dash.index('id="food-groups"')]
+P("CO<sub>2</sub> and diet, side by side" in _rest, "the restaurants section carries a table")
+_scores = _re7.findall(r'<td class="num">(-?\d\.\d{3}|&mdash;)</td>', _rest)
+P(len(_scores) >= 3, f"one score per restaurant ({len(_scores)} rows)")
+P("EAT-Lancet</th>" in _rest and "kg CO<sub>2</sub>e / kg</th>" in _rest,
+  "CO2 and the score can be read across the same row")
+
 print("\n=== a missing EAT-Lancet line explains itself, to MiSt only ===")
 # 20 Sep 2026. Figures saved before per-month EAT existed draw the CO2 line alone. Every
 # period except the recalculated one looked broken, with nothing on the page saying why.
