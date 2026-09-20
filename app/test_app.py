@@ -226,6 +226,13 @@ else:
           f"a result with no {missing} is recalculated rather than served")
     P(analysis.outgrown(dict(out, by_month=[{"period": "2024-01", "co2_kg": 1}])),
       "so is one whose months predate the EAT-Lancet score")
+    # 21 Sep 2026: the shape stayed the same and the MEANING changed. Every period except
+    # the recalculated one went on showing a 2019 score under a 2025 heading.
+    _was = out["headline"].get("eat_profile")
+    P(_was and not analysis.outgrown(out, _was),
+      f"a result scored against the reference diet in use is kept ({_was})")
+    P(analysis.outgrown(out, "some_other_reference_diet"),
+      "and one scored against a different reference diet is recalculated, not relabelled")
 
 print("\n=== windows ===")
 P(analysis.default_window().startswith("FY"), f"a default window is chosen ({analysis.default_window()})")

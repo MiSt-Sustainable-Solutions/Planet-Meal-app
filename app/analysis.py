@@ -260,7 +260,7 @@ def _lookup(tenant: str, wkey: str, fingerprint: str,
     return out
 
 
-def outgrown(result: dict) -> bool:
+def outgrown(result: dict, profile: str | None = None) -> bool:
     """Is this saved result missing something the pages now draw?
 
     A saved result is a snapshot of what the catalogue answered on the day. When a new
@@ -278,6 +278,14 @@ def outgrown(result: dict) -> bool:
     if "by_restaurant" not in (result.get("eat_lancet") or {}):
         return True
     if not result.get("food_group_by_restaurant"):
+        return True
+    # And a result scored against a different reference diet. This one is not a missing
+    # field: the shape is identical and only the meaning changed, which is worse. On
+    # 21 Sep 2026 the score moved to the 2025 EAT-Lancet diet and every period except the
+    # one that happened to be recalculated went on showing its 2019 score (spotted by
+    # Mrigank, who opened All data and saw 0.7 where the year said 0.67).
+    was = (result.get("headline") or {}).get("eat_profile")
+    if profile and was and was != profile:
         return True
     for key in ("by_month", "by_restaurant"):
         rows = result.get(key) or []
@@ -370,7 +378,7 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
         # An old shape is worth less than the thirty seconds it saves: the page would draw
         # itself with a chart missing and no way for the reader to know why. Recalculate,
         # unless the catalogue is unreachable, when a short answer beats no answer.
-        if held is not None and etag and outgrown(held):
+        if held is not None and etag and outgrown(held, catalogue.default_profile(etag)):
             held = None
         if held is not None:
             was = held.get("scored_against")

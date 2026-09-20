@@ -303,7 +303,13 @@ def eat_explain(eat: dict | None) -> dict | None:
     if not eat or eat.get("score") is None or not eat.get("rows"):
         return None
     rows = eat["rows"]
-    biggest = sorted(rows, key=lambda r: -abs(float(r.get("gap_pct") or 0)))[:2]
+
+    def costs(r):
+        """What a row costs the score: nothing, when it is under a limit."""
+        gap = float(r.get("gap_pct") or 0)
+        return 0.0 if (r.get("is_limit") and gap <= 0) else abs(gap)
+
+    biggest = sorted(rows, key=lambda r: -costs(r))[:2]
 
     def pct(v):
         return f"{float(v):.1f}".rstrip("0").rstrip(".")
@@ -340,6 +346,11 @@ def paired(rows, label_key="food_group", a_key="purchased_pct", b_key="reference
     """Purchased share against the reference share, one pair per food group.
 
     The gap is the point of the EAT-Lancet chart, so the gap is what gets the label.
+
+    A row that is a LIMIT -- added sugars, saturated fats -- shows 0 when it is under that
+    limit, because 0 is what it costs the score. It showed the true shortfall, -2.1, which
+    is arithmetic nobody can reconcile with a score that never charged it (21 Sep 2026,
+    spotted by Mrigank). The real shares stay in the tooltip; the column says what it cost.
     """
     rows = list(rows)
     if not rows:
@@ -352,13 +363,16 @@ def paired(rows, label_key="food_group", a_key="purchased_pct", b_key="reference
         a = float(r.get(a_key) or 0)
         b = float(r.get(b_key) or 0)
         gap = a - b
+        limit = bool(r.get("is_limit"))
+        spare = limit and gap <= 0            # under a limit: costs nothing
+        counted = 0.0 if spare else gap
         out.append(dict(
             y=i * row_h, label=str(r.get(label_key, "")),
             a_w=max(1.5, round(plot_w * a / vmax, 2)),
             b_w=max(1.5, round(plot_w * b / vmax, 2)),
-            a=a, b=b, gap=gap,
-            gap_display=("+" if gap > 0 else "") + f"{gap:.1f}",
-            over=gap > 0))
+            a=a, b=b, gap=counted, raw_gap=gap, limit=limit, spare=spare,
+            gap_display="0" if spare else ("+" if counted > 0 else "") + f"{counted:.1f}",
+            over=counted > 0))
     return dict(empty=False, width=width, height=len(out) * row_h + 6, rows=out,
                 pad_l=pad_l, pad_r=pad_r, vmax=vmax)
 

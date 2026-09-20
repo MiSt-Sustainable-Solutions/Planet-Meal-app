@@ -230,6 +230,29 @@ def eat_profiles() -> dict | None:
         return None
 
 
+_DEFAULT_PROFILE: dict[str, str | None] = {}
+
+
+def default_profile(etag: str | None) -> str | None:
+    """Which reference diet the catalogue scores against now, cached against its version.
+
+    A saved result records the profile it was scored with. When the catalogue moves to a new
+    reference diet -- the 2019 grams to the 2025 ones, on 21 Sep 2026 -- every saved result
+    is still internally consistent and still wrong to serve: the number no longer means what
+    the page says beside it. Cached against the etag, so this costs one call per catalogue
+    version rather than one per page.
+    """
+    if not etag:
+        return None
+    if etag not in _DEFAULT_PROFILE:
+        prof = eat_profiles()
+        if prof is None:
+            return None                  # unreachable: say nothing rather than guess
+        _DEFAULT_PROFILE.clear()         # one version at a time is all that is ever wanted
+        _DEFAULT_PROFILE[etag] = prof.get("default")
+    return _DEFAULT_PROFILE.get(etag)
+
+
 def recognise(products: list[dict]) -> dict | None:
     """How many of these products does the catalogue already know, and which categories
     are unmapped? Returns None if the catalogue is unreachable — the caller must then say

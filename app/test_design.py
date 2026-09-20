@@ -374,6 +374,20 @@ P(len(_series) > 3, f"one comparison drawn per restaurant, plus the whole ({len(
 P(_series and _series[0][0] == "all", "the whole is what the page opens on")
 P(all(s for _k, s in _series[1:]), "each carries its own score for the heading")
 
+print("\n=== a row that is a limit says so, and costs nothing when it is under ===")
+# 21 Sep 2026. Added sugars showed -2.1 beside a score that never charged it, which is
+# arithmetic a reader cannot reconcile. The column says what the row COST.
+_eat_all = _eat[_eat.index('data-series="all"'):]
+_eat_all = _eat_all[:_eat_all.index("</svg>")]
+_labels = _re7.findall(r'text-anchor="end">([^<]+)</text>', _eat_all)
+_gaps = _re7.findall(r'font-weight:700;fill:var\(--ink\);">\s*([^<\s]+)\s*</text>', _eat_all)
+_marked = [(l, g) for l, g in zip(_labels, _gaps) if "(limit)" in l]
+P(len(_marked) == 2, f"the two limit rows are marked as limits ({[l for l, _ in _marked]})")
+P(all(g == "0" for _l, g in _marked),
+  f"and cost nothing while they are under it ({[g for _, g in _marked]})")
+P(any(g.startswith("-") for l, g in zip(_labels, _gaps) if "(limit)" not in l),
+  "while an ordinary group under its reference still shows the shortfall")
+
 print("\n=== a missing EAT-Lancet line explains itself, to MiSt only ===")
 # 20 Sep 2026. Figures saved before per-month EAT existed draw the CO2 line alone. Every
 # period except the recalculated one looked broken, with nothing on the page saying why.
