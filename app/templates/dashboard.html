@@ -433,23 +433,23 @@
 <section class="light">
   <div class="inner">
     <div class="sec-label">Diet alignment</div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
-      <h2 class="sec-h2">EAT-Lancet: <em>purchased vs reference</em></h2>
-      <div style="display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap;">
-        {# One canteen at a time, drawn on the server like the trend. Asked for by TU Delft
-           on 20 Sep 2026: the whole university's chart cannot tell a kitchen what to do. #}
-        {% if eat_series and eat_series|length > 1 %}
-        <label class="muted" style="display:flex;gap:10px;align-items:center;font-size:13px;">
-          Restaurant
-          <select id="eatPick" class="pick-select">
-            {% for s in eat_series %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
-          </select>
-        </label>
-        {% endif %}
-        <div class="stat" style="align-items:flex-end;">
-          <span class="k">Score</span>
-          <span class="v" id="eatPickScore">{{ result.eat_lancet.score }}</span>
-        </div>
+    <h2 class="sec-h2">EAT-Lancet: <em>purchased vs reference</em></h2>
+    {# The picker and the score sit on their own line, never beside the heading. A negative
+       score is one character wider, which was enough to push the whole row onto a second
+       line and move the picker as a canteen was chosen (20 Sep 2026). #}
+    <div style="display:flex;align-items:flex-end;gap:32px;flex-wrap:wrap;margin-top:20px;">
+      {% if eat_series and eat_series|length > 1 %}
+      <label class="muted" style="display:flex;gap:10px;align-items:center;font-size:13px;">
+        Restaurant
+        <select id="eatPick" class="pick-select">
+          {% for s in eat_series %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <div class="stat">
+        <span class="k">Score</span>
+        <span class="v" id="eatPickScore"
+              style="font-variant-numeric:tabular-nums;">{{ result.eat_lancet.score }}</span>
       </div>
     </div>
     <p class="lede" style="margin-top:16px;max-width:66ch;">
