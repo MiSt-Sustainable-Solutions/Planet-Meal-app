@@ -426,7 +426,7 @@
   <summary><div class="inner"><div class="p-card">
     <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M5 19l8-8"/></svg></span>
     <span class="p-txt"><span class="p-t">EAT-Lancet</span>
-    <span class="p-d">How the food bought compares with the EAT-Lancet diet, group by group.</span></span>
+    <span class="p-d">How the food bought compares with the EAT-Lancet diet, group by group, for all restaurants or one.</span></span>
     <span class="p-o" aria-hidden="true"></span>
   </div></div></summary>
 <!-- ============================================ EAT-Lancet (light) -->
@@ -435,36 +435,52 @@
     <div class="sec-label">Diet alignment</div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
       <h2 class="sec-h2">EAT-Lancet: <em>purchased vs reference</em></h2>
-      <div style="text-align:right;">
+      <div style="display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap;">
+        {# One canteen at a time, drawn on the server like the trend. Asked for by TU Delft
+           on 20 Sep 2026: the whole university's chart cannot tell a kitchen what to do. #}
+        {% if eat_series and eat_series|length > 1 %}
+        <label class="muted" style="display:flex;gap:10px;align-items:center;font-size:13px;">
+          Restaurant
+          <select id="eatPick" class="pick-select">
+            {% for s in eat_series %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+          </select>
+        </label>
+        {% endif %}
         <div class="stat" style="align-items:flex-end;">
           <span class="k">Score</span>
-          <span class="v">{{ result.eat_lancet.score }}</span>
+          <span class="v" id="eatPickScore">{{ result.eat_lancet.score }}</span>
         </div>
       </div>
     </div>
     <p class="lede" style="margin-top:16px;max-width:66ch;">
       Each pair of bars is one food group: its share of the food bought, against its share
-      in the EAT-Lancet diet. The number on the right is the difference.
-      {% if eat_explain %}Added up, too much and too little alike, the differences come to
-      {{ eat_explain.deviation }} points, which gives the score of {{ eat_explain.score }}.{% endif %}
+      in the EAT-Lancet diet. The number on the right is the difference. Added up, too much
+      and too little alike, the differences give the score beside the heading
+      {% if eat_explain %}&mdash; across all restaurants, {{ eat_explain.deviation }} points,
+      so {{ eat_explain.score }}{% endif %}.
+      {% if eat_series and eat_series|length > 1 %}Pick a restaurant to see its own.{% endif %}
     </p>
     <div class="card sr" style="margin-top:24px;">
-      <div class="scroll-x">
-        <svg class="chart" viewBox="0 0 {{ eat_chart.width }} {{ eat_chart.height }}" role="img"
-             aria-label="Purchased share versus EAT-Lancet reference share">
-          {% for b in eat_chart.rows %}
-          <text class="tick" x="{{ eat_chart.pad_l - 12 }}" y="{{ b.y + 20 }}" text-anchor="end">{{ b.label }}</text>
-          <rect class="bar ref" x="{{ eat_chart.pad_l }}" y="{{ b.y + 4 }}" width="{{ b.b_w }}" height="11" rx="2"
+      {% for s in (eat_series or [{'key': 'all', 'chart': eat_chart, 'label': 'All restaurants'}]) %}
+      {% set c = s.chart %}
+      <div class="scroll-x eat-series" data-series="{{ s.key }}" data-score="{{ s.score }}"
+           {% if not loop.first %}hidden{% endif %}>
+        <svg class="chart" viewBox="0 0 {{ c.width }} {{ c.height }}" role="img"
+             aria-label="{{ s.label }}: purchased share versus EAT-Lancet reference share">
+          {% for b in c.rows %}
+          <text class="tick" x="{{ c.pad_l - 12 }}" y="{{ b.y + 20 }}" text-anchor="end">{{ b.label }}</text>
+          <rect class="bar ref" x="{{ c.pad_l }}" y="{{ b.y + 4 }}" width="{{ b.b_w }}" height="11" rx="2"
                 data-tip="{{ b.label }} · EAT-Lancet reference {{ b.b }}% · purchased {{ b.a }}%"/>
-          <rect class="bar" x="{{ eat_chart.pad_l }}" y="{{ b.y + 18 }}" width="{{ b.a_w }}" height="11" rx="2"
+          <rect class="bar" x="{{ c.pad_l }}" y="{{ b.y + 18 }}" width="{{ b.a_w }}" height="11" rx="2"
                 data-tip="{{ b.label }} · purchased {{ b.a }}% · EAT-Lancet reference {{ b.b }}%"/>
-          <text class="tick" x="{{ eat_chart.width - 8 }}" y="{{ b.y + 20 }}" text-anchor="end"
+          <text class="tick" x="{{ c.width - 8 }}" y="{{ b.y + 20 }}" text-anchor="end"
                 style="font-weight:700;fill:var(--ink);">
             {{ b.gap_display }}
           </text>
           {% endfor %}
         </svg>
       </div>
+      {% endfor %}
       <div class="legend">
         <span><i style="background:var(--mist);"></i>EAT-Lancet reference share</span>
         <span><i style="background:var(--teal);"></i>purchased share</span>

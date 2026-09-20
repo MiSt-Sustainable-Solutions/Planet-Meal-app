@@ -399,6 +399,7 @@ def _charts(result: dict) -> dict:
                                 width=620, pad_l=150, pad_r=110,
                                 secondary_key="pct_of_co2", secondary_suffix="%", limit=14),
         eat_chart=charts.paired(result["eat_lancet"]["rows"]),
+        eat_series=charts.paired_series(result["eat_lancet"]),
         eat_explain=charts.eat_explain(result.get("eat_lancet")))
 
 

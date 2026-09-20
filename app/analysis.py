@@ -260,6 +260,30 @@ def _lookup(tenant: str, wkey: str, fingerprint: str,
     return out
 
 
+def outgrown(result: dict) -> bool:
+    """Is this saved result missing something the pages now draw?
+
+    A saved result is a snapshot of what the catalogue answered on the day. When a new
+    figure is added -- EAT-Lancet per month on 16 Sep 2026, per restaurant on 20 Sep --
+    every result saved before it is silently short of it, and the chart that needs it
+    quietly disappears for every period except whichever one someone happened to
+    recalculate. That looked like a bug in the chart three times in a row.
+
+    So an old shape is not served. It is recalculated, once, the first time a page asks
+    for it. This only ever runs for MiSt: a client reads a published copy, which is frozen
+    by design and changes only when MiSt publishes again.
+    """
+    if not result.get("by_restaurant_month"):
+        return True
+    if "by_restaurant" not in (result.get("eat_lancet") or {}):
+        return True
+    for key in ("by_month", "by_restaurant"):
+        rows = result.get(key) or []
+        if rows and not any("eat_lancet_score" in r for r in rows):
+            return True
+    return False
+
+
 def version_number(etag: str | None):
     """'cat-42.9f3ac1' -> 42. The counter is what makes 'two decisions behind' sayable."""
     if not etag:
@@ -341,6 +365,11 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
         # changes underneath a reader without warning costs more trust than a number that
         # is a day old and admits it.
         held = _lookup(tenant, wkey, fingerprint)
+        # An old shape is worth less than the thirty seconds it saves: the page would draw
+        # itself with a chart missing and no way for the reader to know why. Recalculate,
+        # unless the catalogue is unreachable, when a short answer beats no answer.
+        if held is not None and etag and outgrown(held):
+            held = None
         if held is not None:
             was = held.get("scored_against")
             if etag:

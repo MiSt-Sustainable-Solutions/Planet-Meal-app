@@ -336,6 +336,15 @@ P(len(_bars) >= 3, f"one bar per restaurant ({len(_bars)} of them)")
 P(any(n for n in _bars), "a score below zero is drawn as one, in the warning colour")
 P("<table" not in _rest, "and no table underneath: the figures are read off one chart")
 
+print("\n=== the EAT-Lancet comparison can be read one canteen at a time ===")
+# 20 Sep 2026, TU Delft: the university's own chart cannot tell a kitchen what to change.
+_eat = dash[dash.index('id="eat-lancet"'):]
+P('id="eatPick"' in _eat, "the section has a restaurant picker")
+_series = _re7.findall(r'class="scroll-x eat-series" data-series="(\w+)" data-score="([^"]*)"', _eat)
+P(len(_series) > 3, f"one comparison drawn per restaurant, plus the whole ({len(_series)})")
+P(_series and _series[0][0] == "all", "the whole is what the page opens on")
+P(all(s for _k, s in _series[1:]), "each carries its own score for the heading")
+
 print("\n=== a missing EAT-Lancet line explains itself, to MiSt only ===")
 # 20 Sep 2026. Figures saved before per-month EAT existed draw the CO2 line alone. Every
 # period except the recalculated one looked broken, with nothing on the page saying why.

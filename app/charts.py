@@ -344,6 +344,23 @@ def paired(rows, label_key="food_group", a_key="purchased_pct", b_key="reference
                 pad_l=pad_l, pad_r=pad_r, vmax=vmax)
 
 
+def paired_series(eat: dict) -> list[dict]:
+    """The group-by-group comparison for everyone, then for one restaurant at a time.
+
+    Asked for on 20 Sep 2026: the whole university's chart says the diet is short of
+    vegetables somewhere, and the next question is always which canteen. Every series is
+    drawn on the server and hidden, like the trend, so the picker shows one and no chart is
+    computed in the browser. Figures saved before the breakdown existed carry the whole
+    only, and get no picker.
+    """
+    out = [dict(key="all", label="All restaurants", score=eat.get("score"),
+                intake_kg=eat.get("intake_kg"), chart=paired(eat.get("rows") or []))]
+    for i, r in enumerate(eat.get("by_restaurant") or []):
+        out.append(dict(key=f"r{i}", label=r["restaurant"], score=r.get("score"),
+                        intake_kg=r.get("intake_kg"), chart=paired(r.get("rows") or [])))
+    return out
+
+
 def confidence(tiers) -> list[dict]:
     """The tier ladder as one bar. Widths are shares of weight, so it always sums to 100."""
     out = []

@@ -213,6 +213,17 @@ else:
     nutrition = {"kcal", "protein_g", "fat_g", "satfat_g", "carb_g", "sugar_g", "fibre_g"}
     leaked = [k for row in out["top_contributors"] for k in row if k in nutrition]
     P(not leaked, f"no nutrition reaches the app ({leaked})")
+    # 20 Sep 2026: the EAT-Lancet comparison per restaurant, and the guard that stops a
+    # result saved before a figure existed being served for the periods nobody refreshed.
+    ebr = out["eat_lancet"].get("by_restaurant")
+    P(ebr and all(len(r["rows"]) == 11 for r in ebr),
+      f"every restaurant has its own group-by-group comparison ({len(ebr or [])})")
+    P(not analysis.outgrown(out), "a result scored today is not outgrown")
+    for missing in ("by_restaurant_month", "eat_lancet"):
+        P(analysis.outgrown({k: v for k, v in out.items() if k != missing}),
+          f"a result with no {missing} is recalculated rather than served")
+    P(analysis.outgrown(dict(out, by_month=[{"period": "2024-01", "co2_kg": 1}])),
+      "so is one whose months predate the EAT-Lancet score")
 
 print("\n=== windows ===")
 P(analysis.default_window().startswith("FY"), f"a default window is chosen ({analysis.default_window()})")

@@ -309,6 +309,20 @@ if (pick) pick.addEventListener('change', function(){
   });
 });
 
+/* The same for the EAT-Lancet comparison: one restaurant at a time. The score beside the
+   heading follows the picker, or it would go on reading as the whole university's. */
+var eatPick = document.getElementById('eatPick');
+if (eatPick) eatPick.addEventListener('change', function(){
+  var score = null;
+  document.querySelectorAll('.eat-series').forEach(function(el){
+    var mine = el.getAttribute('data-series') === eatPick.value;
+    el.hidden = !mine;
+    if (mine) score = el.getAttribute('data-score');
+  });
+  var box = document.getElementById('eatPickScore');
+  if (box) box.textContent = (!score || score === 'None') ? '—' : score;
+});
+
 var io = new IntersectionObserver(function(es){
   es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
 }, {threshold:0.08, rootMargin:'0px 0px -24px 0px'});
