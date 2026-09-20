@@ -310,10 +310,11 @@
 <section class="dark">
   <div class="inner">
     <div class="sec-label sl-teal">Restaurants</div>
-    <h2 class="sec-h2">CO<sub>2</sub> by <em>restaurant</em></h2>
-    <p class="muted" style="margin-top:14px;max-width:60ch;">
-      Ranked by total CO<sub>2</sub>e. The right-hand bars compare restaurants of different
-      sizes: CO<sub>2</sub>e for each kilogram of food bought.
+    <h2 class="sec-h2">CO<sub>2</sub> and diet by <em>restaurant</em></h2>
+    <p class="muted" style="margin-top:14px;max-width:66ch;">
+      Ranked by total CO<sub>2</sub>e. The middle bars compare restaurants of different sizes:
+      CO<sub>2</sub>e for each kilogram of food bought.{% if rest_chart.has_c %} The right-hand
+      bars are the EAT-Lancet score, which runs up to 1 and can fall below zero.{% endif %}
     </p>
     <div class="card sr" style="margin-top:24px;">
       {% if rest_chart.empty %}<p class="muted">No restaurant data.</p>{% else %}
@@ -322,6 +323,12 @@
              aria-label="CO2 by restaurant, and CO2 per kilogram of food">
           <text class="tick colhead" x="{{ rest_chart.pad_l }}" y="14">kg CO₂e</text>
           <text class="tick colhead" x="{{ rest_chart.b_x }}" y="14">kg CO₂e per kg of food</text>
+          {% if rest_chart.has_c %}
+          <text class="tick colhead" x="{{ rest_chart.c_x }}" y="14">EAT-Lancet score</text>
+          {# The zero line: scores below it grow to the left, so a negative reads as one. #}
+          <line class="axis" x1="{{ rest_chart.zero_x }}" y1="20"
+                x2="{{ rest_chart.zero_x }}" y2="{{ rest_chart.height - 4 }}"/>
+          {% endif %}
           {% for b in rest_chart.rows %}
           <text class="tick" x="{{ rest_chart.pad_l - 12 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.label }}</text>
           <rect class="bar" x="{{ rest_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.a_w }}" height="{{ b.h }}" rx="3"
@@ -334,47 +341,20 @@
           {% endif %}
           <text class="tick" x="{{ rest_chart.b_x + b.b_w + 10 }}" y="{{ b.y + 15 }}"
                 style="fill:var(--white);font-weight:700;">{{ b.b_display }}</text>
+          {% if rest_chart.has_c %}
+          {% if b.c_w %}
+          <rect class="bar eat{% if b.c_neg %} neg{% endif %}" x="{{ b.c_x }}" y="{{ b.y + 3 }}"
+                width="{{ b.c_w }}" height="{{ b.h }}" rx="3"
+                data-tip="{{ b.label }} · EAT-Lancet {{ b.c_display }}"/>
+          {% endif %}
+          <text class="tick" x="{{ b.c_end + 10 }}" y="{{ b.y + 15 }}"
+                style="fill:var(--white);font-weight:700;">{{ b.c_display }}</text>
+          {% endif %}
           {% endfor %}
         </svg>
       </div>
       {% endif %}
     </div>
-    {# 20 Sep 2026. The EAT-Lancet score per restaurant was calculated and shown nowhere:
-       the bars answer "how much CO2", and the first thing anyone asks next is "and which
-       restaurant eats best". One row per restaurant, so the two can be read across. #}
-    {% set has_rest_eat = result.by_restaurant | selectattr('eat_lancet_score', 'defined')
-                          | rejectattr('eat_lancet_score', 'none') | list | length > 0 %}
-    {% if has_rest_eat %}
-    <div class="card sr" style="margin-top:22px;">
-      <div class="h3">CO<sub>2</sub> and diet, side by side</div>
-      <p class="muted" style="margin-top:6px;max-width:66ch;">
-        The EAT-Lancet score runs from 1, which matches the diet, downwards. It can fall below
-        zero when what a kitchen buys is far from it.
-      </p>
-      <div class="scroll-x" style="margin-top:16px;">
-        <table class="tbl">
-          <thead><tr>
-            <th>Restaurant</th>
-            <th class="num">t CO<sub>2</sub>e</th>
-            <th class="num">kg CO<sub>2</sub>e / kg</th>
-            <th class="num">Food (t)</th>
-            <th class="num">EAT-Lancet</th>
-          </tr></thead>
-          <tbody>
-          {% for r in result.by_restaurant %}
-          <tr>
-            <td class="name">{{ r.restaurant }}</td>
-            <td class="num">{{ '%.1f'|format(r.co2_kg / 1000) }}</td>
-            <td class="num">{{ '%.2f'|format(r.intensity_kg_co2_per_kg) }}</td>
-            <td class="num">{{ '%.1f'|format(r.food_kg / 1000) }}</td>
-            <td class="num">{% if r.eat_lancet_score is none %}&mdash;{% else %}{{ '%.3f'|format(r.eat_lancet_score) }}{% endif %}</td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
   </div>
 </section>
 </details>

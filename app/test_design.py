@@ -330,11 +330,11 @@ print("\n=== every restaurant's EAT-Lancet score is on the page ===")
 # 20 Sep 2026, asked for by TU Delft: the score per restaurant was computed and displayed
 # nowhere. The bars say how much CO2; the table beside them says how the diet compares.
 _rest = dash[dash.index('id="restaurants"'):dash.index('id="food-groups"')]
-P("CO<sub>2</sub> and diet, side by side" in _rest, "the restaurants section carries a table")
-_scores = _re7.findall(r'<td class="num">(-?\d\.\d{3}|&mdash;)</td>', _rest)
-P(len(_scores) >= 3, f"one score per restaurant ({len(_scores)} rows)")
-P("EAT-Lancet</th>" in _rest and "kg CO<sub>2</sub>e / kg</th>" in _rest,
-  "CO2 and the score can be read across the same row")
+P(">EAT-Lancet score</text>" in _rest, "the restaurant chart has a third column for the score")
+_bars = _re7.findall(r'class="bar eat( neg)?"', _rest)
+P(len(_bars) >= 3, f"one bar per restaurant ({len(_bars)} of them)")
+P(any(n for n in _bars), "a score below zero is drawn as one, in the warning colour")
+P("<table" not in _rest, "and no table underneath: the figures are read off one chart")
 
 print("\n=== a missing EAT-Lancet line explains itself, to MiSt only ===")
 # 20 Sep 2026. Figures saved before per-month EAT existed draw the CO2 line alone. Every

@@ -113,34 +113,58 @@ def bars(rows, label_key, value_key, width=980, row_h=30, pad_l=270, pad_r=90,
                 pad_l=pad_l, pad_r=pad_r, vmax=vmax)
 
 
-def bars_dual(rows, label_key, a_key, b_key, width=980, row_h=30, pad_l=270,
-              a_width=440, gap=90, limit=None) -> dict:
-    """Two bar columns per row, each on its own scale: total CO2, then CO2 per kg of food.
+def bars_dual(rows, label_key, a_key, b_key, c_key=None, width=980, row_h=30, pad_l=230,
+              a_width=215, limit=None) -> dict:
+    """One row per restaurant, three bar columns, each on its own scale.
 
-    The second figure was a number at the far right. A number cannot be compared at a
-    glance; a bar can -- a small restaurant buying mostly meat stands out on the right even
-    when it is short on the left. Two columns rather than a second axis over the same bars,
-    because two scales drawn over one set of bars read as one scale.
+    Total CO2, then CO2 per kg of food, then the EAT-Lancet score. Each figure alone is a
+    number, and a number cannot be compared at a glance; a bar can -- a small restaurant
+    buying mostly meat stands out in the middle column even when it is short in the first.
+    Three columns rather than three scales over one set of bars, which would read as one.
+
+    The score is the odd one out: it runs up to 1 and can fall below 0, so its column is
+    drawn from a zero line with anything negative growing to the left of it. A restaurant
+    with no score -- no food from the eleven groups -- is left blank, because 0 is a real
+    score and a bad one. (20 Sep 2026: it used to sit in a table underneath, where it could
+    not be read against the CO2 bars.)
     """
     rows = list(rows)[:limit] if limit else list(rows)
     if not rows:
         return dict(empty=True, width=width, height=60)
     head = 26
+    num_w, gap = 54, 30                      # room for a printed value, then the next column
     a_max = max(float(r.get(a_key) or 0) for r in rows) or 1
     b_max = max(float(r.get(b_key) or 0) for r in rows) or 1
-    b_x = pad_l + a_width + gap
-    b_width = width - b_x - 60
+    b_x = pad_l + a_width + num_w + gap
+    b_width = 110
+    c_x = b_x + b_width + num_w + gap
+    c_width = max(90, width - c_x - num_w - 14)
+
+    scores = [float(r[c_key]) for r in rows if r.get(c_key) is not None] if c_key else []
+    c_lo = min(0.0, min(scores)) if scores else 0.0
+    c_span = 1.0 - c_lo
+    zero_x = c_x + c_width * (0.0 - c_lo) / c_span if scores else c_x
+
     out = []
     for i, r in enumerate(rows):
         a = float(r.get(a_key) or 0)
         b = r.get(b_key)
-        out.append(dict(
+        c = r.get(c_key) if c_key else None
+        row = dict(
             y=head + i * row_h, h=row_h - 9, label=str(r.get(label_key, "")),
             a_w=max(1.5, round(a_width * a / a_max, 2)), a_display=_fmt(a),
             b_w=max(1.5, round(b_width * float(b) / b_max, 2)) if b is not None else 0,
-            b_display=f"{float(b):.2f}" if b is not None else "—"))
+            b_display=f"{float(b):.2f}" if b is not None else "—",
+            c_x=zero_x, c_w=0, c_neg=False, c_display="—", c_end=zero_x)
+        if c is not None:
+            c = float(c)
+            x = c_x + c_width * (c - c_lo) / c_span
+            row.update(c_x=round(min(x, zero_x), 2), c_w=round(max(abs(x - zero_x), 1.5), 2),
+                       c_neg=c < 0, c_display=f"{c:.2f}", c_end=round(max(x, zero_x), 2))
+        out.append(row)
     return dict(empty=False, width=width, height=head + len(out) * row_h + 6, rows=out,
-                pad_l=pad_l, b_x=b_x, head=head)
+                pad_l=pad_l, b_x=b_x, c_x=c_x, c_width=c_width, has_c=bool(scores),
+                zero_x=round(zero_x, 2), head=head)
 
 
 def trend(by_month, by_restaurant_month=None, restaurants=None,

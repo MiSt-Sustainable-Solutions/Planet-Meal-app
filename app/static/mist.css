@@ -214,6 +214,11 @@ h1.page-h1 em{color:var(--teal);font-style:italic;}
 .chart .hit{fill:transparent;cursor:crosshair;}
 .chart .hit:hover{fill:rgba(45,158,117,.07);}
 .chart .bar.alt{fill:var(--tier2);}
+/* The EAT-Lancet column: its own colour, because it is not a CO2 figure. A score
+   below zero grows left of the zero line and is drawn in the warning colour. */
+.chart .bar.eat{fill:var(--teal-light);}
+.chart .bar.eat.neg{fill:var(--warn);}
+
 .chart .colhead{font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:10px;}
 .legend i.dash{width:18px;height:0;border-top:2px dashed var(--ink);background:none;border-radius:0;}
 .dark .legend i.dash{border-top-color:var(--white);}
