@@ -216,8 +216,10 @@ else:
     # 20 Sep 2026: the EAT-Lancet comparison per restaurant, and the guard that stops a
     # result saved before a figure existed being served for the periods nobody refreshed.
     ebr = out["eat_lancet"].get("by_restaurant")
-    P(ebr and all(len(r["rows"]) == 11 for r in ebr),
-      f"every restaurant has its own group-by-group comparison ({len(ebr or [])})")
+    _rows = len(out["eat_lancet"]["rows"])          # 11 groups, or 14 shelves since 21 Sep 2026
+    P(ebr and all(len(r["rows"]) == _rows for r in ebr),
+      f"every restaurant has its own group-by-group comparison "
+      f"({len(ebr or [])} restaurants x {_rows} groups)")
     P(not analysis.outgrown(out), "a result scored today is not outgrown")
     for missing in ("by_restaurant_month", "eat_lancet"):
         P(analysis.outgrown({k: v for k, v in out.items() if k != missing}),

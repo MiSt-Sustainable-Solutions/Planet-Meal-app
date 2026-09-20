@@ -387,10 +387,25 @@ P(_hint not in dash, "it stays hidden while this period has its EAT-Lancet line"
 
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
+# 21 Sep 2026. Two of those words are now the names of EAT-Lancet FOOD GROUPS -- shelves a
+# kitchen buys from -- and one is in the citation of the reference diet ("~2400 kcal/day").
+# None of them is a nutrient read off a product, which is what this guard exists to catch.
+# They are removed by name before the scan, and the next two checks hold that line: if
+# nutrition ever arrives under one of these words, it will not be wearing these phrases.
+ALLOWED = ["unsaturated oils", "saturated fats", "added sugars",
+           "~2400 kcal/day", "2400 kcal/day"]
 for path in PAGES:
     html = fetch(path).lower()
+    for phrase in ALLOWED:
+        html = html.replace(phrase, " ")
     hits = [w for w in banned if w.lower() in html]
     P(not hits, f"{path:14} shows no nutrition ({hits})")
+_dash_l = dash.lower()
+P(_dash_l.count("saturated")
+  == _dash_l.count("saturated fats") + _dash_l.count("unsaturated oils"),
+  "the only 'saturated' on the page is one of the two fat food groups")
+P(_dash_l.count("kcal") == _dash_l.count("kcal/day"),
+  "and the only 'kcal' is the reference diet's own citation")
 
 print(f"\n{'ALL PASS' if not FAILED else str(len(FAILED)) + ' FAILED'}")
 sys.exit(1 if FAILED else 0)

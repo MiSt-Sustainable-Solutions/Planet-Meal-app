@@ -318,6 +318,10 @@ def eat_explain(eat: dict | None) -> dict | None:
     return dict(
         left_out=left_out,
         groups=len(rows),
+        # Rows that are a limit rather than a target: being under one is not a failing, and
+        # the card has to say so or the arithmetic looks wrong (21 Sep 2026).
+        limits=[(r.get("food_group") or "").lower() for r in rows if r.get("is_limit")],
+        method=eat.get("profile_label"),
         intake_pct=(round(eat["intake_pct_of_food"]) if eat.get("intake_pct_of_food")
                     is not None else None),
         deviation=pct(eat["total_abs_deviation"]),

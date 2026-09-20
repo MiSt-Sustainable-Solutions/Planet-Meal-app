@@ -82,7 +82,9 @@
               ({{ e.intake_pct }}% of it{% if e.left_out %}; left out: {% for x in e.left_out %}{{ x.words }} {{ x.pct }}%{{ ', ' if not loop.last }}{% endfor %}{% endif %}){% endif %}.</li>
             <li>Each group&rsquo;s share is compared with the diet&rsquo;s.
               {% for b in e.biggest %}{{ b.group|capitalize }}: {{ b.purchased }}% bought, {{ b.reference }}% in the diet{{ '; ' if not loop.last else '.' }}{% endfor %}</li>
-            <li>All differences are added up, too much and too little alike: <strong>{{ e.deviation }} points</strong>.</li>
+            <li>All differences are added up, too much and too little alike: <strong>{{ e.deviation }} points</strong>.{% if e.limits %}
+              {{ e.limits|join(' and ')|capitalize }} are limits, so buying less than the diet
+              allows costs nothing.{% endif %}</li>
             <li>1 &minus; {{ e.deviation }} &divide; 100 = <strong>{{ e.score }}</strong></li>
           </ol>
           <div class="flip-links">
@@ -508,6 +510,17 @@
         <span style="opacity:.75;">right column: difference, in percentage points</span>
       </div>
     </div>
+    {# Which reference diet these bars are measured against, named on the page. A 0.69 under
+       one method and a 0.69 under another look alike and mean different things (21 Sep 2026,
+       asked for by Mrigank). The internal profile id stays internal; this is its label. #}
+    {% set el = result.eat_lancet %}
+    <p class="muted" style="margin-top:18px;font-size:13px;max-width:78ch;">
+      Measured against <strong>{{ el.profile_label }}</strong>{% if el.profile_source %} &mdash;
+      {{ el.profile_source }}{% endif %}
+      {%- if el.limits %} Added sugars and saturated fats are limits: buying less than the diet
+      allows is not counted against the score.{% endif %}
+      {%- if not el.profile_confirmed %} This reference is provisional.{% endif %}
+    </p>
   </div>
 </section>
 </details>

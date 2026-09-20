@@ -65,7 +65,7 @@ def analysis_workbook(result: dict, scored: dict, client: str,
           [[c["severity"], c["owner"], c["message"]] for c in h["caveats"]])
     # The EAT-Lancet score sits beside the CO2 in every cut: the question asked of these
     # sheets is "which restaurant, which month, and how do they compare". A month or a
-    # restaurant with no food from the eleven groups has no score and gets an empty cell --
+    # restaurant with no food from the diet's groups has no score and gets an empty cell --
     # zero is a real score, and a bad one.
     sheet("by month", ["period", "food kg", "kg CO2e", "intensity", "EAT-Lancet",
                        "spend EUR", "quality"],
@@ -97,9 +97,14 @@ def analysis_workbook(result: dict, scored: dict, client: str,
             r["co2_per_kg"], r["pct_of_co2"], charts.grade(r.get("source")),
             r["confidence"]]
            for r in result["top_contributors"]])
-    sheet("eat lancet", ["food group", "reference %", "purchased %", "gap"],
-          [[r["food_group"], r["reference_pct"], r["purchased_pct"], r["gap_pct"]]
-           for r in result["eat_lancet"]["rows"]])
+    # "scored as" says whether a row is a target or a limit: under a limit costs nothing, so
+    # a reader adding the gaps up by hand would otherwise get a different total (21 Sep 2026).
+    sheet("eat lancet", ["food group", "reference %", "purchased %", "gap", "scored as"],
+          [[r["food_group"], r["reference_pct"], r["purchased_pct"], r["gap_pct"],
+            "limit" if r.get("is_limit") else "target"]
+           for r in result["eat_lancet"]["rows"]]
+          + [[], ["measured against", result["eat_lancet"].get("profile_label")],
+             ["source", result["eat_lancet"].get("profile_source")]])
     dh = result["data_health"]
     sheet("data health", ["tier", "precision", "what it means", "% of weight", "% of CO2",
                           "% of food spend", "products", "specific?"],
