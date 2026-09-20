@@ -241,6 +241,15 @@
       </label>
       {% endif %}
     </div>
+    {# 20 Sep 2026. The EAT-Lancet line was missing on every period except the one that had
+       been recalculated since it was built, and the page gave no reason. MiSt is told; a
+       client is not, because their figures are whatever was published for them. #}
+    {% if not trend.has_eat and me and me.is_admin %}
+    <p class="muted" style="margin-top:14px;font-size:13px;max-width:72ch;">
+      No EAT-Lancet line here: these figures were calculated before it was added.
+      Recalculate this period, or publish &mdash; publishing recalculates every period.
+    </p>
+    {% endif %}
     <div class="card sr" style="margin-top:24px;">
       {% if trend.empty %}<p class="muted">No monthly data.</p>{% else %}
       {% for s in trend.series %}{% set c = s.chart %}

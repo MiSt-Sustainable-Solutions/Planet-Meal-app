@@ -326,6 +326,17 @@ P('href="#eat-lancet"' in dash and 'id="eat-lancet"' in dash and "openAt(" in da
   "the EAT-Lancet card's link targets the folded section, and opens it")
 P(dash.index("Download Excel") > dash.rindex("</details>"), "the download stays at the bottom, open")
 
+print("\n=== a missing EAT-Lancet line explains itself, to MiSt only ===")
+# 20 Sep 2026. Figures saved before per-month EAT existed draw the CO2 line alone. Every
+# period except the recalculated one looked broken, with nothing on the page saying why.
+import pathlib as _pl7
+_tpl = (_pl7.Path(__file__).with_name("templates") / "dashboard.html").read_text(encoding="utf-8")
+_hint = "No EAT-Lancet line here"
+P(_hint in _tpl, "the trend says when figures predate the EAT-Lancet line")
+P("{% if not trend.has_eat and me and me.is_admin %}" in _tpl[:_tpl.index(_hint)][-400:],
+  "and only MiSt is told: a client cannot recalculate anything")
+P(_hint not in dash, "it stays hidden while this period has its EAT-Lancet line")
+
 print("\n=== nutrition is nowhere in the app ===")
 banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
 for path in PAGES:
