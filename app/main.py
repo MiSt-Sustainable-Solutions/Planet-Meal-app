@@ -398,9 +398,10 @@ def _charts(result: dict) -> dict:
         # Every food group likewise -- there are sixteen, and two were being dropped.
         rest_chart=charts.bars_dual(result["by_restaurant"], "restaurant", "co2_kg",
                                     "intensity_kg_co2_per_kg", "eat_lancet_score"),
-        group_chart=charts.bars(result["by_food_group"], "food_group", "co2_kg",
-                                width=620, pad_l=150, pad_r=110,
-                                secondary_key="pct_of_co2", secondary_suffix="%"),
+        group_series=charts.group_series(
+            result["by_food_group"], result.get("food_group_by_restaurant"),
+            label_key="food_group", value_key="co2_kg", width=980, pad_l=200, pad_r=130,
+            secondary_key="pct_of_co2", secondary_suffix="%"),
         eat_chart=charts.paired(result["eat_lancet"]["rows"]),
         eat_series=charts.paired_series(result["eat_lancet"]),
         eat_explain=charts.eat_explain(result.get("eat_lancet")))

@@ -309,6 +309,14 @@ if (pick) pick.addEventListener('change', function(){
   });
 });
 
+/* CO2 by food group, one restaurant at a time. */
+var groupPick = document.getElementById('groupPick');
+if (groupPick) groupPick.addEventListener('change', function(){
+  document.querySelectorAll('.group-series').forEach(function(el){
+    el.hidden = el.getAttribute('data-series') !== groupPick.value;
+  });
+});
+
 /* The same for the EAT-Lancet comparison: one restaurant at a time. The score beside the
    heading follows the picker, or it would go on reading as the whole university's. */
 var eatPick = document.getElementById('eatPick');

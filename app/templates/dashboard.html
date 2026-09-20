@@ -363,7 +363,7 @@
   <summary><div class="inner"><div class="p-card">
     <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></span>
     <span class="p-txt"><span class="p-t">Food groups</span>
-    <span class="p-d">CO<sub>2</sub> per food group, and the products with the most CO<sub>2</sub>.</span></span>
+    <span class="p-d">CO<sub>2</sub> per food group, for all restaurants or one.</span></span>
     <span class="p-o" aria-hidden="true"></span>
   </div></div></summary>
 <!-- ============================================ food groups (light2) -->
@@ -371,51 +371,81 @@
   <div class="inner">
     <div class="sec-label">Food groups</div>
     <h2 class="sec-h2">CO<sub>2</sub> by <em>food group</em></h2>
-    <div class="grid g2" style="margin-top:24px;align-items:start;">
-      <div class="card sr">
-        <div class="scroll-x">
-          <svg class="chart" viewBox="0 0 {{ group_chart.width }} {{ group_chart.height }}" role="img"
-               aria-label="CO2 by food group">
-            {% for b in group_chart.rows %}
-            <text class="tick" x="{{ group_chart.pad_l - 12 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.label }}</text>
-            <rect class="bar" x="{{ group_chart.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.w }}" height="{{ b.h }}" rx="3"
-                  data-tip="{{ b.label }} · {{ b.display }} kg CO₂e{% if b.secondary %} · {{ b.secondary }} of all CO₂e{% endif %}"/>
-            <text class="tick" x="{{ group_chart.pad_l + b.w + 10 }}" y="{{ b.y + 15 }}"
-                  style="fill:var(--ink);font-weight:700;">{{ b.display }}</text>
-            {% if b.secondary %}
-            <text class="tick" x="{{ group_chart.width - 8 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.secondary }}</text>
-            {% endif %}
-            {% endfor %}
-          </svg>
-        </div>
-        <div class="legend">
-          <span><i style="background:var(--teal);"></i>kg CO<sub>2</sub>e</span>
-          <span style="opacity:.75;">right column: share of total CO<sub>2</sub>e</span>
-        </div>
+    {# 20 Sep 2026. The chart shared a row with the top-contributor table, which made it
+       half the width and a different height from its neighbour, and it could only ever
+       show the whole university. Its own section, full width, one restaurant at a time. #}
+    <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin-top:20px;">
+      {% if group_series and group_series|length > 1 %}
+      <label class="muted" style="display:flex;gap:10px;align-items:center;font-size:13px;">
+        Restaurant
+        <select id="groupPick" class="pick-select">
+          {% for s in group_series %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <p class="muted" style="font-size:13px;">Each restaurant is drawn on its own scale.</p>
+    </div>
+    <div class="card sr" style="margin-top:20px;">
+      {% for s in group_series %}
+      {% set c = s.chart %}
+      <div class="scroll-x group-series" data-series="{{ s.key }}" {% if not loop.first %}hidden{% endif %}>
+        <svg class="chart" viewBox="0 0 {{ c.width }} {{ c.height }}" role="img"
+             aria-label="{{ s.label }}: CO2 by food group">
+          {% for b in c.rows %}
+          <text class="tick" x="{{ c.pad_l - 12 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.label }}</text>
+          <rect class="bar" x="{{ c.pad_l }}" y="{{ b.y + 3 }}" width="{{ b.w }}" height="{{ b.h }}" rx="3"
+                data-tip="{{ b.label }} · {{ b.display }} kg CO₂e{% if b.secondary %} · {{ b.secondary }} of this restaurant's CO₂e{% endif %}"/>
+          <text class="tick" x="{{ c.pad_l + b.w + 10 }}" y="{{ b.y + 15 }}"
+                style="fill:var(--ink);font-weight:700;">{{ b.display }}</text>
+          {% if b.secondary %}
+          <text class="tick" x="{{ c.width - 8 }}" y="{{ b.y + 15 }}" text-anchor="end">{{ b.secondary }}</text>
+          {% endif %}
+          {% endfor %}
+        </svg>
       </div>
-      <div class="card sr d1">
-        <div class="h3">Top contributors</div>
-        <p class="muted" style="margin:8px 0 16px;">
-          The products with the most CO<sub>2</sub>e.
-        </p>
-        <div class="scroll-x">
-          <table class="tbl">
-            <thead><tr>
-              <th>Product</th><th class="num">kg CO<sub>2</sub>e</th>
-              <th class="num">% of CO<sub>2</sub></th><th>Precision</th>
-            </tr></thead>
-            <tbody>
-            {% for p in result.top_contributors[:12] %}
-            <tr>
-              <td class="name">{{ p.description|truncate(38) }}</td>
-              <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
-              <td class="num">{{ p.pct_of_co2 }}</td>
-              <td><span class="pill {{ 'soft' if p.product_level else '' }}">{{ p.grade }}</span></td>
-            </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
+      {% endfor %}
+      <div class="legend">
+        <span><i style="background:var(--teal);"></i>kg CO<sub>2</sub>e</span>
+        <span style="opacity:.75;">right column: share of the CO<sub>2</sub>e shown</span>
+      </div>
+    </div>
+  </div>
+</section>
+</details>
+
+<details class="panel" id="top-contributors">
+  <summary><div class="inner"><div class="p-card">
+    <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 19V9"/><path d="M12 19V5"/><path d="M17 19v-7"/></svg></span>
+    <span class="p-txt"><span class="p-t">Top contributors</span>
+    <span class="p-d">The individual products carrying the most CO<sub>2</sub>.</span></span>
+    <span class="p-o" aria-hidden="true"></span>
+  </div></div></summary>
+<!-- ============================================ top contributors (dark) -->
+<section class="dark">
+  <div class="inner">
+    <div class="sec-label sl-teal">Top contributors</div>
+    <h2 class="sec-h2">The products with the <em>most CO<sub>2</sub></em></h2>
+    <p class="muted" style="margin-top:14px;max-width:62ch;">
+      Ranked for the whole period. Each one says how precisely its figure was found.
+    </p>
+    <div class="card sr" style="margin-top:24px;">
+      <div class="scroll-x">
+        <table class="tbl">
+          <thead><tr>
+            <th>Product</th><th class="num">kg CO<sub>2</sub>e</th>
+            <th class="num">% of CO<sub>2</sub></th><th>Precision</th>
+          </tr></thead>
+          <tbody>
+          {% for p in result.top_contributors %}
+          <tr>
+            <td class="name">{{ p.description|truncate(46) }}</td>
+            <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
+            <td class="num">{{ p.pct_of_co2 }}</td>
+            <td><span class="pill {{ 'soft' if p.product_level else '' }}">{{ p.grade }}</span></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

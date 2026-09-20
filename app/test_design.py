@@ -314,13 +314,14 @@ print("\n=== the dashboard is an overview: headline open, every section one line
 # and each section below is a single line that opens in place.
 import re as _re7
 _panels = _re7.findall(r'<details class="panel" id="([a-z-]+)"( open)?>', dash)
-P([pid for pid, _ in _panels] == ["precision", "trend", "restaurants", "food-groups", "eat-lancet"],
-  f"five sections, in order ({', '.join(pid for pid, _ in _panels)})")
+P([pid for pid, _ in _panels] == ["precision", "trend", "restaurants", "food-groups",
+                                  "top-contributors", "eat-lancet"],
+  f"six sections, in order ({', '.join(pid for pid, _ in _panels)})")
 P(not any(o for _, o in _panels), "all folded when the page opens")
 P(dash.index('class="grid g4"') < dash.index('<details class="panel"'),
   "the headline figures come before them, open")
 _lines = _re7.findall(r'<span class="p-d">(.*?)</span>', dash)
-P(len(_lines) == 5 and not any(_re7.search(r"\d", l.replace("CO<sub>2</sub>", "")) for l in _lines),
+P(len(_lines) == 6 and not any(_re7.search(r"\d", l.replace("CO<sub>2</sub>", "")) for l in _lines),
   "each has one plain line about what it is, with no figures in it")
 P('href="#eat-lancet"' in dash and 'id="eat-lancet"' in dash and "openAt(" in dash,
   "the EAT-Lancet card's link targets the folded section, and opens it")
@@ -342,13 +343,26 @@ print("\n=== the charts show every restaurant and every food group ===")
 _api = SESSION.get(BASE + "/api/analysis?window=all", timeout=900).json()
 _all = fetch("/?window=all")
 _arest = _all[_all.index('id="restaurants"'):_all.index('id="food-groups"')]
-_agroup = _all[_all.index('id="food-groups"'):_all.index('id="eat-lancet"')]
+_agroup = _all[_all.index('data-series="all"', _all.index('id="food-groups"')):
+               _all.index('id="top-contributors"')]
+_agroup = _agroup[:_agroup.index("</svg>")]     # the chart for all restaurants, not each one
 _n_rest = len(_re7.findall(r'class="bar" x="[\d.]+" y="[\d.]+" width="[\d.]+" height="\d+" rx="3"', _arest))
 _n_group = len(_re7.findall(r'class="bar" x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" rx="3"', _agroup))
 P(_n_rest == _api["headline"]["restaurants"],
   f"one bar per restaurant the headline counts ({_n_rest} of {_api['headline']['restaurants']})")
 P(_n_group == len(_api["by_food_group"]),
   f"and one per food group ({_n_group} of {len(_api['by_food_group'])})")
+
+print("\n=== CO2 by food group is its own section, one canteen at a time ===")
+# 20 Sep 2026: it shared a row with the product table, so it was half width, a different
+# height from its neighbour, and could only ever show the whole university.
+_fg = dash[dash.index('id="food-groups"'):dash.index('id="top-contributors"')]
+P('id="groupPick"' in _fg, "the food-group chart has a restaurant picker")
+_gs = _re7.findall(r'class="scroll-x group-series" data-series="([a-z0-9]+)"', _fg)
+P(len(_gs) > 3 and _gs[0] == "all", f"one chart per restaurant, opening on the whole ({len(_gs)})")
+P("<table" not in _fg, "and the product table has moved out of this section")
+P("<table" in dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')],
+  "into a section of its own")
 
 print("\n=== the EAT-Lancet comparison can be read one canteen at a time ===")
 # 20 Sep 2026, TU Delft: the university's own chart cannot tell a kitchen what to change.

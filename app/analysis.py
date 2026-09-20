@@ -277,6 +277,8 @@ def outgrown(result: dict) -> bool:
         return True
     if "by_restaurant" not in (result.get("eat_lancet") or {}):
         return True
+    if not result.get("food_group_by_restaurant"):
+        return True
     for key in ("by_month", "by_restaurant"):
         rows = result.get(key) or []
         if rows and not any("eat_lancet_score" in r for r in rows):

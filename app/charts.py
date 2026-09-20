@@ -344,6 +344,21 @@ def paired(rows, label_key="food_group", a_key="purchased_pct", b_key="reference
                 pad_l=pad_l, pad_r=pad_r, vmax=vmax)
 
 
+def group_series(rows, per_restaurant, **kw) -> list[dict]:
+    """CO2 by food group for everyone, then for one restaurant at a time.
+
+    Each restaurant is drawn on its own scale: a canteen a twentieth the size of the Aula,
+    drawn on the Aula's scale, is a row of slivers. What is being compared inside one chart
+    is the groups against each other, and the share column says how much of that
+    restaurant's own CO2 each one is.
+    """
+    out = [dict(key="all", label="All restaurants", chart=bars(rows or [], **kw))]
+    for i, r in enumerate(per_restaurant or []):
+        out.append(dict(key=f"g{i}", label=r["restaurant"],
+                        chart=bars(r.get("rows") or [], **kw)))
+    return out
+
+
 def paired_series(eat: dict) -> list[dict]:
     """The group-by-group comparison for everyone, then for one restaurant at a time.
 
