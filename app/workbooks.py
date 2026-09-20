@@ -87,16 +87,34 @@ def analysis_workbook(result: dict, scored: dict, client: str,
                 round(r["co2_kg"] / r["food_kg"], 3) if r["food_kg"] else None,
                 r.get("eat_lancet_score")]
                for r in result["by_restaurant_month"]])
+    # The workbook is a client's file and says what the screen says. It used to write the
+    # engine's own keys, so a reader who saw "Refined grain" on the dashboard found
+    # "refined_grain" in the sheet beside it (21 Sep 2026). Labelling is idempotent, so it
+    # is safe whether or not the page relabelled this result first.
+    def group(r):
+        return charts.food_group_label(r["food_group"])
+
     sheet("by food group", ["food group", "food kg", "kg CO2e", "% of weight", "% of CO2",
                             "intensity", "products"],
-          [[r["food_group"], r["food_kg"], r["co2_kg"], r["pct_of_weight"], r["pct_of_co2"],
+          [[group(r), r["food_kg"], r["co2_kg"], r["pct_of_weight"], r["pct_of_co2"],
             r["intensity_kg_co2_per_kg"], r["products"]] for r in result["by_food_group"]])
-    sheet("top contributors", ["artikelnr", "product", "food group", "food kg", "kg CO2e",
-                               "kg CO2e per kg", "% of CO2", "precision", "confidence"],
-          [[r["artikelnr"], r["description"], r["food_group"], r["food_kg"], r["co2_kg"],
-            r["co2_per_kg"], r["pct_of_co2"], charts.grade(r.get("source")),
-            r["confidence"]]
-           for r in result["top_contributors"]])
+    sheet("top contributors", ["rank", "artikelnr", "product", "food group", "food kg",
+                               "kg CO2e", "kg CO2e per kg", "% of CO2", "running % of CO2",
+                               "precision", "confidence"],
+          [[i, r["artikelnr"], r["description"], group(r), r["food_kg"], r["co2_kg"],
+            r["co2_per_kg"], r["pct_of_co2"], r.get("cumulative_pct_of_co2"),
+            charts.grade(r.get("source")), r["confidence"]]
+           for i, r in enumerate(result["top_contributors"], start=1)])
+    # The same ranking per kitchen. One sheet rather than one per restaurant, so it can be
+    # filtered and pivoted; the percentages are of that restaurant's own CO2, as on screen.
+    sheet("top per restaurant", ["restaurant", "rank", "artikelnr", "product", "food group",
+                                 "food kg", "kg CO2e", "% of this restaurant's CO2",
+                                 "running %", "precision"],
+          [[per["restaurant"], i, r["artikelnr"], r["description"], group(r),
+            r["food_kg"], r["co2_kg"], r["pct_of_co2"], r.get("cumulative_pct_of_co2"),
+            charts.grade(r.get("source"))]
+           for per in result.get("top_by_restaurant") or []
+           for i, r in enumerate(per.get("rows") or [], start=1)])
     # "scored as" says whether a row is a target or a limit: under a limit costs nothing, so
     # a reader adding the gaps up by hand would otherwise get a different total (21 Sep 2026).
     sheet("eat lancet", ["food group", "reference %", "purchased %", "gap", "scored as"],

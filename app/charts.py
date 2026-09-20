@@ -409,6 +409,36 @@ def paired_series(eat: dict) -> list[dict]:
     return out
 
 
+def top_series(rows, per_restaurant, limit: int = 40) -> list[dict]:
+    """The heaviest products for everyone, then for one restaurant at a time.
+
+    TU Delft asked for a top 40 "also per restaurant and period" (18 Sep 2026). A list for
+    the whole university names what the caterer buys centrally; the cook who has to change
+    one needs to know whether it is even on their own list.
+
+    `covers_pct` is the last row's cumulative share, so the list says how much of that
+    kitchen's CO2 it accounts for. Without it a top 40 reads as the whole story, and for
+    the Aula it is barely a third of it. A small canteen with fewer than 40 products shows
+    all of them and covers 100%, which is why the number is read off the rows rather than
+    assumed.
+
+    The page shows forty however many the engine returned. Publishing asks for sixty, to
+    leave room for the work queue, and a client reading sixty rows under a heading that
+    says forty is the same quiet wrong in the other direction. The cut is made here, and
+    the coverage is read off the row the cut leaves last.
+    """
+    def cut(rs):
+        rs = (rs or [])[:limit]
+        return rs, (rs[-1].get("cumulative_pct_of_co2") if rs else 0.0)
+
+    shown, covers = cut(rows)
+    out = [dict(key="all", label="All restaurants", rows=shown, covers_pct=covers)]
+    for i, r in enumerate(per_restaurant or []):
+        shown, covers = cut(r.get("rows"))
+        out.append(dict(key=f"t{i}", label=r["restaurant"], rows=shown, covers_pct=covers))
+    return out
+
+
 def confidence(tiers) -> list[dict]:
     """The tier ladder as one bar. Widths are shares of weight, so it always sums to 100."""
     out = []

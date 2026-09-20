@@ -365,6 +365,37 @@ P("<table" not in _fg, "and the product table has moved out of this section")
 P("<table" in dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')],
   "into a section of its own")
 
+print("\n=== the top contributors are forty, and can be read one canteen at a time ===")
+# 18 Sep 2026, Sander (TU Delft): "Top40 of products that contribute to CO2, also per
+# restaurant and period". A list of twenty under a heading that says forty, and a list that
+# reads as the whole story, are both ways of being quietly wrong.
+_top = dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')]
+P('id="topPick"' in _top, "the section has a restaurant picker")
+_ts = _re7.findall(r'class="scroll-x top-series" data-series="(\w+)" data-covers="([^"]*)"', _top)
+P(len(_ts) > 3 and _ts[0][0] == "all", f"one list per restaurant, opening on the whole ({len(_ts)})")
+_all_list = _top[_top.index('data-series="all"'):]
+_all_list = _all_list[:_all_list.index("</table>")]
+_n_top = _all_list.count("<tr>") - 1                       # less the header row
+P(_n_top == 40, f"forty products are listed, not twenty ({_n_top})")
+P("Running&nbsp;%" in _top, "a running total says how far down the list a reader has got")
+# The coverage claim must be the list's own last running total, not a number typed once.
+# Read off the last row rather than the whole list: the rank column is muted too, and the
+# running total is the second of the pair.
+_covers = float(dict(_ts)["all"])
+_last_row = _all_list[_all_list.rindex("<tr>"):]
+_muted = _re7.findall(r'<td class="num muted">([\d.]+)</td>', _last_row)
+P(len(_muted) == 2 and abs(float(_muted[1]) - _covers) < 0.05,
+  f"and the section says how much of the CO2 those forty are ({_covers}%)")
+P(0 < _covers < 100, "which is not the whole of it, and the page says so")
+# The count is written out as well as the share, so a kitchen with two products on its
+# list is not described as "these forty".
+_said = _re7.search(r'<strong id="topCount">(\d+)</strong>', _top)
+P(_said and int(_said.group(1)) == _n_top,
+  f"the sentence counts the products it is describing ({_said.group(1) if _said else None})")
+# data-count is the headline count-up's hook: a second meaning for it here would have the
+# animation overwrite these tables with a number.
+P('data-count' not in _top, "and the lists do not borrow the count-up's attribute")
+
 print("\n=== the EAT-Lancet comparison can be read one canteen at a time ===")
 # 20 Sep 2026, TU Delft: the university's own chart cannot tell a kitchen what to change.
 _eat = dash[dash.index('id="eat-lancet"'):]
@@ -400,7 +431,7 @@ P("{% if not trend.has_eat and me and me.is_admin %}" in _tpl[:_tpl.index(_hint)
 P(_hint not in dash, "it stays hidden while this period has its EAT-Lancet line")
 
 print("\n=== nutrition is nowhere in the app ===")
-banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g", "kJ"]
+banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g"]
 # 21 Sep 2026. Two of those words are now the names of EAT-Lancet FOOD GROUPS -- shelves a
 # kitchen buys from -- and one is in the citation of the reference diet ("~2400 kcal/day").
 # None of them is a nutrient read off a product, which is what this guard exists to catch.
@@ -408,11 +439,19 @@ banned = ["protein", "kcal", "saturated", "carbohydrate", "sugars per", "fibre_g
 # nutrition ever arrives under one of these words, it will not be wearing these phrases.
 ALLOWED = ["unsaturated oils", "saturated fats", "added sugars",
            "~2400 kcal/day", "2400 kcal/day"]
+# kJ is a UNIT, and the only one here that is two letters long. Lowercased and searched for
+# as a substring it matched "BLOKJES" -- Dutch for cubes, as in cheese cubes and bacon cubes
+# -- the moment the top-40 lists put those products on the page (21 Sep 2026). A unit keeps
+# its capital J and stands on its own, so that is what is looked for, in the page as served.
+_KJ = _re7.compile(r"\bkJ\b")
 for path in PAGES:
-    html = fetch(path).lower()
+    raw = fetch(path)
+    html = raw.lower()
     for phrase in ALLOWED:
         html = html.replace(phrase, " ")
     hits = [w for w in banned if w.lower() in html]
+    if _KJ.search(raw):
+        hits.append("kJ")
     P(not hits, f"{path:14} shows no nutrition ({hits})")
 _dash_l = dash.lower()
 P(_dash_l.count("saturated")

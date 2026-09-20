@@ -410,7 +410,7 @@
   <summary><div class="inner"><div class="p-card">
     <span class="p-i" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 19V9"/><path d="M12 19V5"/><path d="M17 19v-7"/></svg></span>
     <span class="p-txt"><span class="p-t">Top contributors</span>
-    <span class="p-d">The individual products carrying the most CO<sub>2</sub>.</span></span>
+    <span class="p-d">The products carrying the most CO<sub>2</sub>, for all restaurants or one.</span></span>
     <span class="p-o" aria-hidden="true"></span>
   </div></div></summary>
 <!-- ============================================ top contributors (dark) -->
@@ -418,9 +418,62 @@
   <div class="inner">
     <div class="sec-label sl-teal">Top contributors</div>
     <h2 class="sec-h2">The products with the <em>most CO<sub>2</sub></em></h2>
-    <p class="muted" style="margin-top:14px;max-width:62ch;">
-      Ranked for the whole period. Each one says how precisely its figure was found.
-    </p>
+    {# A top 40 per restaurant, asked for by TU Delft on 18 Sep 2026. Every list is written
+       on the server and hidden, like the trend and the food groups, so the picker shows one
+       and nothing is computed in the browser. #}
+    <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin-top:20px;">
+      {% if top_series and top_series|length > 1 %}
+      <label class="muted" style="display:flex;gap:10px;align-items:center;font-size:13px;">
+        Restaurant
+        <select id="topPick" class="pick-select">
+          {% for s in top_series %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      {# The count is written out too, not just the share. A canteen with two products on
+         its list is not "these forty", and a sentence that says so is a small lie in the
+         one section whose whole job is to be checkable (21 Sep 2026). #}
+      <p class="muted" style="font-size:13px;">
+        Ranked for the whole period. These
+        <strong id="topCount">{{ top_series[0].rows|length if top_series else 0 }}</strong>
+        products are
+        <strong id="topCovers">{{ top_series[0].covers_pct if top_series else 0 }}%</strong>
+        of the CO<sub>2</sub> shown &mdash; the rest is spread across everything else bought.
+      </p>
+    </div>
+    <div class="card sr" style="margin-top:20px;">
+      {% for s in top_series %}
+      <div class="scroll-x top-series" data-series="{{ s.key }}" data-covers="{{ s.covers_pct }}"
+           data-rows="{{ s.rows|length }}"
+           {% if not loop.first %}hidden{% endif %}>
+        <table class="tbl">
+          <thead><tr>
+            <th class="num" style="width:38px;">#</th>
+            <th>Product</th><th>Food group</th><th class="num">kg of food</th>
+            <th class="num">kg CO<sub>2</sub>e</th>
+            <th class="num">% of CO<sub>2</sub></th><th class="num">Running&nbsp;%</th>
+            <th>Precision</th>
+          </tr></thead>
+          <tbody>
+          {% for p in s.rows %}
+          <tr>
+            <td class="num muted">{{ loop.index }}</td>
+            <td class="name">{{ p.description|truncate(46) }}</td>
+            <td class="muted">{{ p.food_group }}</td>
+            <td class="num">{{ "{:,}".format(p.food_kg) }}</td>
+            <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
+            <td class="num">{{ p.pct_of_co2 }}</td>
+            <td class="num muted">{{ p.cumulative_pct_of_co2 }}</td>
+            <td><span class="pill {{ 'soft' if p.product_level else '' }}">{{ p.grade }}</span></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+    </div>
+    {# The old single table, kept only for a saved figure from before the picker existed. #}
+    {% if not top_series %}
     <div class="card sr" style="margin-top:24px;">
       <div class="scroll-x">
         <table class="tbl">
@@ -441,6 +494,7 @@
         </table>
       </div>
     </div>
+    {% endif %}
   </div>
 </section>
 </details>

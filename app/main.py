@@ -193,6 +193,13 @@ def relabel(result: dict) -> dict:
     for row in result.get("top_contributors", []):
         row["food_group"] = charts.food_group_label(row["food_group"])
         row["grade"] = charts.grade(row.get("source"))
+    # The per-restaurant lists are the same products and must read the same way. Without
+    # this a kitchen's own list showed the engine's bucket keys while the list above it
+    # showed a caterer's words (21 Sep 2026).
+    for per in result.get("top_by_restaurant", []):
+        for row in per.get("rows", []):
+            row["food_group"] = charts.food_group_label(row["food_group"])
+            row["grade"] = charts.grade(row.get("source"))
     return result
 
 
@@ -410,6 +417,8 @@ def _charts(result: dict) -> dict:
             result["by_food_group"], result.get("food_group_by_restaurant"),
             label_key="food_group", value_key="co2_kg", width=980, pad_l=200, pad_r=130,
             secondary_key="pct_of_co2", secondary_suffix="%"),
+        top_series=charts.top_series(result.get("top_contributors"),
+                                     result.get("top_by_restaurant")),
         eat_chart=charts.paired(result["eat_lancet"]["rows"]),
         eat_series=charts.paired_series(result["eat_lancet"]),
         eat_explain=charts.eat_explain(result.get("eat_lancet")))

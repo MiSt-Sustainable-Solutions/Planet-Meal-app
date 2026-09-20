@@ -64,7 +64,7 @@ def version() -> dict | None:
 
 
 def score(lines: list[dict], label: str = "analysis", profile: str | None = None,
-          top: int = 20, queue: int = 60) -> dict:
+          top: int = 40, queue: int = 60) -> dict:
     """Score purchase lines. -> the whole dashboard in one response.
 
     Raises CatalogueDown so the caller can show something honest instead of a stack trace.

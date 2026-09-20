@@ -317,6 +317,23 @@ if (groupPick) groupPick.addEventListener('change', function(){
   });
 });
 
+/* The top 40, one restaurant at a time. The coverage line follows the picker: forty
+   products are a third of the CO2 at a large site and all of it at a small one, and a
+   sentence left behind would claim the wrong one. */
+var topPick = document.getElementById('topPick');
+if (topPick) topPick.addEventListener('change', function(){
+  var covers = null, count = null;
+  document.querySelectorAll('.top-series').forEach(function(el){
+    var mine = el.getAttribute('data-series') === topPick.value;
+    el.hidden = !mine;
+    if (mine) { covers = el.getAttribute('data-covers'); count = el.getAttribute('data-rows'); }
+  });
+  var box = document.getElementById('topCovers');
+  if (box) box.textContent = (covers === null ? '—' : covers + '%');
+  var n = document.getElementById('topCount');
+  if (n) n.textContent = (count === null ? '—' : count);
+});
+
 /* The same for the EAT-Lancet comparison: one restaurant at a time. The score beside the
    heading follows the picker, or it would go on reading as the whole university's. */
 var eatPick = document.getElementById('eatPick');

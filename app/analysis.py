@@ -279,6 +279,16 @@ def outgrown(result: dict, profile: str | None = None) -> bool:
         return True
     if not result.get("food_group_by_restaurant"):
         return True
+    if not result.get("top_by_restaurant"):
+        return True
+    # A top-20 list saved before the list became a top 40. Nothing is missing here either,
+    # so only the length gives it away -- and a list of twenty under a heading that says
+    # forty is exactly the quiet kind of wrong this function exists to stop. A window with
+    # fewer than forty products of its own is already complete at whatever length it has.
+    held = result.get("top_contributors") or []
+    products = (result.get("headline") or {}).get("products") or 0
+    if len(held) < min(40, products):
+        return True
     # And a result scored against a different reference diet. This one is not a missing
     # field: the shape is identical and only the meaning changed, which is worse. On
     # 21 Sep 2026 the score moved to the 2025 EAT-Lancet diet and every period except the
@@ -332,7 +342,7 @@ def staleness(tenant: str | None = None, live: dict | None = None) -> dict | Non
 
 # --------------------------------------------------------------------------- run
 def run(window: str | None = None, frm: str | None = None, to: str | None = None,
-        profile: str | None = None, top: int = 20, save: bool = True,
+        profile: str | None = None, top: int = 40, save: bool = True,
         tenant: str | None = None, force: bool = False) -> dict:
     """Score a window and (by default) save the result.
 
