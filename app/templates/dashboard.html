@@ -67,7 +67,11 @@
         <div class="stat flip-front">
           <span class="k">EAT-Lancet score</span>
           <span class="v"><span data-count="{{ h.eat_lancet_score }}" data-dp="3">{{ h.eat_lancet_score }}</span></span>
-          <span class="sub">0 to 1, where 1 matches the EAT-Lancet diet</span>
+          {# Not "0 to 1": the score is 1 minus the sum of the deviations, so it has a top and
+             no floor, and a kitchen far from the reference diet scores below zero. The
+             restaurant chart draws those in the warning colour, so the card must not deny
+             they exist (23 Sep 2026). #}
+          <span class="sub">Runs up to 1, where 1 matches the EAT-Lancet diet</span>
           {% if eat_explain %}
           <button type="button" class="flip-btn" data-flip="eatCard" aria-expanded="false">How is this worked out?</button>
           {% endif %}

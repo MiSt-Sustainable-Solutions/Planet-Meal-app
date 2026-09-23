@@ -377,6 +377,15 @@ P("<table" not in _fg, "and the product table has moved out of this section")
 P("<table" in dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')],
   "into a section of its own")
 
+print("\n=== the score's scale is stated honestly ===")
+# 23 Sep 2026, Mrigank: the headline card said "0 to 1" while the restaurant chart drew
+# scores below zero in the warning colour. The score is 1 minus the summed deviations --
+# it has a top and no floor, and the card must not deny that.
+P("0 to 1, where 1 matches" not in dash, "the card no longer claims a floor of zero")
+P("Runs up to 1, where 1 matches the EAT-Lancet diet" in dash,
+  "it says the score runs up to 1")
+P("can fall below zero" in dash, "and the page says somewhere that a score can go negative")
+
 print("\n=== the period reads as a year, not a financial year ===")
 # 23 Sep 2026, Mrigank: "FY usually means financial year". These windows are January to
 # December. The key in the address stays FY2025 so saved and published figures still
