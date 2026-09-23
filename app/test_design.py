@@ -148,9 +148,17 @@ dash = fetch("/")
 # collected for recycling". A check satisfied by an unrelated sentence checks nothing. It
 # now reads the percentage out of the confidence line itself.
 import re as _re
-_m = _re.search(r"(\d{1,3})% matched to\s*<em>specific products", dash)
+# 23 Sep 2026: the heading leads with the share of the CO2 that is matched, not the share
+# of the weight. It is the higher number and the one that matters when someone quotes a
+# figure -- the heaviest products are the ones a person has checked. Weight follows it.
+_m = _re.search(r"(\d{1,3})% of the CO<sub>2</sub> is from\s*<em>specific products", dash)
 P(bool(_m) and 0 < int(_m.group(1)) <= 100,
-  f"the confidence line is on the dashboard ({_m.group(1) + '%' if _m else 'missing'})")
+  f"the confidence line leads with the CO2 share ({_m.group(1) + '%' if _m else 'missing'})")
+_w = _re.search(r"And (\d{1,3})% of the weight bought", dash)
+P(bool(_w) and 0 < int(_w.group(1)) <= 100,
+  f"and the weight follows it ({_w.group(1) + '%' if _w else 'missing'})")
+P(bool(_m) and bool(_w) and int(_m.group(1)) >= int(_w.group(1)),
+  "the CO2 share is the larger of the two, which is why it leads")
 # The per-piece gap moved to Data health on 13 Sep 2026, by decision. Most of it was
 # packaging -- 5.2 of the 7.0 points -- so on the dashboard it overstated the gap.
 P("weighs" in fetch("/data-health").lower(), "the per-piece gap is on Data health")
@@ -207,8 +215,8 @@ if _pr["has_spend"]:
     P(any(r["label"] == "No weight" for r in _pr["rows"]) == bool(
         (_run["data_health"].get("no_weight") or {}).get("pct_of_spend")),
       "food with no weight is its own row when there is any")
-P(f"And {_pr['specific_co2']}% of the CO<sub>2</sub>." in dash,
-  f"the headline also says how much of the CO2 is matched specifically ({_pr['specific_co2']}%)")
+P(f"{_pr['specific_co2']}% of the CO<sub>2</sub> is from" in dash,
+  f"the heading's CO2 share is the one computed here ({_pr['specific_co2']}%)")
 _old = _charts.precision({"by_tier": [
     {"source": "curated_pin", "pct_of_weight": 60, "pct_of_co2": 70},
     {"source": "bucket_avg", "pct_of_weight": 40, "pct_of_co2": 30}]})
@@ -220,7 +228,9 @@ print("\n=== charts answer at once, per restaurant, with EAT-Lancet beside CO2 =
 # 16 Sep 2026. Hover used the browser's own tooltip, which waits a second or two; the trend
 # had no restaurant filter and no EAT-Lancet; the restaurant chart gave CO2 per kg as a
 # bare number.
-_charts_html = dash[dash.index("trend (light)"):dash.index("top contributors") if "top contributors" in dash else len(dash)]
+# Sliced by section id, not by a decorative HTML comment: the comment said "(light)"
+# and broke this the day the tone changed to light2 (23 Sep 2026).
+_charts_html = dash[dash.index('id="trend"'):dash.index('id="top-contributors"')]
 P("<title>" not in _charts_html, "no chart uses the slow browser tooltip")
 P('data-tip="' in _charts_html and "placeTip" in dash, "they use the instant one")
 # Seen on 16 Sep 2026: every month of the trend a solid black block. The hover areas were
@@ -314,8 +324,10 @@ print("\n=== the dashboard is an overview: headline open, every section one line
 # and each section below is a single line that opens in place.
 import re as _re7
 _panels = _re7.findall(r'<details class="panel" id="([a-z-]+)"( open)?>', dash)
-P([pid for pid, _ in _panels] == ["precision", "trend", "restaurants", "food-groups",
-                                  "top-contributors", "eat-lancet"],
+# 23 Sep 2026: "How precise" moved to the end. It answers a question a reader only has
+# once they have seen a number, and leading with it put our doubts before their figures.
+P([pid for pid, _ in _panels] == ["trend", "restaurants", "food-groups",
+                                  "top-contributors", "eat-lancet", "precision"],
   f"six sections, in order ({', '.join(pid for pid, _ in _panels)})")
 P(not any(o for _, o in _panels), "all folded when the page opens")
 P(dash.index('class="grid g4"') < dash.index('<details class="panel"'),
