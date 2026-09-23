@@ -117,8 +117,14 @@ PUBLIC_PREFIXES = ("/static", "/set-password")
 # This is the retrospective view, and while the catalogue moves for OUR reasons several
 # times a week it reads as churn rather than candour. When a month passes where the only
 # changes are the client's own files, take it out of this tuple and un-hide the nav link.
+# /data-health is MiSt's too, from 23 Sep 2026. It is the best page in the app and the
+# wrong one to hand a caterer: it answers "how sure are we?" in tiers, backlogs and crude
+# averages, which is our working language, not theirs. A client reading it learns mostly
+# that there is doubt, without the means to judge how much -- so it confused rather than
+# reassured. What they actually need from it, the precision grades, is already on the
+# dashboard in four words. Bring it back when it has a client's version rather than ours.
 ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner",
-               "/history", "/catalogue", "/adjustments")
+               "/history", "/catalogue", "/adjustments", "/data-health")
 
 
 @app.middleware("http")

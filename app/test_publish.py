@@ -130,7 +130,9 @@ P("being prepared" in page, "the dashboard says their figures are being prepared
 P("CANTEEN" not in page.upper() and "Download Excel" not in page,
   "with no figures, restaurants or downloads on it")
 P(kg(A) is None and A.get("/api/analysis").status_code == 404, "no figures by API either")
-P("being prepared" in A.get("/data-health").text, "nor on Data health")
+# Data health became MiSt's own page on 23 Sep 2026, so a client asking for it is refused
+# outright rather than shown an empty one: there is no client version of it to show.
+P(A.get("/data-health").status_code == 403, "and Data health is not theirs to open")
 files = A.get("/files").text
 P("Alpha spring.xlsx" not in files, "the Files page lists no file")
 P(A.get("/export.xlsx").status_code == 404, "the Excel download is refused")
