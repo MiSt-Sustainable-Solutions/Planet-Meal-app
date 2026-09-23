@@ -365,6 +365,18 @@ P("<table" not in _fg, "and the product table has moved out of this section")
 P("<table" in dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')],
   "into a section of its own")
 
+print("\n=== the period reads as a year, not a financial year ===")
+# 23 Sep 2026, Mrigank: "FY usually means financial year". These windows are January to
+# December. The key in the address stays FY2025 so saved and published figures still
+# resolve; the test is that it never reaches a reader's eyes.
+_visible = _re7.sub(r"<[^>]+>", " ", dash)
+P(not _re7.search(r"FY\d{4}", _visible), "no FY#### anywhere a reader can see")
+_eyebrow = _re7.search(r'class="sec-label">(.*?)</div>', dash, _re7.S).group(1).strip()
+P(_re7.search(r"\b(19|20)\d{2}\b", _eyebrow) or "All data" in _eyebrow,
+  f"the heading names the period plainly ({_eyebrow})")
+P('value="FY' in dash or 'window=FY' in dash,
+  "while the key a link carries is left alone, so old links still resolve")
+
 print("\n=== the top contributors are forty, and can be read one canteen at a time ===")
 # 18 Sep 2026, Sander (TU Delft): "Top40 of products that contribute to CO2, also per
 # restaurant and period". A list of twenty under a heading that says forty, and a list that

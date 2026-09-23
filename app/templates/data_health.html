@@ -35,7 +35,7 @@
   <div class="inner">
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;">
       <div>
-        <div class="sec-label">Data health · {{ result.window.label }}</div>
+        <div class="sec-label">Data health · {{ period(result.window.label) }}</div>
         <h1 class="page-h1">What we are <em>not sure about.</em></h1>
       </div>
       {% include "_picker.html" %}
@@ -50,7 +50,7 @@
        review sheet is built from whatever it is showing. #}
     <p class="muted" style="font-size:13px;margin-top:14px;max-width:64ch;">
       Everything below &mdash; the ladder, the work queue and the review sheet &mdash; is
-      for <strong>{{ result.window.label }}</strong>:
+      for <strong>{{ period(result.window.label) }}</strong>:
       {{ "{:,}".format(result.headline.lines) }} purchase lines,
       {{ result.headline.period_from }} to {{ result.headline.period_to }}.
       {% if result.picked %}

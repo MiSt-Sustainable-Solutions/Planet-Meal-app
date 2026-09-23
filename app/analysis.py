@@ -22,7 +22,24 @@ import catalogue
 import config
 import db
 
-FY = re.compile(r"^FY(\d{4})$", re.I)
+# The KEY a window is addressed by, and the WORDS a person reads, are different things.
+# The key stays "FY2025": it is in saved analyses, in every published copy, and in links
+# people have already sent each other, and renaming it would orphan all three. The label is
+# just "2025", because these windows run January to December -- a calendar year, never a
+# financial one. FY was wrong as well as confusing (23 Sep 2026). A bare year is accepted
+# as a key too, so a hand-typed address works.
+FY = re.compile(r"^(?:FY)?(\d{4})$", re.I)
+
+
+def period_label(label: str | None) -> str:
+    """What a person reads for a window. "FY2025" -> "2025"; anything else unchanged.
+
+    Applied when a page is DRAWN, not when a figure is saved, so results stored under the
+    old wording read correctly without being recalculated. A label is not a number: there
+    is nothing to re-derive, and making people wait for one would be absurd.
+    """
+    m = FY.match((label or "").strip())
+    return m.group(1) if m else (label or "")
 PICK = re.compile(r"^files:(.+)$", re.I)
 
 
@@ -106,9 +123,9 @@ def parse_window(window: str | None = None, frm: str | None = None, to: str | No
         w = window or default_window(tenant)
         m = FY.match(w)
         if not m:
-            raise WindowError(f"unknown window {w!r} — use FY####, 'all', or from/to")
+            raise WindowError(f"unknown window {w!r} — use a year, 'all', or from/to")
         y = int(m.group(1))
-        y0, m0, y1, m1, label = y, 1, y, 12, f"FY{y}"
+        y0, m0, y1, m1, label = y, 1, y, 12, str(y)
 
     if (y0 * 100 + m0) > (y1 * 100 + m1):
         raise WindowError("the window starts after it ends")
@@ -139,7 +156,7 @@ def windows(tenant: str | None = None) -> list[dict]:
     for y in sorted(by_year, reverse=True):
         ms = by_year[y]
         partial = [x["period"] for x in ms if not x["complete"]]
-        out.append(dict(key=f"FY{y}", label=f"FY{y}", months=len(ms),
+        out.append(dict(key=f"FY{y}", label=str(y), months=len(ms),
                         complete=len(ms) == 12 and not partial, partial=partial))
     if out:
         out.append(dict(key="all", label="All data", months=len(months),

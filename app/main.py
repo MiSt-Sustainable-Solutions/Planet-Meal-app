@@ -165,6 +165,7 @@ async def gate(request: Request, call_next):
                                          support_emails=config.support_emails(),
                                 catalogue_api=config.CATALOGUE_API, api_up=True,
                                          tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
+                                         period=analysis.period_label,
                                          stale=None, tenants=[], viewing=None),
             status_code=403)
     return await call_next(request)
@@ -258,6 +259,7 @@ def ctx(request: Request, page: str, **kw) -> dict:
                 support_emails=config.support_emails(),
                 catalogue_api=config.CATALOGUE_API, api_up=health is not None,
                 tier_swatch=charts.TIER_SWATCH, fg=charts.food_group_label,
+                period=analysis.period_label,
                 stale=analysis.staleness(tenant=tenant,
                                          live=(health or {}).get("catalogue")),
                 # `me` is who the page is drawn for, which a preview changes. The admin
@@ -436,7 +438,11 @@ def _published_options(pub: dict) -> list[dict]:
     A client picks one of these rather than ticking files: any combination of files would
     be a figure nobody published.
     """
-    return list(pub["windows"]) + [
+    # A publication stores the wording that was current when it was made, so a copy
+    # published before 23 Sep 2026 still says "FY2025" in its own rows. The picker reads
+    # them out here, so it is here that they get today's words -- nothing stored is
+    # rewritten, and a frozen figure stays frozen.
+    return [dict(w, label=analysis.period_label(w.get("label"))) for w in pub["windows"]] + [
         dict(key=f"files:{f['upload_id']}", label=f["filename"], file=True, partial=[])
         for f in pub["files"]]
 

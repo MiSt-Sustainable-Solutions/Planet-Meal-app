@@ -419,6 +419,21 @@ if catalogue.health() is not None:
 else:
     print("  (catalogue API not running — skipping the bridge tests)")
 
+print("\n=== a period is a calendar year, and says so ===")
+# 23 Sep 2026. These windows run January to December, so "FY2025" did not merely confuse --
+# it named the wrong kind of year. The KEY stays FY2025: it is in saved analyses, in every
+# published copy, and in links already sent. Only the wording a person reads changes, and
+# it changes when a page is DRAWN, so figures saved under the old wording read correctly
+# without being recalculated.
+import analysis as _an   # noqa: E402
+P(_an.period_label("FY2025") == "2025", "a stored FY label reads as the year")
+P(_an.period_label("2025") == "2025", "and one already in the new wording is unchanged")
+for _keep in ("All data", "File: December 2024.xlsx", "2025-01 to 2025-06"):
+    P(_an.period_label(_keep) == _keep, f"{_keep!r} is left alone")
+P(_an.period_label(None) == "" and _an.period_label("") == "", "and nothing breaks on nothing")
+P(bool(_an.FY.match("2026")) and bool(_an.FY.match("FY2026")),
+  "both spellings are accepted as a key, so links already sent keep working")
+
 shutil.rmtree(_TMP, ignore_errors=True)
 print(f"\n{'ALL PASS' if not FAILED else str(len(FAILED)) + ' FAILED'}")
 sys.exit(1 if FAILED else 0)

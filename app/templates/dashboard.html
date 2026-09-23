@@ -36,7 +36,7 @@
            whose purchasing this is, and on the one line that says what you are looking
            at it read as part of the client's name. Still on the tenant row; just not
            here. It also left a dangling separator for every client with no caterer set. #}
-        <div class="sec-label">{{ client_name }} · {{ result.window.label }}</div>
+        <div class="sec-label">{{ client_name }} · {{ period(result.window.label) }}</div>
         <h1 class="page-h1">Food purchasing across
           <em>{{ h.restaurants }} restaurant{{ '' if h.restaurants == 1 else 's' }}</em></h1>
         {% if published %}
