@@ -64,6 +64,9 @@ COLUMNS = [
     ("co2",            "kg CO2e per kg",      "#,##0.###", 15),
     ("co2_kg",         "kg CO2e",             "#,##0.##",  12),
     ("precision",      "Precision",           None,        12),
+    # Where a number or a group is a judgement rather than a measurement, and which way
+    # it may be off -- asked for by TU Delft's reviewer (4 Oct 2026). Empty otherwise.
+    ("provisional",    "Provisional",         None,        40),
     ("reference_kind", "Matched to (type)",   None,        19),
     ("matched_to",     "Matched to",          None,        36),
     ("nevo_code",      "NEVO code",           None,        11),
@@ -100,7 +103,12 @@ def _sheet_notes(ws, client: str, label: str, rows: int, version, extra) -> int:
         "mean of.",
         "'Food group' is ours; 'EAT-Lancet group' is the diet's group it is scored in. "
         "They differ: refined and whole grain are both Whole Grains, and sweets, "
-        "ultra-processed food and other food are outside the diet.",
+        "ultra-processed food and other food are outside the diet -- except where a "
+        "product counts in the diet by what it is made of: a cookie stays ultra-processed "
+        "and counts as grains, a meat croquette counts as red meat.",
+        "'Provisional' is filled where a number or a group is a judgement rather than a "
+        "measurement, and says which way it may be off: a pizza priced as its dough is a "
+        "lower bound, cooking cream priced as whipped cream an upper bound.",
         "'Precision' is the word the dashboard uses: Exact (checked for this exact "
         "product), Close (matched to a similar known product), Estimated (an average for "
         "its food group). 'Group from' says how the line's EAT-Lancet group was decided.",
@@ -159,6 +167,8 @@ def add_sheet(wb, rows: list[dict], client: str, label: str, version=None,
                      if row.get("is_food") else None)
             elif key == "precision":
                 v = charts.grade(row.get("footprint_src"))
+            elif key == "provisional":
+                v = (row.get("provisional") or None) if row.get("is_food") else None
             elif key == "matched_to":
                 v = matched_name(row)
             elif key == "nevo_code":

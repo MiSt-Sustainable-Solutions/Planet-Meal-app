@@ -132,6 +132,9 @@ def combine(result: dict, names, top: int = 40) -> dict | None:
         cum += co2
         # the diet group, an eighth field since 4 Oct 2026; a detail without it gives none
         diet = dict(eat_group=products[p][7]) if len(products[p]) > 7 else {}
+        # and why a number or a group is a judgement, a ninth field since later that day
+        if len(products[p]) > 8 and products[p][8]:
+            diet["provisional"] = products[p][8]
         rows.append(dict(**diet,
             artikelnr=art, description=desc, category=cat,
             food_group=charts.food_group_label(bucket), food_kg=round(kg), co2_kg=round(co2),

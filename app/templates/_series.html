@@ -119,11 +119,21 @@
             <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
             <td class="num">{{ p.pct_of_co2 }}</td>
             <td class="num muted">{{ p.cumulative_pct_of_co2 }}</td>
-            <td><span class="pill {{ 'soft' if p.product_level else '' }}">{{ p.grade }}</span></td>
+            {# A judgement rather than a measurement, and why: TU Delft asked to see which
+               (4 Oct 2026). The reason is in the tooltip and in the Excel. #}
+            <td><span class="pill {{ 'soft' if p.product_level else '' }}">{{ p.grade }}</span>{% if p.provisional %}
+              <span class="pill warn" title="{{ p.provisional }}">provisional</span>{% endif %}</td>
           </tr>
           {% endfor %}
           </tbody>
         </table>
+        {% if s.rows|selectattr('provisional')|list %}
+        <p class="muted" style="font-size:12.5px;margin-top:10px;">
+          <span class="pill warn">provisional</span> a judgement rather than a measurement:
+          the nearest RIVM product, or a mixed product counted by what it is mostly made of.
+          Hover for why; the Excel says it in full.
+        </p>
+        {% endif %}
       </div>
 {% endmacro %}
 
