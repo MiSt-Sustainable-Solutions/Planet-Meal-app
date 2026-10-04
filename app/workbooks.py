@@ -100,22 +100,28 @@ def analysis_workbook(result: dict, scored: dict, client: str,
             r["intensity_kg_co2_per_kg"], r["products"]] for r in result["by_food_group"]])
     # "matched to" names what the footprint was taken from, as on the lines sheet (4 Oct
     # 2026). Empty for figures scored before the catalogue recorded it.
-    sheet("top contributors", ["rank", "artikelnr", "product", "food group", "food kg",
+    # The diet's group, not ours, in both top sheets (4 Oct 2026): "Whole Grains" covers
+    # refined grain too, and sweets are outside the diet. Rows scored before the catalogue
+    # said fall back to the food group, as on screen.
+    def diet(r):
+        return charts.eat_group_label(r) or group(r)
+
+    sheet("top contributors", ["rank", "artikelnr", "product", "EAT-Lancet group", "food kg",
                                "kg CO2e", "kg CO2e per kg", "% of CO2", "running % of CO2",
                                "precision", "matched to (type)", "matched to", "NEVO code",
                                "confidence"],
-          [[i, r["artikelnr"], r["description"], group(r), r["food_kg"], r["co2_kg"],
+          [[i, r["artikelnr"], r["description"], diet(r), r["food_kg"], r["co2_kg"],
             r["co2_per_kg"], r["pct_of_co2"], r.get("cumulative_pct_of_co2"),
             charts.grade(r.get("source")), r.get("reference_kind"),
             lines_export.matched_name(r), lines_export.nevo_code(r), r["confidence"]]
            for i, r in enumerate(result["top_contributors"], start=1)])
     # The same ranking per kitchen. One sheet rather than one per restaurant, so it can be
     # filtered and pivoted; the percentages are of that restaurant's own CO2, as on screen.
-    sheet("top per restaurant", ["restaurant", "rank", "artikelnr", "product", "food group",
+    sheet("top per restaurant", ["restaurant", "rank", "artikelnr", "product", "EAT-Lancet group",
                                  "food kg", "kg CO2e", "% of this restaurant's CO2",
                                  "running %", "precision", "matched to (type)", "matched to",
                                  "NEVO code"],
-          [[per["restaurant"], i, r["artikelnr"], r["description"], group(r),
+          [[per["restaurant"], i, r["artikelnr"], r["description"], diet(r),
             r["food_kg"], r["co2_kg"], r["pct_of_co2"], r.get("cumulative_pct_of_co2"),
             charts.grade(r.get("source")), r.get("reference_kind"),
             lines_export.matched_name(r), lines_export.nevo_code(r)]

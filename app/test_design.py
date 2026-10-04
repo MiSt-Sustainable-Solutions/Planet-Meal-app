@@ -519,6 +519,16 @@ _all_list = _top[_top.index('data-series="all"'):]
 _all_list = _all_list[:_all_list.index("</table>")]
 _n_top = _all_list.count("<tr>") - 1                       # less the header row
 P(_n_top == 40, f"forty products are listed, not twenty ({_n_top})")
+# 4 Oct 2026: the list shows the diet's group, not our food group -- "Whole Grains" for
+# refined bread too, "Outside the diet (...)" for a biscuit.
+if (_run.get("top_contributors") or [{}])[0].get("eat_group", "absent") != "absent":
+    P("<th>EAT-Lancet group</th>" in _all_list and "<th>Food group</th>" not in _all_list,
+      "the top contributors are headed by the EAT-Lancet group")
+    _cells = _re7.findall(r'<td class="name">.*?</td>\s*<td class="muted">([^<]*)</td>', _all_list)
+    P(_cells and all(c.startswith("Outside the diet (") or c in (
+        "Added sugars", "Dairy Foods", "Eggs", "Fish", "Fruits", "Legumes", "Nuts", "Red Meat",
+        "Saturated fats", "Starchy Products", "Unsaturated oils", "Vegetables", "White Meat",
+        "Whole Grains") for c in _cells), f"and every row names one ({sorted(set(_cells))[:6]})")
 P("Running&nbsp;%" in _top, "a running total says how far down the list a reader has got")
 # The coverage claim must be the list's own last running total, not a number typed once.
 # Read off the last row rather than the whole list: the rank column is muted too, and the

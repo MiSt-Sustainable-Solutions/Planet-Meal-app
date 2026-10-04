@@ -110,7 +110,8 @@ head_row = next(i for i, r in enumerate(ws.iter_rows(values_only=True), start=1)
                 if r[0] == "Period")
 heads = [c.value for c in ws[head_row]]
 for want in ("Period", "Product", "Kilograms", "Kilograms counted", "kg CO2e",
-             "EAT-Lancet group", "Precision", "Matched to (type)", "Matched to", "NEVO code",
+             "Food group", "EAT-Lancet group", "Precision", "Matched to (type)", "Matched to",
+             "NEVO code",
              "Footprint confidence", "Matched by"):
     P(want in heads, f"column present: {want}")
 P("Footprint from" not in heads, "and the engine's tier codes are no longer a column")
@@ -130,6 +131,17 @@ _lines = [r for r in ws.iter_rows(min_row=head_row + 1, values_only=True)]
 _named = [r for r in _lines if r[_c["kg CO2e per kg"]] is not None]
 P(_named and all(r[_c["Matched to"]] and r[_c["Matched to (type)"]] for r in _named),
   f"every line with a footprint names what it was matched to ({len(_named)} of {len(_lines)})")
+# 4 Oct 2026: the column called "EAT-Lancet group" held our food group, as an engine key.
+_diet = {"Added sugars", "Dairy Foods", "Eggs", "Fish", "Fruits", "Legumes", "Nuts",
+         "Red Meat", "Saturated fats", "Starchy Products", "Unsaturated oils", "Vegetables",
+         "White Meat", "Whole Grains", "Outside the diet"}
+_food = [r for r in _lines if r[_c["Food?"]] == "food"]
+P(all(r[_c["EAT-Lancet group"]] in _diet for r in _food),
+  f"'EAT-Lancet group' holds the diet's groups ({sorted({r[_c['EAT-Lancet group']] for r in _food})})")
+P(all("_" not in str(r[_c["Food group"]]) for r in _lines),
+  f"and 'Food group' ours, in words ({sorted({str(r[_c['Food group']]) for r in _lines})})")
+P(all(r[_c["EAT-Lancet group"]] is None for r in _lines if r[_c["Food?"]] != "food"),
+  "a non-food line has no diet group")
 P(all(r[_c["Precision"]] in ("Exact", "Close", "Estimated") for r in _named),
   "in the dashboard's precision words")
 P(all((r[_c["NEVO code"]] is not None) == (r[_c["Matched to (type)"]] == "RIVM product")

@@ -489,7 +489,7 @@ else:
               for m, t in zip(_mg, _tg)),
           f"{what}: and the same kilograms, CO2 and shares in each")
         _keys = ("artikelnr", "co2_per_kg", "source", "source_label", "product_level",
-                 "confidence")
+                 "confidence", "eat_group")
         _mt, _tt = mine["top"]["rows"], theirs["top_contributors"]
         P([[r[k] for k in _keys] for r in _mt] == [[r[k] for k in _keys] for r in _tt],
           f"{what}: the same top {len(_mt)} products, in the same order, found the same way")
@@ -537,6 +537,16 @@ else:
       "the order they were ticked in, and ticking twice, change nothing")
     P(_cb.combine(_whole, ["no such restaurant"]) is None and _cb.combine(_whole, []) is None,
       "a name that is not in the figures combines to nothing")
+    import charts as _ch   # noqa: E402
+    _rows8 = _cb.combine(_whole, _names[1:3])["top"]["rows"]
+    P(all(r["eat_label"] == _ch.eat_group_label(r) for r in _rows8)
+      and any(r["eat_label"].startswith("Outside the diet (") for r in _rows8)
+      and any(not r["eat_label"].startswith("Outside") for r in _rows8),
+      "a combination's top list shows each product's EAT-Lancet group, or outside the diet")
+    _d7 = dict(_whole["detail"], products=[p[:7] for p in _whole["detail"]["products"]])
+    P(all("eat_label" not in r for r in
+          _cb.combine(dict(_whole, detail=_d7), _names[1:3])["top"]["rows"]),
+      "a detail from before the diet group existed shows none, rather than a guess")
     _old_shape = {k: v for k, v in _whole.items() if k != "detail"}
     P(_cb.detail(_old_shape) is None and _cb.restaurants(_old_shape) == []
       and _cb.combine(_old_shape, _names[:2]) is None,

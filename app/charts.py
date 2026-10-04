@@ -526,6 +526,27 @@ def food_group_label(key: str) -> str:
     return FOOD_GROUP_LABELS.get(key, (key or "").replace("_", " ").capitalize())
 
 
+def eat_group_label(row: dict, say_which: bool = True) -> str | None:
+    """The EAT-Lancet group a product is scored in, as a reader is shown it.
+
+    Our food groups are not the diet's: refined and whole grain are both "Whole Grains",
+    and sweets, ultra-processed and "other" are outside the diet. A top-contributor list
+    headed "food group" was read as the diet's groups (TU Delft, 4 Oct 2026), so it now
+    shows the diet's group. Outside the diet, it says so -- and which food group, unless
+    `say_which` is False because the food group is printed beside it anyway.
+
+    None for a row scored before the catalogue said (no 'eat_group' key at all), so a
+    caller can fall back to the food group rather than claim to know.
+    """
+    if "eat_group" not in row:
+        return None
+    if row["eat_group"]:
+        return row["eat_group"]
+    if not say_which:
+        return "Outside the diet"
+    return f"Outside the diet ({food_group_label(row.get('food_group') or row.get('bucket'))})"
+
+
 TIER_SWATCH = [f"var(--tier{i})" for i in range(1, 7)]
 
 

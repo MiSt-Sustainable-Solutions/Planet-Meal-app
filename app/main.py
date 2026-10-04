@@ -201,6 +201,7 @@ def relabel(result: dict) -> dict:
     for row in result.get("top_contributors", []):
         row["food_group"] = charts.food_group_label(row["food_group"])
         row["grade"] = charts.grade(row.get("source"))
+        _eat_label(row)
     # The per-restaurant lists are the same products and must read the same way. Without
     # this a kitchen's own list showed the engine's bucket keys while the list above it
     # showed a caterer's words (21 Sep 2026).
@@ -208,7 +209,16 @@ def relabel(result: dict) -> dict:
         for row in per.get("rows", []):
             row["food_group"] = charts.food_group_label(row["food_group"])
             row["grade"] = charts.grade(row.get("source"))
+            _eat_label(row)
     return result
+
+
+def _eat_label(row: dict) -> None:
+    """The diet group a top-contributor row is shown under (4 Oct 2026). Rows scored before
+    the catalogue said keep no label, and the table falls back to the food group."""
+    label = charts.eat_group_label(row)
+    if label is not None:
+        row["eat_label"] = label
 
 
 def me(request: Request) -> auth.Principal:

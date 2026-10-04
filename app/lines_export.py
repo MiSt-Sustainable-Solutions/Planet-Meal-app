@@ -56,7 +56,11 @@ COLUMNS = [
     ("adjustment",     "Adjustment",          None,        20),
     ("kg_eff",         "Kilograms counted",   "#,##0.###", 17),
     ("is_food",        "Food?",               None,         8),
-    ("bucket",         "EAT-Lancet group",    None,        18),
+    # The food group and the diet group are different things and were printed under one
+    # heading: the column called "EAT-Lancet group" held our food group, as an engine key
+    # ("refined_grain"). Both now, each under its own name (4 Oct 2026).
+    ("bucket",         "Food group",          None,        16),
+    ("eat_group",      "EAT-Lancet group",    None,        18),
     ("co2",            "kg CO2e per kg",      "#,##0.###", 15),
     ("co2_kg",         "kg CO2e",             "#,##0.##",  12),
     ("precision",      "Precision",           None,        12),
@@ -94,6 +98,9 @@ def _sheet_notes(ws, client: str, label: str, rows: int, version, extra) -> int:
         "average. 'kg CO2e per kg' is that reference's value. Every one of them is listed "
         "in the sheets after this one, and every average with the RIVM items it is the "
         "mean of.",
+        "'Food group' is ours; 'EAT-Lancet group' is the diet's group it is scored in. "
+        "They differ: refined and whole grain are both Whole Grains, and sweets, "
+        "ultra-processed food and other food are outside the diet.",
         "'Precision' is the word the dashboard uses: Exact (checked for this exact "
         "product), Close (matched to a similar known product), Estimated (an average for "
         "its food group). 'Group from' says how the line's EAT-Lancet group was decided.",
@@ -145,6 +152,11 @@ def add_sheet(wb, rows: list[dict], client: str, label: str, version=None,
                 v = period
             elif key == "is_food":
                 v = "food" if row.get("is_food") else "non-food"
+            elif key == "bucket":
+                v = charts.food_group_label(row.get("bucket"))
+            elif key == "eat_group":
+                v = (charts.eat_group_label(row, say_which=False)
+                     if row.get("is_food") else None)
             elif key == "precision":
                 v = charts.grade(row.get("footprint_src"))
             elif key == "matched_to":

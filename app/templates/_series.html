@@ -102,7 +102,9 @@
         <table class="tbl">
           <thead><tr>
             <th class="num" style="width:38px;">#</th>
-            <th>Product</th><th>Food group</th><th class="num">kg of food</th>
+            {# The diet's group, not ours: a reader of this list compares it with the
+               EAT-Lancet section (4 Oct 2026). Figures from before keep the food group. #}
+            <th>Product</th><th>{{ 'EAT-Lancet group' if s.rows and s.rows[0].eat_label is defined else 'Food group' }}</th><th class="num">kg of food</th>
             <th class="num">kg CO<sub>2</sub>e</th>
             <th class="num">% of CO<sub>2</sub></th><th class="num">Running&nbsp;%</th>
             <th>Precision</th>
@@ -112,7 +114,7 @@
           <tr>
             <td class="num muted">{{ loop.index }}</td>
             <td class="name">{{ p.description|truncate(46) }}</td>
-            <td class="muted">{{ p.food_group }}</td>
+            <td class="muted">{{ p.eat_label if p.eat_label is defined else p.food_group }}</td>
             <td class="num">{{ "{:,}".format(p.food_kg) }}</td>
             <td class="num">{{ "{:,}".format(p.co2_kg) }}</td>
             <td class="num">{{ p.pct_of_co2 }}</td>

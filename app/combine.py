@@ -127,10 +127,12 @@ def combine(result: dict, names, top: int = 40) -> dict | None:
     ranked = sorted(by_product.items(), key=lambda kv: (-kv[1][1], str(products[kv[0]][0])))
     rows, cum = [], 0.0
     for p, (kg, co2) in ranked[:top]:
-        art, desc, cat, bucket, src, conf, per_kg = products[p]
+        art, desc, cat, bucket, src, conf, per_kg = products[p][:7]
         tier = (d.get("sources") or {}).get(src) or {}
         cum += co2
-        rows.append(dict(
+        # the diet group, an eighth field since 4 Oct 2026; a detail without it gives none
+        diet = dict(eat_group=products[p][7]) if len(products[p]) > 7 else {}
+        rows.append(dict(**diet,
             artikelnr=art, description=desc, category=cat,
             food_group=charts.food_group_label(bucket), food_kg=round(kg), co2_kg=round(co2),
             co2_per_kg=per_kg,
@@ -139,6 +141,9 @@ def combine(result: dict, names, top: int = 40) -> dict | None:
             source=src, source_label=tier.get("label"), source_explain=tier.get("explain"),
             product_level=tier.get("product_level"), confidence=conf,
             grade=charts.grade(src)))
+        diet_label = charts.eat_group_label(rows[-1])
+        if diet_label is not None:
+            rows[-1]["eat_label"] = diet_label
 
     # ---- per month and diet group: the trend and the score
     n_groups = len(d["eat"]["groups"])
