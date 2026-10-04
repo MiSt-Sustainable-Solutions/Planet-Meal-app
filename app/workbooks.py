@@ -60,7 +60,33 @@ def analysis_workbook(result: dict, scored: dict, client: str,
         ["food not counted because of adjustments (kg)", round(sum(
             (r.get("kg") or 0) - (r.get("kg_eff") or 0)
             for r in scored["rows"] if r.get("is_food")))],
-    ])
+    ] + ([
+        # Beside the footprint, never in it: the intensity above is food CO2 / food, as in
+        # TU Delft's own tool. Only when a route is set (4 Oct 2026).
+        ["transport DC -> client (kg CO2e)", h.get("transport_co2_kg")],
+        ["total incl. transport (kg CO2e)", h.get("total_co2_kg_incl_transport")],
+    ] if h.get("transport_co2_kg") is not None else []))
+    t = result.get("transport")
+    if t:
+        ws = sheet("transport", ["period", "tonnes delivered", "kg CO2e", "route"], [
+            [m["period"], m["tonnes"], m["kg"],
+             "no route set" if not m["setting"] else
+             next((f"{s['wholesaler']} {s['dc_location']}" for s in t["settings_used"]
+                   if s["id"] == m["setting"]), "")]
+            for m in t["per_month"]])
+        ws.append([])
+        ws.append(["total", t["tonnes"], t["kg"]])
+        ws.append([])
+        ws.append(["how", "kg CO2e = (2 x km DC->client + km on site) x kg CO2e per tonne-km "
+                          "x tonnes delivered. The tonnes are the food and drinks counted; "
+                          "non-food is not included."])
+        for s in t["settings_used"]:
+            ws.append([f"{s['from_period']} -> {s['to_period'] or 'onwards'}",
+                       f"{s['wholesaler']}, DC {s['dc_location']}: 2 x {s['km_dc']} + "
+                       f"{s['km_campus']} = {s['route_km']} km x {s['ef_kg_per_tkm']} "
+                       f"= {s['kg_per_tonne']} kg CO2e per tonne. Average truck load "
+                       f"{s['avg_load_t']} t ({s['resupply_days']} days, "
+                       f"{s['trucks_per_day']} truck(s) a day)."])
     sheet("caveats", ["severity", "owner", "what you must know"],
           [[c["severity"], c["owner"], c["message"]] for c in h["caveats"]])
     # The EAT-Lancet score sits beside the CO2 in every cut: the question asked of these

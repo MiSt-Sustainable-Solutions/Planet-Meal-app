@@ -53,6 +53,13 @@
           <span class="k">Total CO<sub>2</sub></span>
           <span class="v"><span data-count="{{ (h.co2_kg/1000)|round(1) }}" data-dp="1">{{ "%.1f"|format(h.co2_kg/1000) }}</span><span class="u"> t CO<sub>2</sub>e</span></span>
           <span class="sub">{{ "{:,}".format(h.co2_kg) }} kg over {{ h.months }} month{{ '' if h.months==1 else 's' }}</span>
+          {# Transport DC -> campus, the way TU Delft's own tool adds it: beside the food
+             footprint, never in it, and never in the kg per kg (4 Oct 2026). Only when a
+             route is set; a client-level figure, so it is not on any restaurant view. #}
+          {% if h.transport_co2_kg is defined and h.transport_co2_kg is not none %}
+          <span class="sub transport-line">+ {{ "%.1f"|format(h.transport_co2_kg / 1000) }} t transport DC &rarr; campus
+            &middot; <strong>{{ "%.1f"|format(h.total_co2_kg_incl_transport / 1000) }} t incl. transport</strong></span>
+          {% endif %}
         </div>
       </div>
       <div class="card sr d1">
@@ -110,7 +117,7 @@
     {# Beside the figures they are about. "Adjusted" is what MiSt changed in the raw
        purchases; "Note" is only shown when it applies to this view -- incomplete months,
        or chosen files and whether they agreed. #}
-    {% set notes = h.caveats | selectattr('code', 'in', ['short_year', 'partial_export',
+    {% set notes = h.caveats | selectattr('code', 'in', ['short_year', 'transport', 'partial_export',
          'chosen_files', 'chosen_disagree', 'chosen_repeat', 'chosen_overlap']) | list %}
     {# 'frying_oil_10pct' is the catalogue-wide rule this replaced, still inside figures
        saved or published before 13 Sep 2026. #}

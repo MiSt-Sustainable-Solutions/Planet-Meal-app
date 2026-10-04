@@ -46,6 +46,7 @@ import db
 import lines_export
 import publish
 import selection
+import transport
 import uploads
 import workbooks
 from adapters import mist_template
@@ -125,7 +126,7 @@ PUBLIC_PREFIXES = ("/static", "/set-password")
 # reassured. What they actually need from it, the precision grades, is already on the
 # dashboard in four words. Bring it back when it has a client's version rather than ours.
 ADMIN_PATHS = ("/upload", "/curate", "/review-sheet.xlsx", "/admin", "/files/owner",
-               "/history", "/catalogue", "/adjustments", "/data-health")
+               "/history", "/catalogue", "/adjustments", "/data-health", "/transport")
 
 
 @app.middleware("http")
@@ -1116,6 +1117,67 @@ def adjustments_remove(request: Request, adjustment_id: str, why: str = Form("")
     msg = (f"Removed. Article {was['artikelnr']} counts in full again; the client sees that "
            "when you next publish. The adjustment is kept under Removed adjustments.")
     return RedirectResponse(f"/adjustments?done={quote(msg)}", status_code=303)
+
+
+# --------------------------------------------------------------------------- transport
+@app.get("/transport", response_class=HTMLResponse)
+def transport_page(request: Request, done: str | None = None, error: str | None = None):
+    """The route from the wholesaler's DC to the client being looked at. MiSt's page."""
+    return _transport_view(request, done=done, error=error)
+
+
+def _transport_view(request: Request, done: str | None = None, error: str | None = None,
+                    form: dict | None = None):
+    p = me(request)
+    held = db.months(p.tenant)
+    defaults = dict(transport.DEFAULTS, reason="", to_period="",
+                    from_period=held[0]["period"] if held else dt.date.today().strftime("%Y-%m"))
+    current = transport.active(p.tenant)
+    # What the settings in force come to on the latest academic year, so the page shows
+    # the figure it produces and the truck load that checks it.
+    preview = None
+    if current and held:
+        try:
+            r = analysis.run(window=analysis.default_window(p.tenant), tenant=p.tenant)
+            preview = dict(window=analysis.period_label(r["window"]["label"]),
+                           transport=r.get("transport"), headline=r["headline"])
+        except (analysis.WindowError, catalogue.CatalogueDown):
+            preview = None
+    return templates.TemplateResponse(request, "transport.html", ctx(
+        request, "transport", done=done, error=error, current=current,
+        earlier=transport.removed(p.tenant), preview=preview,
+        form=dict(defaults, **(form or {})), truck_tonnes=transport.TRUCK_TONNES))
+
+
+TRANSPORT_FIELDS = ("wholesaler", "dc_location", "km_dc", "km_campus", "resupply_days",
+                    "trucks_per_day", "ef_kg_per_tkm", "ef_source", "from_period",
+                    "to_period", "reason")
+
+
+@app.post("/transport")
+async def transport_add(request: Request):
+    p = me(request)
+    got = await request.form()
+    form = {k: str(got.get(k) or "") for k in TRANSPORT_FIELDS}
+    try:
+        transport.add(p.tenant, form, by=p.username)
+    except transport.TransportError as e:
+        return _transport_view(request, error=str(e), form=form)
+    msg = ("Route saved. Your working figures show transport from now on; the client sees it "
+           "when you next publish.")
+    return RedirectResponse(f"/transport?done={quote(msg)}", status_code=303)
+
+
+@app.post("/transport/{transport_id}/remove")
+def transport_remove(request: Request, transport_id: str, why: str = Form("")):
+    p = me(request)
+    try:
+        transport.remove(p.tenant, transport_id, by=p.username, why=why)
+    except transport.TransportError as e:
+        return RedirectResponse(f"/transport?error={quote(str(e))}", status_code=303)
+    msg = ("Removed. Those months carry no transport any more; the client sees that when "
+           "you next publish. The setting is kept under Removed routes.")
+    return RedirectResponse(f"/transport?done={quote(msg)}", status_code=303)
 
 
 # --------------------------------------------------------------------------- export

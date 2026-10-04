@@ -88,6 +88,17 @@ CREATE TABLE IF NOT EXISTS adjustment(
   created_at TEXT, created_by TEXT, removed_at TEXT, removed_by TEXT, removed_why TEXT);
 CREATE INDEX IF NOT EXISTS ix_adj ON adjustment(tenant, artikelnr);
 
+-- The route from the wholesaler's DC to the client, for a range of months, to add
+-- transport the way TU Delft's own tool does. Never edited or deleted: removing one
+-- stamps it. See transport.py.
+CREATE TABLE IF NOT EXISTS transport(
+  id TEXT PRIMARY KEY, tenant TEXT NOT NULL, wholesaler TEXT, dc_location TEXT,
+  km_dc REAL NOT NULL, km_campus REAL NOT NULL, resupply_days INTEGER, trucks_per_day REAL,
+  ef_kg_per_tkm REAL NOT NULL, ef_source TEXT,
+  from_period TEXT NOT NULL, to_period TEXT, reason TEXT,
+  created_at TEXT, created_by TEXT, removed_at TEXT, removed_by TEXT, removed_why TEXT);
+CREATE INDEX IF NOT EXISTS ix_transport ON transport(tenant);
+
 -- What a client sees: a frozen copy, made when MiSt presses Publish. See publish.py.
 CREATE TABLE IF NOT EXISTS publication(
   id TEXT PRIMARY KEY, tenant TEXT NOT NULL,
@@ -128,6 +139,8 @@ MIGRATIONS = [
     # first of the two steps to being rid of it.
     ("upload", "selected", "INTEGER DEFAULT 0"),
     ("upload", "archived_at", "TEXT"),
+    # Transport DC -> client beside the footprint, for the Changes page (4 Oct 2026).
+    ("analysis_run", "transport_kg", "REAL"),
 ]
 
 # WHICH LINES COUNT.

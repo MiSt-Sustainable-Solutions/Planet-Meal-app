@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Transport{% endblock %}
+{% block body %}
+
+{#
+  The route from the wholesaler's distribution centre to the client, to add the last leg
+  the way TU Delft's own tool does. MiSt's page. See transport.py and docs/transport-plan.md.
+#}
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Transport · {{ client_name }}</div>
+    <h1 class="page-h1">From the distribution centre <em>to campus.</em></h1>
+    <p class="lede" style="margin-top:22px;max-width:66ch;">
+      RIVM&rsquo;s footprints stop at the wholesaler&rsquo;s distribution centre. This adds the
+      last leg, the way TU Delft&rsquo;s own tool does: the route there and back plus what is
+      driven on site, times an emission factor per tonne-kilometre, times the tonnes delivered.
+      It is shown beside the footprint as its own line. The footprint, the kg CO<sub>2</sub>e per
+      kg and every breakdown stay food only.
+    </p>
+
+    {% if done %}
+    <div class="card" style="margin-top:22px;border-color:var(--teal);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot ok"></span><div><div class="msg">{{ done }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="card" style="margin-top:22px;border-color:var(--danger);">
+      <div class="finding" style="border:none;padding:0;">
+        <span class="dot error"></span>
+        <div><div class="code">not saved</div><div class="msg">{{ error }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="light2">
+  <div class="inner">
+    <div class="sec-label">In force</div>
+    <h2 class="sec-h2">The route <em>now.</em></h2>
+    {% if current %}
+    <div class="card scroll-x" style="margin-top:22px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Wholesaler · DC</th><th class="num">Route</th><th class="num">kg CO<sub>2</sub>e / t·km</th>
+          <th class="num">kg CO<sub>2</sub>e per tonne</th><th class="num">Days · trucks</th>
+          <th>Months</th><th>Source (MiSt only)</th><th>Added</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for t in current %}
+        <tr>
+          <td class="name">{{ t.wholesaler }}<br/><span class="muted">{{ t.dc_location }}</span></td>
+          <td class="num">2 &times; {{ t.km_dc|round(1) }} + {{ t.km_campus|round(1) }} = <strong>{{ t.route_km }} km</strong></td>
+          <td class="num">{{ t.ef_kg_per_tkm }}</td>
+          <td class="num"><strong>{{ t.kg_per_tonne }}</strong></td>
+          <td class="num">{{ t.resupply_days }} · {{ t.trucks_per_day|round(1) }}</td>
+          <td>{{ t.from_period }} &rarr; {{ t.to_period or 'onwards' }}</td>
+          <td class="muted" style="max-width:28ch;">{{ t.reason }}{% if t.ef_source %}<br/>EF: {{ t.ef_source }}{% endif %}</td>
+          <td class="muted">{{ (t.created_at or '')[:10] }}<br/>{{ t.created_by }}</td>
+          <td>
+            <form method="post" action="/transport/{{ t.id }}/remove"
+                  onsubmit="var w = prompt('Remove this route? Its months will carry no transport. Why? (kept for the record)'); if (w === null) return false; this.why.value = w; return true;">
+              <input type="hidden" name="why" value=""/>
+              <button class="btn-ghost" type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if preview and preview.transport %}{% set pt = preview.transport %}{% set ph = preview.headline %}
+    <div class="grid g3" style="margin-top:22px;">
+      <div class="card"><div class="stat">
+        <span class="k">Transport · {{ preview.window }}</span>
+        <span class="v">{{ "%.2f"|format(pt.kg / 1000) }}<span class="u"> t CO<sub>2</sub>e</span></span>
+        <span class="sub">{{ "{:,}".format(pt.kg|round|int) }} kg on {{ "{:,.1f}".format(pt.tonnes) }} t delivered</span>
+      </div></div>
+      <div class="card"><div class="stat">
+        <span class="k">Total incl. transport</span>
+        <span class="v">{{ "%.1f"|format(ph.total_co2_kg_incl_transport / 1000) }}<span class="u"> t CO<sub>2</sub>e</span></span>
+        <span class="sub">food {{ "%.1f"|format(ph.co2_kg / 1000) }} t + transport {{ "%.2f"|format(pt.kg / 1000) }} t</span>
+      </div></div>
+      <div class="card"><div class="stat">
+        <span class="k">Average truck load</span>
+        {% for s in pt.settings_used %}
+        <span class="v">{{ "%.2f"|format(s.avg_load_t) }}<span class="u"> t per truck</span></span>
+        <span class="sub">{% if s.over_truck_class %}<strong style="color:var(--danger);">Above the {{ truck_tonnes|int }} t truck the factor is for &mdash; check the factor or the trucks per day.</strong>{% else %}Within the {{ truck_tonnes|int }} t truck the factor is for.{% endif %}</span>
+        {% endfor %}
+      </div></div>
+    </div>
+    {% if pt.months_uncovered %}
+    <p style="font-size:13px;margin-top:12px;color:var(--danger);">
+      No route covers {{ pt.months_uncovered|join(', ') }}: those months carry no transport.
+    </p>
+    {% endif %}
+    {% endif %}
+    <p class="muted" style="font-size:13px;margin-top:14px;max-width:74ch;">
+      Tonnes are the food and drinks the dashboard counts. TU Delft&rsquo;s tool also loads
+      non-food onto the truck; this does not, because the app has no non-food weight per
+      month. The loaded weight is charged on the way back too, as in their tool. Changes
+      reach the client when you next publish.
+    </p>
+    {% else %}
+    <p class="lede" style="margin-top:18px;">No route is set for {{ client_name }}. Their figures carry no transport.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="light">
+  <div class="inner">
+    <div class="sec-label">Add</div>
+    <h2 class="sec-h2">Set the route, <em>for the months it applies to.</em></h2>
+    <p class="muted" style="font-size:13px;margin-top:10px;max-width:72ch;">
+      The starting values are TU Delft&rsquo;s, as CAAT&rsquo;s form gives them. Resupply days
+      and trucks do not change the transport figure &mdash; they cancel out &mdash; they give the
+      average truck load, which checks that the factor fits the truck.
+    </p>
+    <form method="post" action="/transport" style="margin-top:22px;">
+      <div class="grid g2 adj-fields">
+        <label><span class="k">Wholesaler</span>
+          <input class="inp" type="text" name="wholesaler" value="{{ form.wholesaler }}" maxlength="60" required/></label>
+        <label><span class="k">Location of the distribution centre</span>
+          <input class="inp" type="text" name="dc_location" value="{{ form.dc_location }}" maxlength="80" required/>
+          <span class="muted hint">Usually the nearest DC.</span></label>
+        <label><span class="k">Distance DC &rarr; client (km, one way)</span>
+          <input class="inp" type="number" name="km_dc" min="0.1" step="0.1" value="{{ form.km_dc }}" required/>
+          <span class="muted hint">From a route planner. Counted twice: there and back.</span></label>
+        <label><span class="k">Distance driven on site (km)</span>
+          <input class="inp" type="number" name="km_campus" min="0" step="0.1" value="{{ form.km_campus }}" required/>
+          <span class="muted hint">An estimate of the round between the restaurants.</span></label>
+        <label><span class="k">Resupply days per year</span>
+          <input class="inp" type="number" name="resupply_days" min="1" max="366" step="1" value="{{ form.resupply_days }}" required/>
+          <span class="muted hint">Days a year the restaurants are open.</span></label>
+        <label><span class="k">Trucks per day</span>
+          <input class="inp" type="number" name="trucks_per_day" min="0.1" step="0.1" value="{{ form.trucks_per_day }}" required/>
+          <span class="muted hint">Ask the caterer.</span></label>
+        <label><span class="k">Emission factor (kg CO<sub>2</sub>e per tonne-km)</span>
+          <input class="inp" type="number" name="ef_kg_per_tkm" min="0.001" step="0.001" value="{{ form.ef_kg_per_tkm }}" required/></label>
+        <label><span class="k">Where the factor comes from</span>
+          <input class="inp" type="text" name="ef_source" value="{{ form.ef_source }}" maxlength="120"/></label>
+        <label><span class="k">From month</span>
+          <input class="inp" type="month" name="from_period" value="{{ form.from_period }}" required/></label>
+        <label><span class="k">To month</span>
+          <input class="inp" type="month" name="to_period" value="{{ form.to_period }}"/>
+          <span class="muted hint">Leave empty to keep it going, including for files added later.</span></label>
+        <label style="grid-column:1/-1;"><span class="k">Where these figures come from</span>
+          <input class="inp" type="text" name="reason" value="{{ form.reason }}" maxlength="300" required
+                 placeholder="e.g. TU Delft / CAAT report Sep 2024 – Feb 2025, p.18"/>
+          <span class="muted hint">For MiSt&rsquo;s record. Not shown to the client.</span></label>
+      </div>
+      <div style="margin-top:20px;"><button class="btn-main" type="submit">Save route</button></div>
+    </form>
+  </div>
+</section>
+
+{% if earlier %}
+<section class="light2">
+  <div class="inner">
+    <details>
+      <summary class="sec-label" style="cursor:pointer;">Removed routes ({{ earlier|length }})</summary>
+      <div class="card scroll-x" style="margin-top:16px;">
+        <table class="tbl">
+          <thead><tr><th>Wholesaler · DC</th><th class="num">kg per tonne</th><th>Months</th>
+            <th>Source</th><th>Removed</th><th>Why removed</th></tr></thead>
+          <tbody>
+          {% for t in earlier %}
+          <tr>
+            <td class="name">{{ t.wholesaler }} · {{ t.dc_location }}</td>
+            <td class="num">{{ t.kg_per_tonne }}</td>
+            <td>{{ t.from_period }} &rarr; {{ t.to_period or 'onwards' }}</td>
+            <td class="muted">{{ t.reason }}</td>
+            <td class="muted">{{ (t.removed_at or '')[:10] }} {{ t.removed_by }}</td>
+            <td class="muted">{{ t.removed_why or '—' }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</section>
+{% endif %}
+
+<style>
+.inp{width:100%;font-size:15px;font-family:var(--sans);color:var(--ink);background:var(--white);
+  border:1px solid var(--mist);border-radius:8px;padding:11px 13px;}
+.inp:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(45,158,117,.16);}
+.adj-fields label{display:flex;flex-direction:column;gap:6px;}
+.adj-fields .k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--sage);}
+.adj-fields .hint{font-size:12.5px;}
+</style>
+{% endblock %}

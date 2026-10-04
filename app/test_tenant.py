@@ -64,7 +64,7 @@ def _fresh_database():
         return
     con = store.connect()
     for t in ("analysis_run", "upload_line", "upload_product", "upload",
-              "purchase_line", "product", "app_user", "tenant"):
+              "purchase_line", "product", "app_user", "tenant", "transport"):
         con.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
     con.commit()
     con.close()

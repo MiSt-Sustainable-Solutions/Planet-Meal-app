@@ -41,6 +41,7 @@ import catalogue
 import db
 import lines_export
 import selection
+import transport
 import uploads
 import workbooks
 
@@ -104,14 +105,19 @@ def signature(tenant: str, etag: str | None) -> tuple[str, dict]:
         return hashlib.sha1("|".join(xs).encode()).hexdigest()[:12]
 
     parts = dict(files=h(ids + own), data=h(data),
-                 adjustments=adjustments.digest(tenant), catalogue=etag or "")
-    return h([parts[k] for k in ("files", "data", "adjustments", "catalogue")]), parts
+                 adjustments=adjustments.digest(tenant), catalogue=etag or "",
+                 transport=transport.digest(tenant))
+    return h([parts[k] for k in PARTS]), parts
+
+
+PARTS = ("files", "data", "adjustments", "catalogue", "transport")
 
 
 REASONS = dict(files="the counted files changed",
                data="the purchases in them changed",
                adjustments="the product adjustments changed",
-               catalogue="the catalogue or the way figures are calculated changed")
+               catalogue="the catalogue or the way figures are calculated changed",
+               transport="the transport route changed")
 
 
 # --------------------------------------------------------------------------- reading
@@ -191,9 +197,11 @@ def state(tenant: str | None, etag: str | None) -> dict | None:
     sig, parts = signature(tenant, etag)
     changed = []
     if now:
-        # A copy published before adjustments existed has no record of them, and had none.
-        before = dict(dict(adjustments=adjustments.NONE), **(now["parts"] or {}))
-        changed = [REASONS[k] for k in ("files", "data", "adjustments", "catalogue")
+        # A copy published before adjustments -- or transport -- existed has no record of
+        # them, and had none.
+        before = dict(dict(adjustments=adjustments.NONE, transport=transport.NONE),
+                      **(now["parts"] or {}))
+        changed = [REASONS[k] for k in PARTS
                    if before.get(k) != parts[k] and not (k == "catalogue" and not etag)]
     building = last if last and last["status"] == "building" else None
     failed = last if last and last["status"] == "failed" else None

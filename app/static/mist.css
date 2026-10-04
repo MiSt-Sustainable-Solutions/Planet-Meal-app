@@ -210,6 +210,8 @@ h1.page-h1 em{color:var(--teal);font-style:italic;}
 .chart .pt{fill:var(--teal);}
 .chart .pt.partial{fill:var(--danger);}
 .chart .axis-title{font-weight:700;}
+/* Transport DC -> campus, under the food total it is added to (4 Oct 2026). */
+.stat .transport-line{margin-top:6px;}
 
 /* Restaurants ticked together. Looks like the dropdown it replaced until it is opened; the
    list floats over the page rather than pushing the chart down. Its own colours, stated,

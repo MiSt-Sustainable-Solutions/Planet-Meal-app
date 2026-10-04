@@ -21,6 +21,7 @@ import uuid
 import catalogue
 import config
 import db
+import transport
 
 # The KEY a window is addressed by, and the WORDS a person reads, are different things.
 # The key stays "FY2025": it is in saved analyses, in every published copy, and in links
@@ -454,6 +455,19 @@ def staleness(tenant: str | None = None, live: dict | None = None) -> dict | Non
 def run(window: str | None = None, frm: str | None = None, to: str | None = None,
         profile: str | None = None, top: int = 40, save: bool = True,
         tenant: str | None = None, force: bool = False) -> dict:
+    """Score a window and (by default) save the result, with transport beside it.
+
+    Transport DC -> client is added on the way out, whichever way the figures were got --
+    saved, held or freshly scored -- because it does not change the footprint and should
+    not make anything recalculate. See transport.attach.
+    """
+    result = _run(window, frm, to, profile, top, save, tenant, force)
+    return transport.attach(result, tenant or config.TENANT)
+
+
+def _run(window: str | None = None, frm: str | None = None, to: str | None = None,
+         profile: str | None = None, top: int = 40, save: bool = True,
+         tenant: str | None = None, force: bool = False) -> dict:
     """Score a window and (by default) save the result.
 
     Serves the saved result when the client's data and the catalogue are both unchanged.
@@ -607,16 +621,18 @@ def _save(result: dict, label, y0, m0, y1, m1, nlines: int, tenant: str,
     """
     h = result["headline"]
     rid = uuid.uuid4().hex[:12]
+    t = transport.for_months(tenant, result.get("by_month") or [])
     con = db.connect()
-    placeholders = ",".join(["?"] * 17)
-    con.execute(f"INSERT INTO analysis_run ({CACHE_COLUMNS}) VALUES ({placeholders})",
+    placeholders = ",".join(["?"] * 18)
+    con.execute(f"INSERT INTO analysis_run ({CACHE_COLUMNS}, transport_kg) "
+                f"VALUES ({placeholders})",
                 (rid, tenant, label, f"{y0}-{m0:02d}", f"{y1}-{m1:02d}",
                  h.get("eat_profile"),
                  result.get("ran_at") or dt.datetime.now().isoformat(timespec="seconds"),
                  nlines, h["food_kg"], h["co2_kg"], h["intensity_kg_co2_per_kg"],
                  h["eat_lancet_score"],
                  h["confidence"]["product_specific_pct_of_weight"], json.dumps(result),
-                 wkey, etag, fingerprint))
+                 wkey, etag, fingerprint, t["kg"] if t else None))
     con.commit()
     con.close()
     return rid

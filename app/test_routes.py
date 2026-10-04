@@ -212,7 +212,7 @@ for path in ("/", "/data-health", "/history"):
 # The pages a client is not given must be refused AND unlinked. A nav item that answers
 # 403 is worse than no nav item (23 Sep 2026, when Data health became MiSt's own).
 _client_nav = user.get("/").text
-for path in ("/data-health", "/history", "/catalogue", "/adjustments"):
+for path in ("/data-health", "/history", "/catalogue", "/adjustments", "/transport"):
     P(user.get(path).status_code == 403, f"{path:14} -> 403 for a client")
     P(f'href="{path}' not in _client_nav, f"{path:14} is not linked for a client either")
 

@@ -174,6 +174,15 @@ else:
     adjustments.products("acme", "melk")
     adjustments.remove("acme", _aid, "boss", "test")
     adjustments.add("acme", ["194072"], "10", "milk", "test", "2025-01", "2025-06", "boss")
+    # And a transport route, added, removed and added again, for the same reasons.
+    import transport                             # noqa: E402
+    _route = dict(wholesaler="Sligro", dc_location="Berkel & Rodenrijs", km_dc="12",
+                  km_campus="5", resupply_days="200", trucks_per_day="1",
+                  ef_kg_per_tkm="0.363", ef_source="CAAT", from_period="2025-01",
+                  to_period="", reason="test")
+    transport.remove("acme", transport.add("acme", _route, "boss"), "boss", "test")
+    transport.add("acme", _route, "boss")
+    transport.digest("acme")
     for _ in range(2):
         pub = publish.get(publish.start("acme", "boss", wait=True))
     P(pub["status"] == "live", f"a publish runs start to finish, twice ({pub.get('error')})")
