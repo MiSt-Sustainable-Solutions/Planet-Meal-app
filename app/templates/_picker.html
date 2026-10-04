@@ -19,14 +19,26 @@
     <select name="window" id="w" onchange="this.form.submit()"
             style="font-family:var(--sans);font-size:13px;padding:9px 12px;border:1px solid var(--mist);
                    border-radius:6px;background:var(--white);color:var(--ink);">
-      {# A published copy offers each of its files as well, one at a time. #}
-      {% for win in window_options if not win.file %}
+      {# Academic years first, under their own heading: 1 September to 31 August, the
+         year the client's KPIs are set against. A year is offered as soon as it holds one
+         month, so the option says how much of it there is. A copy published before
+         4 Oct 2026 holds calendar years instead; they carry no `kind` and are listed
+         plainly below, exactly as they were published. #}
+      {% macro opt(win) %}
       <option value="{{ win.key }}"
               {% if win.key == selected_window and not chosen_ids %}selected{% endif %}>
-        {{ win.label }}{% if win.partial %} — {{ win.partial|length }}
+        {{ win.label }}{% if win.expected and win.months < win.expected %} — {{ win.months }} of {{ win.expected }} months{% endif %}{% if win.partial %} — {{ win.partial|length }}
         month{{ '' if win.partial|length == 1 else 's' }} incomplete{% endif %}
       </option>
-      {% endfor %}
+      {% endmacro %}
+      {% set academic = window_options | selectattr('kind', 'defined') | selectattr('kind', 'equalto', 'academic') | list %}
+      {% if academic %}
+      <optgroup label="Academic year">
+        {% for win in academic %}{{ opt(win) }}{% endfor %}
+      </optgroup>
+      {% endif %}
+      {% for win in window_options if not win.file and win.kind is not defined %}{{ opt(win) }}{% endfor %}
+      {# Each file on its own, one at a time. #}
       {% set one_file = window_options | selectattr('file') | list %}
       {% if one_file %}
       <optgroup label="One file">
@@ -35,8 +47,9 @@
         {% endfor %}
       </optgroup>
       {% endif %}
-      {% if chosen_ids %}
-      {# So the dropdown never claims a period while files are chosen. #}
+      {% if chosen_ids and selected_window not in (one_file | map(attribute='key') | list) %}
+      {# So the dropdown never claims a period while several files are chosen. One file
+         chosen is one of the options above, and is simply selected there. #}
       <option value="" selected>{{ chosen_ids|length }} file{{ '' if chosen_ids|length == 1 else 's' }} chosen</option>
       {% endif %}
     </select>

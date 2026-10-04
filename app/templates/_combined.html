@@ -1,0 +1,6 @@
+{# One combined series, sent in answer to a tick. See combine.py and _series.html. #}
+{% import "_series.html" as S %}
+{% if section == 'trend' %}{{ S.trend(s) }}
+{% elif section == 'groups' %}{{ S.group(s) }}
+{% elif section == 'top' %}{{ S.top(s) }}
+{% else %}{{ S.eat(s) }}{% endif %}

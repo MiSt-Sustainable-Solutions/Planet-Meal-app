@@ -235,7 +235,8 @@ else:
       "and one scored against a different reference diet is recalculated, not relabelled")
 
 print("\n=== windows ===")
-P(analysis.default_window().startswith("FY"), f"a default window is chosen ({analysis.default_window()})")
+P(analysis.default_window().startswith("AY"),
+  f"the default window is an academic year ({analysis.default_window()})")
 P(any(w["key"] == "all" for w in analysis.windows()), "'all' is offered")
 for bad in ("FY1999", "nonsense"):
     try:
@@ -433,6 +434,148 @@ for _keep in ("All data", "File: December 2024.xlsx", "2025-01 to 2025-06"):
 P(_an.period_label(None) == "" and _an.period_label("") == "", "and nothing breaks on nothing")
 P(bool(_an.FY.match("2026")) and bool(_an.FY.match("FY2026")),
   "both spellings are accepted as a key, so links already sent keep working")
+
+print("\n=== restaurants ticked together read as the engine would score them ===")
+# 4 Oct 2026. combine.py adds up the layer the catalogue returns under its per-restaurant
+# views. It repeats three pieces of the engine's arithmetic -- the sum, the ranking and the
+# EAT-Lancet deviation -- so each is held against the engine itself: the same restaurants'
+# LINES, scored by the catalogue, must give the same numbers. If the engine's method ever
+# moves and this module does not, this is where it shows.
+import combine as _cb   # noqa: E402
+if catalogue.health() is None:
+    print("  (catalogue API not running — skipping the combination tests)")
+else:
+    _w = "FY2024"
+    _whole = analysis.run(window=_w, save=False)
+    P(_cb.detail(_whole) is not None, "the catalogue returns the layer that adds up")
+    _names = _cb.restaurants(_whole)
+    P(_names == [r["restaurant"] for r in _whole["by_restaurant"]],
+      f"every restaurant can be ticked, in the page's order ({len(_names)})")
+    _lab, _y0, _m0, _y1, _m1 = analysis.parse_window(_w)
+    _lines = db.lines_for(_y0, _m0, _y1, _m1)
+
+    def _engine(names):
+        return catalogue.score([l for l in _lines if l["restaurant"] in set(names)],
+                               label="subset", top=40)
+
+    # Whole kilograms are compared to within one, and only that. The engine rounds a sum
+    # of floats, and purchase weights are round numbers: a food group that comes to 39.5 kg
+    # exactly lands on 39 or 40 according to the order the lines were added in, which no
+    # second implementation can reproduce and neither answer is wrong. Everything that is
+    # not a rounded kilogram -- which products, in what order, which group, which source,
+    # the score -- is compared exactly.
+    def _kg(a, b):
+        return abs(a - b) <= 1
+
+    def _pct(a, b, tol=0.1):
+        return (a is None and b is None) or (a is not None and b is not None
+                                             and abs(a - b) <= tol + 1e-9)
+
+    def _same(mine, theirs, what):
+        h = theirs["headline"]
+        P(_kg(mine["food_kg"], h["food_kg"]) and _kg(mine["co2_kg"], h["co2_kg"])
+          and mine["intensity_kg_co2_per_kg"] == h["intensity_kg_co2_per_kg"],
+          f"{what}: the same food, CO2 and intensity "
+          f"({mine['food_kg']:,} kg, {mine['co2_kg']:,} kg, {mine['intensity_kg_co2_per_kg']})")
+        _mg, _tg = mine["by_food_group"], theirs["by_food_group"]
+        P([r["food_group"] for r in _mg] == [charts.food_group_label(r["food_group"]) for r in _tg]
+          and [r["products"] for r in _mg] == [r["products"] for r in _tg],
+          f"{what}: the same food groups in the same order, with the same products in each "
+          f"({len(_mg)})")
+        P(all(_kg(m["food_kg"], t["food_kg"]) and _kg(m["co2_kg"], t["co2_kg"])
+              and _pct(m["pct_of_co2"], t["pct_of_co2"])
+              and _pct(m["pct_of_weight"], t["pct_of_weight"])
+              and _pct(m["intensity_kg_co2_per_kg"], t["intensity_kg_co2_per_kg"], 0.02)
+              for m, t in zip(_mg, _tg)),
+          f"{what}: and the same kilograms, CO2 and shares in each")
+        _keys = ("artikelnr", "co2_per_kg", "source", "source_label", "product_level",
+                 "confidence")
+        _mt, _tt = mine["top"]["rows"], theirs["top_contributors"]
+        P([[r[k] for k in _keys] for r in _mt] == [[r[k] for k in _keys] for r in _tt],
+          f"{what}: the same top {len(_mt)} products, in the same order, found the same way")
+        P(all(_kg(m["food_kg"], t["food_kg"]) and _kg(m["co2_kg"], t["co2_kg"])
+              and _pct(m["pct_of_co2"], t["pct_of_co2"])
+              and _pct(m["cumulative_pct_of_co2"], t["cumulative_pct_of_co2"])
+              for m, t in zip(_mt, _tt)),
+          f"{what}: with the same kilograms, CO2 and running share")
+        _e, _t = mine["eat_lancet"], theirs["eat_lancet"]
+        P(_e["score"] == _t["score"] and _kg(_e["intake_kg"], _t["intake_kg"])
+          and _e["rows"] == _t["rows"],
+          f"{what}: the same EAT-Lancet score and the same fourteen rows ({_e['score']})")
+        _tm = {r["period"]: r for r in theirs["by_month"]}
+        _mm = [r for r in mine["by_month"] if r["period"] in _tm]
+        P(len(_mm) == len(_tm) and all(
+            _kg(r["food_kg"], _tm[r["period"]]["food_kg"])
+            and _kg(r["co2_kg"], _tm[r["period"]]["co2_kg"])
+            and r["intensity_kg_co2_per_kg"] == _tm[r["period"]]["intensity_kg_co2_per_kg"]
+            and r["eat_lancet_score"] == _tm[r["period"]]["eat_lancet_score"]
+            for r in _mm),
+          f"{what}: the same intensity and score in each of {len(_mm)} months")
+        P(all(r["food_kg"] == 0 and r["intensity_kg_co2_per_kg"] is None
+              and r["eat_lancet_score"] is None
+              for r in mine["by_month"] if r["period"] not in _tm),
+          f"{what}: and a month they bought nothing in is empty, not zero")
+
+    import charts   # noqa: E402
+    _everyone = _cb.combine(_whole, _names)
+    P(_everyone["food_kg"] == _whole["headline"]["food_kg"]
+      and _everyone["co2_kg"] == _whole["headline"]["co2_kg"]
+      and _everyone["eat_lancet"]["score"] == _whole["headline"]["eat_lancet_score"]
+      and [r["artikelnr"] for r in _everyone["top"]["rows"]]
+          == [r["artikelnr"] for r in _whole["top_contributors"]],
+      "every restaurant ticked is the whole university, to the kilogram")
+    _one = _cb.combine(_whole, _names[2:3])
+    _eng1 = next(r for r in _whole["top_by_restaurant"] if r["restaurant"] == _names[2])
+    P(_one["label"] == _names[2] and _one["co2_kg"] == _eng1["co2_kg"]
+      and [r["artikelnr"] for r in _one["top"]["rows"]] == [r["artikelnr"] for r in _eng1["rows"]]
+      and _one["top"]["covers_pct"] == _eng1["covers_pct"],
+      "one restaurant ticked is that restaurant's own list")
+    _same(_cb.combine(_whole, _names[1:3]), _engine(_names[1:3]), "two together")
+    _mix = [_names[0], _names[3], _names[-1], _names[-2]]
+    _same(_cb.combine(_whole, _mix), _engine(_mix), "the largest with the two smallest")
+    P(_cb.combine(_whole, _mix[::-1] + _mix)["restaurants"] == _cb.chosen(_whole, _mix),
+      "the order they were ticked in, and ticking twice, change nothing")
+    P(_cb.combine(_whole, ["no such restaurant"]) is None and _cb.combine(_whole, []) is None,
+      "a name that is not in the figures combines to nothing")
+    _old_shape = {k: v for k, v in _whole.items() if k != "detail"}
+    P(_cb.detail(_old_shape) is None and _cb.restaurants(_old_shape) == []
+      and _cb.combine(_old_shape, _names[:2]) is None,
+      "figures saved before the layer existed offer no ticking, and do not break")
+    for _sec in _cb.SECTIONS:
+        _s = _cb.series(_whole, _names[1:3], _sec)
+        P(_s and _s["key"] == "combo" and _s["label"] == "2 restaurants"
+          and _s["names"] == _names[1:3] and ("chart" in _s or "rows" in _s),
+          f"the {_sec} section gets a drawable series for the combination")
+
+print("\n=== the year on offer is the academic one ===")
+# 4 Oct 2026. TU Delft's KPIs are set against a school year, 1 September to 31 August, so
+# the calendar year answered a question nobody there asks. AY2025 STARTS in September 2025.
+P(_an.parse_window("AY2025")[:5] == ("2025/26", 2025, 9, 2026, 8),
+  "AY2025 is September 2025 to August 2026, and reads 2025/26")
+P(_an.parse_window("FY2025")[:5] == ("2025", 2025, 1, 2025, 12),
+  "a calendar-year key still resolves, so saved figures and old links keep working")
+P((_an.academic_year(2025, 8), _an.academic_year(2025, 9)) == (2024, 2025),
+  "August closes one academic year and September opens the next")
+P(_an.academic_label(1999) == "1999/00", "the label survives a century turning")
+_offered = _an.windows()
+P(_offered and all(w["key"].startswith("AY") for w in _offered[:-1])
+  and _offered[-1]["key"] == "all",
+  f"only academic years and all data are offered ({', '.join(w['key'] for w in _offered)})")
+P(not any(_an.FY.match(w["key"]) for w in _offered), "and no calendar year")
+P(all(w["expected"] == 12 and 1 <= w["months"] <= 12 for w in _offered[:-1]),
+  "each says how many of its twelve months are held")
+_held = {(m["year"], m["month"]) for m in db.months()}
+for _w in _offered[:-1]:
+    _l, _y0, _m0, _y1, _m1 = _an.parse_window(_w["key"])
+    _gone = _an.missing_months(_y0, _m0, _y1, _m1)
+    P(len(_gone) == 12 - _w["months"],
+      f"{_w['label']}: {_w['months']} months held, {len(_gone)} named as missing")
+P(_an._month_ranges(["2026-07", "2026-08"]) == "Jul\u2013Aug 2026"
+  and _an._month_ranges(["2024-12", "2025-01", "2025-03"]) == "Dec 2024\u2013Jan 2025, Mar 2025",
+  "missing months read as ranges, across a new year too")
+import workbooks as _wb   # noqa: E402
+P(_wb.export_name("t", dict(headline=dict(window="2025/26"))) == "PLANETmeal_t_2025-26.xlsx",
+  "the download is named 2025-26, not 202526")
 
 shutil.rmtree(_TMP, ignore_errors=True)
 print(f"\n{'ALL PASS' if not FAILED else str(len(FAILED)) + ' FAILED'}")

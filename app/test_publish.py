@@ -59,10 +59,12 @@ auth.init()
 auth.add_tenant("alpha", "Alpha University", "")
 auth.add_tenant("beta", "Beta College", "")
 
-# Alpha: one file counted (Jan-Jun, 100 kg a line), one held back (Jul-Sep, 300 kg a line).
+# Alpha: one file counted (Jan-Jun, 100 kg a line), one held back (Jul-Aug, 450 kg a line).
+# Both inside academic year 2024/25, which ends in August: a September line would open
+# 2025/26 and the default period would move to it.
 # Beta: one file counted, with a volume nothing of Alpha's could be mistaken for.
 FILES = [("upl-a1", "alpha", "Alpha spring.xlsx", range(1, 7), 100.0, 1),
-         ("upl-a2", "alpha", "Alpha summer.xlsx", range(7, 10), 300.0, 0),
+         ("upl-a2", "alpha", "Alpha summer.xlsx", range(7, 9), 450.0, 0),
          ("upl-b1", "beta", "Beta year.xlsx", range(1, 7), 900.0, 1)]
 con = db.connect()
 for tenant in ("alpha", "beta"):
@@ -159,7 +161,7 @@ print("\n=== publish ===")
 r, pub = publish_as(M, "alpha")
 P(r.status_code == 303, "the button starts it and returns straight away")
 P(pub["status"] == "live", f"the publication finished ({pub['status']}: {pub.get('error')})")
-P({w["key"] for w in pub["windows"]} == {"FY2025", "all"},
+P({w["key"] for w in pub["windows"]} == {"AY2024", "all"},
   f"it holds every period ({', '.join(w['key'] for w in pub['windows'])})")
 P([f["upload_id"] for f in pub["files"]] == ["upl-a1"],
   "and the counted file, and only that one")
@@ -172,7 +174,12 @@ P("Alpha spring.xlsx" in page and 'name="file"' not in page,
   "the picker offers the published file on its own, and no ticking files together")
 P(kg(A, "files:upl-a1") == 600, "choosing that file shows it")
 P(kg(A, "files:upl-a2") == 600, "asking for the unpublished file by URL shows the default instead")
-got = A.get("/export.xlsx?window=FY2025")
+P('<optgroup label="Academic year">' in page and "2024/25 — 6 of 12 months" in " ".join(page.split()),
+  "the picker offers the academic year, and says how much of it is held")
+P("2024/25 holds 6 of 12 months" in page, "and the page says so beside the figures")
+P(A.get("/export.xlsx?window=AY2024").headers["content-disposition"].endswith(
+    '_2024-25.xlsx"'), "the download is named for the year")
+got = A.get("/export.xlsx?window=AY2024")
 P(got.status_code == 200 and xlsx_kg(got.content) == 600,
   "the Excel download is the published workbook, with the same total")
 P(A.get("/export.xlsx?window=files:upl-a2").status_code == 404,

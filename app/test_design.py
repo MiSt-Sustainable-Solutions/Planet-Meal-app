@@ -16,6 +16,7 @@ import os
 import re
 import sys
 
+import html as _h7
 import httpx
 
 BASE = "http://127.0.0.1:8080"
@@ -242,10 +243,21 @@ import hashlib as _hl
 _v = _hl.sha1(SESSION.get(BASE + "/static/mist.css").content).hexdigest()[:10]
 P(f'href="/static/mist.css?v={_v}"' in dash,
   "the stylesheet address changes whenever the stylesheet does, so no browser keeps an old one")
+# 4 Oct 2026: the picker is a tick list wherever the figures carry the layer that adds up
+# (several restaurants read as one -- see test_combine.py), and the older one-at-a-time
+# dropdown for figures saved before it. Either is a picker; a page with neither is not.
+_OLD_PICK = {"trend": "trendPick", "groups": "groupPick", "top": "topPick", "eat": "eatPick"}
+
+
+def _picker(section, html_):
+    return (f'class="multi-pick" data-section="{section}"' in html_
+            or f'id="{_OLD_PICK[section]}"' in html_)
+
+
 _rm = _run.get("by_restaurant_month") or []
 if _rm:
     _names = {r["restaurant"] for r in _rm}
-    P('id="trendPick"' in dash and dash.count('class="scroll-x trend-series"') == len(_names) + 1,
+    P(_picker("trend", dash) and dash.count('class="scroll-x trend-series"') == len(_names) + 1,
       f"the trend offers all restaurants and each of the {len(_names)} on its own")
     P(dash.count('class="scroll-x trend-series"') - dash.count('trend-series" data-series') == 0
       and 'data-series="all" >' in dash.replace('data-series="all"  >', 'data-series="all" >')
@@ -256,27 +268,81 @@ if any(m.get("eat_lancet_score") is not None for m in _run.get("by_month", [])):
 P("kg CO₂e per kg of food" in dash and 'class="bar alt"' in dash,
   "the restaurant chart has a second column of bars for CO2 per kg of food")
 
+# 4 Oct 2026: the left axis is CO2 per kg of food -- TU Delft's KPI -- and no longer the
+# total, which mostly showed how many days the canteens were open.
+P("kg CO<sub>2</sub>e per kg of food (left)" in dash and "kg CO<sub>2</sub>e per month" not in dash,
+  "the trend's left axis is CO2 per kg of food, and the total is gone")
+P("CO<sub>2</sub> intensity" in dash[dash.index('id="trend"'):dash.index('id="restaurants"')],
+  "and its heading says intensity")
+_tips = _re.findall(r'data-tip="All restaurants · ([^"]*)"', dash)
+P(_tips and all("per kg of food" in t or "nothing bought" in t or "no food counted" in t
+                for t in _tips) and not any("kg CO₂e ·" in t for t in _tips),
+  f"pointing at a month gives its intensity, not its total ({len(_tips)} months)")
+_bm = _run.get("by_month") or []
+if _bm:
+    _first = _bm[0]
+    P(f"{_first['period']} · {_first['intensity_kg_co2_per_kg']:.2f} kg CO₂e per kg of food" in dash,
+      f"and it is the engine's own figure for that month ({_first['intensity_kg_co2_per_kg']})")
+
 # Figures saved before this change have neither breakdown. They must still draw a trend.
-_old = _charts.trend([{"period": "2025-01", "co2_kg": 10, "complete": True},
-                      {"period": "2025-02", "co2_kg": 20, "complete": True}])
+_old = _charts.trend([{"period": "2025-01", "food_kg": 10, "co2_kg": 10, "complete": True},
+                      {"period": "2025-02", "food_kg": 10, "co2_kg": 20, "complete": True}])
 P(len(_old["series"]) == 1 and not _old["has_eat"] and not _old["series"][0]["chart"]["eat_path"],
-  "an old saved figure gets the CO2 line alone, and no picker")
-# A restaurant that bought nothing in a month: 0 kg that month, and a break in its EAT line
-# rather than a plunge to a score of zero.
+  "an old saved figure gets the intensity line alone, and no picker")
+P([pt["tip"] for pt in _old["series"][0]["chart"]["points"]] ==
+  ["2025-01 · 1.00 kg CO₂e per kg of food", "2025-02 · 2.00 kg CO₂e per kg of food"],
+  "worked out from the two kilograms when the row carries no intensity of its own")
+# A restaurant that bought nothing in a month: no intensity and no score that month, and a
+# break in both lines rather than a plunge to zero.
 _new = _charts.trend(
-    [{"period": p, "co2_kg": 100, "eat_lancet_score": 0.7, "complete": True}
+    [{"period": p, "food_kg": 100, "co2_kg": 100, "eat_lancet_score": 0.7, "complete": True}
      for p in ("2025-01", "2025-02", "2025-03")],
-    [{"restaurant": "A", "period": "2025-01", "co2_kg": 50, "eat_lancet_score": 0.6},
-     {"restaurant": "A", "period": "2025-03", "co2_kg": 40, "eat_lancet_score": 0.5}], ["A"])
+    [{"restaurant": "A", "period": "2025-01", "food_kg": 25, "co2_kg": 50, "eat_lancet_score": 0.6},
+     {"restaurant": "A", "period": "2025-03", "food_kg": 20, "co2_kg": 40, "eat_lancet_score": 0.5}],
+    ["A"])
 _a = _new["series"][1]["chart"]
 P([pt["y2"] is None for pt in _a["points"]] == [False, True, False]
   and _a["eat_path"].count("M") == 2,
   "a restaurant's missing month breaks its EAT line instead of dropping it to zero")
+P([pt["y"] is None for pt in _a["points"]] == [False, True, False] and _a["path"].count("M") == 2,
+  "and breaks its intensity line the same way: no food is no ratio, not a ratio of zero")
 P(_a["points"][1]["tip"].endswith("nothing bought this month"),
   "and says nothing was bought, when pointed at")
-_axis = [g["label"] for g in _charts.trend(
-    [{"period": "2025-01", "co2_kg": 2400, "complete": True}])["series"][0]["chart"]["gridlines"]]
-P(len(set(_axis)) == len(_axis), f"no two gridlines share a label ({', '.join(_axis)})")
+# 4 Oct 2026, Mrigank, looking at four red dots at 0.33: "the months that are scored zero,
+# they are not actually at zero". They were neither -- an incomplete export, drawn at what
+# the part we hold works out to. A point on the line is a claim, whatever its colour.
+_part = _charts.trend(
+    [{"period": "2024-08", "food_kg": 100, "co2_kg": 150, "eat_lancet_score": 0.6, "complete": True},
+     {"period": "2024-09", "food_kg": 100, "co2_kg": 900, "eat_lancet_score": 0.1, "complete": False},
+     {"period": "2024-10", "food_kg": 100, "co2_kg": 160, "eat_lancet_score": 0.7, "complete": True}]
+)["series"][0]["chart"]
+P([(pt["y"] is None, pt["y2"] is None) for pt in _part["points"]] ==
+  [(False, False), (True, True), (False, False)],
+  "a month from an incomplete export is left out of both lines")
+P(_part["path"].count("M") == 2 and _part["eat_path"].count("M") == 2,
+  "which break around it rather than passing through it")
+P(_part["points"][1]["tip"] == "2024-09 · incomplete export, left out",
+  "pointing at it says why it is empty")
+P(_part["gridlines"][-1]["label"] == "2",
+  "and it does not set the scale: 9 kg per kg in a partial month leaves the axis at 2")
+P(not _part["points"][1]["ok"] and any(not l["ok"] for l in _part["xlabels"]),
+  "its label on the month axis is still marked")
+_trend_html = dash[dash.index('id="trend"'):dash.index('id="restaurants"')]
+P('class="tick axis-title"' in _trend_html and ">kg CO₂e per kg of food</text>" in _trend_html
+  and ">EAT-Lancet score</text>" in _trend_html,
+  "each axis is titled with what it measures")
+for _n in (10, 12, 26, 30, 31):
+    _months = [{"period": f"{2024 + i // 12}-{i % 12 + 1:02d}", "food_kg": 1, "co2_kg": 1,
+                "complete": True} for i in range(_n)]
+    _xs = [l["x"] for l in _charts.trend(_months)["series"][0]["chart"]["xlabels"]]
+    P(len(_xs) > 1 and min(b - a for a, b in zip(_xs, _xs[1:])) >= 55,
+      f"{_n} months: no two month labels close enough to run together")
+for _top in (1.4, 1.9, 2.6, 7.2):
+    _axis = [g["label"] for g in _charts.trend(
+        [{"period": "2025-01", "food_kg": 100, "co2_kg": 100 * _top, "complete": True}]
+    )["series"][0]["chart"]["gridlines"]]
+    P(len(set(_axis)) == len(_axis) and all(len(a) <= 4 for a in _axis),
+      f"an intensity of {_top} gets an axis of round numbers ({', '.join(_axis)})")
 
 print("\n=== the EAT-Lancet score explains itself, in words and with its own numbers ===")
 # 16 Sep 2026. The method was one line of notation under the chart. It is now the back of
@@ -370,12 +436,46 @@ print("\n=== CO2 by food group is its own section, one canteen at a time ===")
 # 20 Sep 2026: it shared a row with the product table, so it was half width, a different
 # height from its neighbour, and could only ever show the whole university.
 _fg = dash[dash.index('id="food-groups"'):dash.index('id="top-contributors"')]
-P('id="groupPick"' in _fg, "the food-group chart has a restaurant picker")
+P(_picker("groups", _fg), "the food-group chart has a restaurant picker")
 _gs = _re7.findall(r'class="scroll-x group-series" data-series="([a-z0-9]+)"', _fg)
 P(len(_gs) > 3 and _gs[0] == "all", f"one chart per restaurant, opening on the whole ({len(_gs)})")
 P("<table" not in _fg, "and the product table has moved out of this section")
 P("<table" in dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')],
   "into a section of its own")
+
+print("\n=== restaurants can be ticked together ===")
+if 'class="multi-pick"' in dash:
+    P(dash.count('class="multi-pick"') == 4 and 'class="pick-select"' not in dash,
+      "four tick lists, one per section, and no one-at-a-time dropdown beside them")
+    _ticks = [_h7.unescape(n) for n in _re.findall(
+        r'<label class="mp-row"><input type="checkbox" value="([^"]*)"', dash)]
+    _each = _ticks[:len(_ticks) // 4]
+    P(_each == [r["restaurant"] for r in _run["by_restaurant"]],
+      f"each lists every restaurant, heaviest first ({len(_each)})")
+    P("'/combined?section='" in dash and "data-series=\"combo\"" in dash,
+      "and the script that answers a tick is on the page")
+    _w = _re.search(r'class="multi-pick" data-section="trend" data-window="([^"]*)"', dash).group(1)
+    _pair = _each[1:3]
+    for _sec, _cls in (("trend", "trend-series"), ("groups", "group-series"),
+                       ("top", "top-series"), ("eat", "eat-series")):
+        _r = SESSION.get(BASE + "/combined", params=[("section", _sec), ("window", _w)]
+                         + [("r", n) for n in _pair], timeout=60)
+        P(_r.status_code == 200 and f'class="scroll-x {_cls}" data-series="combo"' in _r.text
+          and "Total of 2 restaurants" in _r.text,
+          f"two restaurants together: the {_sec} section is answered with one series")
+    _r = SESSION.get(BASE + "/combined", params=[("section", "top"), ("window", _w)]
+                     + [("r", n) for n in _pair], timeout=60).text
+    _mine = []
+    for _row in _re.findall(r"<tr>(.*?)</tr>", _r, _re.S):
+        _td = _re.findall(r"<td[^>]*>(.*?)</td>", _row, _re.S)
+        if len(_td) >= 5:                    # rank, product, food group, kg food, kg CO2
+            _mine.append(int(_td[4].strip().replace(",", "")))
+    _a, _b = [next(t for t in _run["top_by_restaurant"] if t["restaurant"] == n) for n in _pair]
+    P(_mine and _mine == sorted(_mine, reverse=True) and _mine[0] >= max(
+        _a["rows"][0]["co2_kg"], _b["rows"][0]["co2_kg"]),
+      f"its list is ranked by the combined CO2 ({_mine[0]:,} kg at the top)")
+else:
+    print("  (these figures were saved before the layer that adds up existed; recalculate to tick)")
 
 print("\n=== the score's scale is stated honestly ===")
 # 23 Sep 2026, Mrigank: the headline card said "0 to 1" while the restaurant chart drew
@@ -395,15 +495,24 @@ P(not _re7.search(r"FY\d{4}", _visible), "no FY#### anywhere a reader can see")
 _eyebrow = _re7.search(r'class="sec-label">(.*?)</div>', dash, _re7.S).group(1).strip()
 P(_re7.search(r"\b(19|20)\d{2}\b", _eyebrow) or "All data" in _eyebrow,
   f"the heading names the period plainly ({_eyebrow})")
-P('value="FY' in dash or 'window=FY' in dash,
-  "while the key a link carries is left alone, so old links still resolve")
+# 4 Oct 2026: the picker offers academic years now, so no FY key is on the page. An old
+# link carrying one must still open the calendar year it always meant.
+P('value="AY' in dash and 'value="FY' not in dash,
+  "the picker offers academic years, and no calendar year")
+P('<optgroup label="Academic year">' in dash, "under their own heading")
+_m = _re7.search(r'class="sec-label">(.*?)</div>', dash, _re7.S).group(1)
+P(_re7.search(r"\b20\d{2}/\d{2}\b", _m), f"the page opens on an academic year ({_m.strip()})")
+_old = fetch("/?window=FY2025")
+_old_eyebrow = _re7.search(r'class="sec-label">(.*?)</div>', _old, _re7.S).group(1)
+P("2025" in _old_eyebrow and "/" not in _old_eyebrow.split("·")[-1],
+  "while a link already sent with a calendar-year key still opens that year")
 
 print("\n=== the top contributors are forty, and can be read one canteen at a time ===")
 # 18 Sep 2026, Sander (TU Delft): "Top40 of products that contribute to CO2, also per
 # restaurant and period". A list of twenty under a heading that says forty, and a list that
 # reads as the whole story, are both ways of being quietly wrong.
 _top = dash[dash.index('id="top-contributors"'):dash.index('id="eat-lancet"')]
-P('id="topPick"' in _top, "the section has a restaurant picker")
+P(_picker("top", _top), "the section has a restaurant picker")
 _ts = _re7.findall(r'class="scroll-x top-series" data-series="(\w+)" data-covers="([^"]*)"', _top)
 P(len(_ts) > 3 and _ts[0][0] == "all", f"one list per restaurant, opening on the whole ({len(_ts)})")
 _all_list = _top[_top.index('data-series="all"'):]
@@ -432,7 +541,7 @@ P('data-count' not in _top, "and the lists do not borrow the count-up's attribut
 print("\n=== the EAT-Lancet comparison can be read one canteen at a time ===")
 # 20 Sep 2026, TU Delft: the university's own chart cannot tell a kitchen what to change.
 _eat = dash[dash.index('id="eat-lancet"'):]
-P('id="eatPick"' in _eat, "the section has a restaurant picker")
+P(_picker("eat", _eat), "the section has a restaurant picker")
 _series = _re7.findall(r'class="scroll-x eat-series" data-series="(\w+)" data-score="([^"]*)"', _eat)
 P(len(_series) > 3, f"one comparison drawn per restaurant, plus the whole ({len(_series)})")
 P(_series and _series[0][0] == "all", "the whole is what the page opens on")

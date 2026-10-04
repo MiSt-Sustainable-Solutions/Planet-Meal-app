@@ -348,6 +348,114 @@ if (eatPick) eatPick.addEventListener('change', function(){
   if (box) box.textContent = (!score || score === 'None') ? '—' : score;
 });
 
+/* Restaurants ticked together (4 Oct 2026). One handler for every tick list on the page;
+   each list keeps its own selection, in its own boxes.
+
+   Nothing ticked is the whole university and one tick is that restaurant: both are already
+   on the page, drawn by the server, and are simply shown. Two or more is a total nobody
+   could draw in advance, so it is asked for -- /combined adds the restaurants up from the
+   same figures and sends back one series, drawn by the same template. Every box ticked is
+   the whole university again, and shows the engine's own figures rather than a re-adding
+   of them. */
+var SERIES = {trend: 'trend-series', groups: 'group-series', top: 'top-series', eat: 'eat-series'};
+document.querySelectorAll('.multi-pick').forEach(function(mp){
+  var section = mp.getAttribute('data-section'), cls = SERIES[section];
+  var host = mp.closest('section');
+  var card = host && host.querySelector('.' + cls) ? host.querySelector('.' + cls).parentNode : null;
+  if (!card) return;
+  var boxes = mp.querySelectorAll('input[type=checkbox]');
+  var labelEl = mp.querySelector('.mp-label'), clear = mp.querySelector('.mp-clear');
+  var asked = 0, timer = null;
+
+  function ticked(){
+    var out = [];
+    boxes.forEach(function(b){ if (b.checked) out.push(b.value); });
+    return out;
+  }
+  function readouts(el){
+    if (section === 'top') {
+      var covers = el ? el.getAttribute('data-covers') : null, n = el ? el.getAttribute('data-rows') : null;
+      var c = document.getElementById('topCovers'), k = document.getElementById('topCount');
+      if (c) c.textContent = (covers === null ? '—' : covers + '%');
+      if (k) k.textContent = (n === null ? '—' : n);
+    }
+    if (section === 'eat') {
+      var score = el ? el.getAttribute('data-score') : null;
+      var box = document.getElementById('eatPickScore');
+      if (box) box.textContent = (!score || score === 'None') ? '—' : score;
+    }
+  }
+  function show(el){
+    card.querySelectorAll('.' + cls).forEach(function(x){ x.hidden = (x !== el); });
+    var note = card.querySelector('.combo-fail');
+    if (note) note.remove();
+    readouts(el);
+  }
+  function drop(){
+    card.querySelectorAll('.' + cls + '[data-series="combo"]').forEach(function(x){ x.remove(); });
+  }
+  function fail(){
+    drop();
+    show(null);
+    var p = document.createElement('p');
+    p.className = 'muted combo-fail';
+    p.textContent = 'These restaurants could not be added together. Reload the page and try again.';
+    card.insertBefore(p, card.firstChild);
+  }
+  function apply(){
+    var names = ticked(), mine = ++asked;
+    clear.disabled = names.length === 0;
+    labelEl.textContent = (names.length === 0 || names.length === boxes.length) ? 'All restaurants'
+      : names.length === 1 ? names[0] : names.length + ' restaurants';
+    if (names.length === 0 || names.length === boxes.length) {
+      drop(); show(card.querySelector('.' + cls + '[data-series="all"]')); return;
+    }
+    if (names.length === 1) {
+      var one = null;
+      card.querySelectorAll('.' + cls).forEach(function(x){
+        if (x.getAttribute('data-series') !== 'combo' && x.getAttribute('data-name') === names[0]) one = x;
+      });
+      if (one) { drop(); show(one); return; }
+    }
+    var url = '/combined?section=' + section + '&window=' +
+      encodeURIComponent(mp.getAttribute('data-window') || '');
+    names.forEach(function(n){ url += '&r=' + encodeURIComponent(n); });
+    card.classList.add('combining');
+    fetch(url, {credentials: 'same-origin', headers: {'Accept': 'text/html'}})
+      .then(function(res){ if (!res.ok) throw new Error(res.status); return res.text(); })
+      .then(function(html){
+        if (mine !== asked) return;              /* a later tick has overtaken this one */
+        var box = document.createElement('div');
+        box.innerHTML = html;
+        var el = box.querySelector('.' + cls);
+        if (!el) throw new Error('no series');
+        drop();
+        var last = null;
+        card.querySelectorAll('.' + cls).forEach(function(x){ last = x; });
+        card.insertBefore(el, last ? last.nextSibling : card.firstChild);
+        show(el);
+      })
+      .catch(function(){ if (mine === asked) fail(); })
+      .then(function(){ if (mine === asked) card.classList.remove('combining'); });
+  }
+  mp.addEventListener('change', function(){ clearTimeout(timer); timer = setTimeout(apply, 180); });
+  clear.addEventListener('click', function(){
+    boxes.forEach(function(b){ b.checked = false; });
+    apply();
+  });
+});
+/* A tick list is a small popover: a click anywhere else, or Escape, closes it. */
+document.addEventListener('click', function(e){
+  document.querySelectorAll('details.mp[open]').forEach(function(d){
+    if (!d.contains(e.target)) d.removeAttribute('open');
+  });
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') document.querySelectorAll('details.mp[open]').forEach(function(d){
+    d.removeAttribute('open');
+  });
+});
+
 var io = new IntersectionObserver(function(es){
   es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
 }, {threshold:0.08, rootMargin:'0px 0px -24px 0px'});

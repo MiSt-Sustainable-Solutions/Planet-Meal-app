@@ -40,6 +40,7 @@ import analysis
 import auth
 import catalogue
 import charts
+import combine
 import config
 import db
 import lines_export
@@ -390,7 +391,7 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             request, "dashboard.html", ctx(request, "dashboard", error=str(e),
-                                           window_options=analysis.windows(p.tenant),
+                                           window_options=_window_options(p, pickable),
                                            pickable=pickable, chosen_ids=chosen_ids,
                                            selected_window=window))
 
@@ -398,7 +399,7 @@ def dashboard(request: Request, window: str | None = None, refresh: int = 0,
     return templates.TemplateResponse(request, "dashboard.html", ctx(
         request, "dashboard",
         result=result, selected_window=selected, stale=result.get("stale"),
-        window_options=analysis.windows(p.tenant),
+        window_options=_window_options(p, pickable),
         pickable=pickable, chosen_ids=chosen_ids, **_charts(result)))
 
 
@@ -423,13 +424,35 @@ def _charts(result: dict) -> dict:
         ]),
         group_series=charts.group_series(
             result["by_food_group"], result.get("food_group_by_restaurant"),
-            label_key="food_group", value_key="co2_kg", width=980, pad_l=200, pad_r=130,
-            secondary_key="pct_of_co2", secondary_suffix="%"),
+            **combine.GROUP_BARS),
+        # The restaurants that can be ticked together. Empty for figures saved or
+        # published before the catalogue returned the layer that adds up, and the page
+        # then keeps the one-at-a-time dropdown.
+        combo_names=combine.restaurants(result),
         top_series=charts.top_series(result.get("top_contributors"),
                                      result.get("top_by_restaurant")),
         eat_chart=charts.paired(result["eat_lancet"]["rows"]),
         eat_series=charts.paired_series(result["eat_lancet"]),
         eat_explain=charts.eat_explain(result.get("eat_lancet")))
+
+
+def _window_options(p, pickable: list[dict] | None = None) -> list[dict]:
+    """What the period picker offers MiSt: the academic years, all data, then each counted
+    file on its own.
+
+    The same list a client is given from their published copy (see _published_options),
+    built from live data. The files were offered to the client and not to us, so the two
+    could not check the same view without one of them ticking boxes (4 Oct 2026). Counted
+    files only: a file kept but not counted is in none of the client's figures.
+
+    `pickable` is the listing the route has already made for its "or choose files" box.
+    Reading the uploads a second time doubled the wait for the page.
+    """
+    files = ([u for u in pickable if u.get("selected")] if pickable is not None
+             else publish.counted_files(p.tenant))
+    return analysis.windows(p.tenant) + [
+        dict(key=f"files:{f['upload_id']}", label=f["filename"], file=True, partial=[])
+        for f in files]
 
 
 def _published_options(pub: dict) -> list[dict]:
@@ -496,7 +519,7 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return templates.TemplateResponse(
             request, "data_health.html", ctx(request, "health", error=str(e),
-                                             window_options=analysis.windows(p.tenant),
+                                             window_options=_window_options(p, pickable),
                                              pickable=pickable, chosen_ids=chosen_ids,
                                              selected_window=selected,
                                              months=db.months(p.tenant)))
@@ -513,7 +536,7 @@ def data_health(request: Request, window: str | None = None, refresh: int = 0,
         request, "health", result=result, months=db.months(p.tenant),
         stale=result.get("stale"),
         work_queue=wq, work_queue_error=wq_err, selected_window=selected,
-        window_options=analysis.windows(p.tenant),
+        window_options=_window_options(p, pickable),
         pickable=pickable, chosen_ids=chosen_ids,
         curated=curated, curate_error=curate_error,
         decisions=catalogue.decisions(limit=1)))
@@ -1163,6 +1186,11 @@ def api_health():
     return {"app": "ok", "catalogue": catalogue.health()}
 
 
+def _light(result: dict) -> dict:
+    """A result without the layer that adds up: a megabyte nobody reading a figure wants."""
+    return {k: v for k, v in result.items() if k != "detail"}
+
+
 @app.get("/api/analysis")
 def api_analysis(request: Request, window: str | None = None):
     p = me(request)
@@ -1172,12 +1200,49 @@ def api_analysis(request: Request, window: str | None = None):
         got = publish.view(pub, publish.choose(pub, window)) if pub else None
         if got is None:
             return JSONResponse({"error": "nothing has been published yet"}, status_code=404)
-        return got
+        return _light(got)
     try:
-        return analysis.run(window=window or analysis.default_window(p.tenant),
-                            tenant=p.tenant)
+        return _light(analysis.run(window=window or analysis.default_window(p.tenant),
+                                   tenant=p.tenant))
     except (analysis.WindowError, catalogue.CatalogueDown) as e:
         return JSONResponse({"error": str(e)}, status_code=409)
+
+
+@app.get("/combined", response_class=HTMLResponse)
+def combined(request: Request, section: str, window: str | None = None,
+             r: list[str] = Query(default=[])):
+    """Several restaurants as one, for one section of the dashboard, as a piece of HTML.
+
+    The answer to a tick. The page holds a drawn series for the whole university and for
+    each restaurant; a combination cannot be drawn in advance -- seventeen restaurants
+    make 131,000 of them -- so it is drawn when asked for, from the same figures as the
+    page and with the same template.
+
+    Nothing is scored here and nothing is asked of the catalogue. The figures are added
+    up from the layer it returned with them (combine.py). A client's are their published
+    copy; MiSt's are the saved figures the page was drawn from, for the tenant being
+    looked at -- the same split as the page itself, so a total of some restaurants can
+    never come from different figures than the restaurants do.
+    """
+    if section not in combine.SECTIONS:
+        raise HTTPException(404, "no such section")
+    p = me(request)
+    frozen, _viewer = audience(request, p)
+    if frozen:
+        pub = publish.live(p.tenant)
+        result = publish.view(pub, publish.choose(pub, window)) if pub else None
+    else:
+        try:
+            result = analysis.held(window or analysis.default_window(p.tenant), p.tenant)
+        except analysis.WindowError as e:
+            raise HTTPException(409, str(e))
+    if result is None:
+        raise HTTPException(404, "no figures for this period")
+    s = combine.series(result, r, section)
+    if s is None:
+        # No such restaurants in these figures, or figures from before the layer existed.
+        raise HTTPException(404, "these restaurants cannot be combined for this period")
+    return templates.TemplateResponse(request, "_combined.html", dict(section=section, s=s))
 
 
 @app.get("/api/run/{run_id}")
@@ -1191,12 +1256,12 @@ def api_run(request: Request, run_id: str):
         out = publish.view_by_run(pub, run_id) if pub else None
         if out is None:
             raise HTTPException(404, f"no analysis run {run_id}")
-        return out
+        return _light(out)
     # Only an admin gets this far, and an admin may read any client's saved run.
     out = analysis.saved(run_id, None)
     if out is None:
         raise HTTPException(404, f"no analysis run {run_id}")
-    return out
+    return _light(out)
 
 
 @app.get("/api/catalogue-version")

@@ -182,18 +182,52 @@ def compare(rows, label_key, columns, width=1180, row_h=30, pad_l=230, limit=Non
                       for c in cols])
 
 
+def _quarters(v: float) -> float:
+    """A top for an axis whose four quarters are all numbers a person would write.
+
+    _nice(1.4) is 1.5, and a quarter of that is 0.375: an intensity axis reading 0.38, 0.75,
+    1.13, 1.5. These tops divide by four cleanly.
+    """
+    for top in (0.5, 1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 30, 40, 60, 80, 100):
+        if v <= top:
+            return float(top)
+    return _nice(v)
+
+
+def _intensity(row: dict):
+    """kg CO2e per kg of food for one month, or None when no food was counted.
+
+    The engine's own figure when the row carries one. A restaurant's month carries the two
+    kilograms it is the ratio of, and no food means no ratio -- not a ratio of zero.
+    """
+    v = row.get("intensity_kg_co2_per_kg")
+    if v is not None:
+        return float(v)
+    kg, co2 = row.get("food_kg"), row.get("co2_kg")
+    return float(co2) / float(kg) if kg and co2 is not None else None
+
+
 def trend(by_month, by_restaurant_month=None, restaurants=None,
-          width=980, height=260, pad_l=54, pad_b=34, pad_t=14, pad_r=58) -> dict:
-    """CO2 per month on the left axis and the EAT-Lancet score per month on the right.
+          width=980, height=280, pad_l=54, pad_b=34, pad_t=34, pad_r=58) -> dict:
+    """CO2 per kg of food per month on the left axis, the EAT-Lancet score on the right.
+
+    The intensity, not the total (4 Oct 2026). TU Delft's KPI is kg CO2e per kg of food,
+    and a total mostly shows how many days the canteens were open: every summer was a
+    cliff that said nothing about what was on the plate.
 
     One series for all restaurants and one for each restaurant, all drawn on the same months
     so switching between them keeps every month in the same place. Each series has its own
-    CO2 scale: one faculty on the scale of the whole university would be a flat line. A restaurant with no
-    purchases in a month is 0 kg for that month and has no score, so its line breaks rather
-    than dropping to a score of zero.
+    scale. A restaurant with no purchases in a month has no intensity and no score for it,
+    so both lines break there rather than dropping to zero.
+
+    A month from an incomplete export is left out of both lines too (4 Oct 2026). It used
+    to be drawn in red at whatever the part we hold works out to -- 0.33 kg per kg for four
+    months of autumn 2024 that are mostly drinks -- and a red dot on the line is still a
+    point on the line: it read as a real month with a remarkably low footprint. The month
+    keeps its place and its red label, and pointing at it says why it is empty.
 
     Figures saved before 16 Sep 2026 have no EAT per month and no restaurant breakdown; they
-    get the CO2 line alone and no picker.
+    get the intensity line alone and no picker.
     """
     months = list(by_month or [])
     if not months:
@@ -204,7 +238,7 @@ def trend(by_month, by_restaurant_month=None, restaurants=None,
 
     def one(key, label, rows):
         by = {r["period"]: r for r in rows}
-        pts_rows = [dict(period=p, co2_kg=(by.get(p) or {}).get("co2_kg") or 0,
+        pts_rows = [dict(period=p, intensity=_intensity(by.get(p) or {}),
                          eat=(by.get(p) or {}).get("eat_lancet_score"),
                          complete=complete[p]) for p in periods]
         return dict(key=key, label=label,
@@ -226,12 +260,12 @@ def trend(by_month, by_restaurant_month=None, restaurants=None,
 
 
 def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> dict:
-    vals = [float(r["co2_kg"]) for r in rows]
-    ymax = _nice(max(vals) or 1)
+    vals = [r["intensity"] for r in rows if r["intensity"] is not None and r["complete"]]
+    ymax = _quarters(max(vals) if vals else 1)
     plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
     n = len(rows)
     step = plot_w / max(n - 1, 1)
-    scores = [r["eat"] for r in rows if r["eat"] is not None]
+    scores = [r["eat"] for r in rows if r["eat"] is not None and r["complete"]]
     # 0 to 1 is the scale the score is explained on. It only extends below 0 when a month
     # actually does, which the method allows.
     lo2 = min(0.0, (min(scores) // 0.25) * 0.25) if scores else 0.0
@@ -246,23 +280,44 @@ def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> di
     pts = []
     for i, r in enumerate(rows):
         x = round(pad_l + i * step, 2)
-        tip = f"{r['period']} · {_thousands(r['co2_kg'])} kg CO₂e"
-        if not r["co2_kg"] and r["eat"] is None:
+        if not r["complete"]:
+            tip = f"{r['period']} · incomplete export, left out"
+        elif r["intensity"] is None and r["eat"] is None:
             # Nothing in the purchase data for this month, which is not the same thing as a
             # month with a small footprint -- say which it is.
             tip = f"{r['period']} · nothing bought this month"
-        elif has_eat:
-            tip += (f" · EAT-Lancet {r['eat']:.2f}" if r["eat"] is not None
-                    else " · EAT-Lancet: no food counted")
-        if not r["complete"]:
-            tip += " · incomplete export"
-        pts.append(dict(x=x, y=y1(float(r["co2_kg"])), ok=r["complete"], label=r["period"],
-                        y2=y2(r["eat"]) if r["eat"] is not None else None, tip=tip))
+        else:
+            tip = (f"{r['period']} · {r['intensity']:.2f} kg CO₂e per kg of food"
+                   if r["intensity"] is not None else f"{r['period']} · no food counted")
+            if has_eat:
+                tip += (f" · EAT-Lancet {r['eat']:.2f}" if r["eat"] is not None
+                        else " · EAT-Lancet: no food counted")
+        drawn = r["complete"]
+        pts.append(dict(x=x, ok=r["complete"], label=r["period"], tip=tip,
+                        y=y1(r["intensity"]) if drawn and r["intensity"] is not None else None,
+                        y2=y2(r["eat"]) if drawn and r["eat"] is not None else None))
 
-    path = "M" + " L".join(f"{p['x']},{p['y']}" for p in pts)
+    # Broken wherever a month has no food, like the score below: a ratio that does not
+    # exist is a gap, and a line drawn through it to zero would be a claim.
     base = round(pad_t + plot_h, 2)
-    area = f"M{pts[0]['x']},{base} L" + " L".join(f"{p['x']},{p['y']}" for p in pts) + \
-           f" L{pts[-1]['x']},{base} Z"
+    path, area, run = "", "", []
+
+    def close():
+        nonlocal path, area
+        if run:
+            path += "M" + " L".join(f"{p['x']},{p['y']}" for p in run) + " "
+        if len(run) > 1:
+            area += (f"M{run[0]['x']},{base} L" + " L".join(f"{p['x']},{p['y']}" for p in run)
+                     + f" L{run[-1]['x']},{base} Z ")
+
+    for p in pts:
+        if p["y"] is None:
+            close()
+            run = []
+        else:
+            run.append(p)
+    close()
+    path, area = path.strip(), area.strip()
     # Broken wherever a month has no score, so a gap reads as a gap.
     eat_path, pen = "", False
     for p in pts:
@@ -276,11 +331,14 @@ def _trend_chart(rows, has_eat, width, height, pad_l, pad_b, pad_t, pad_r) -> di
                       if has_eat else None)
                  for i in range(5)]
     every = max(1, n // 12)
+    # The last month is always named. The one before it is not, when it would sit closer
+    # than a full step: thirty months labelled every second one ended "2026-052026-06".
     xlabels = [dict(x=p["x"], label=p["label"][-7:], ok=p["ok"])
-               for i, p in enumerate(pts) if i % every == 0 or i == n - 1]
+               for i, p in enumerate(pts)
+               if i == n - 1 or (i % every == 0 and n - 1 - i >= every)]
     return dict(width=width, height=height, points=pts, path=path, area=area,
                 eat_path=eat_path.strip(), gridlines=gridlines, xlabels=xlabels,
-                baseline=base, pad_l=pad_l, pad_r=pad_r, has_eat=has_eat,
+                baseline=base, pad_l=pad_l, pad_r=pad_r, pad_t=pad_t, has_eat=has_eat,
                 hit_w=round(max(step, 12), 2))
 
 

@@ -30,6 +30,23 @@ import db
 # as a key too, so a hand-typed address works.
 FY = re.compile(r"^(?:FY)?(\d{4})$", re.I)
 
+# The year a university counts in: 1 September to 31 August. TU Delft's contract KPIs are
+# set against "school year 2023-24", so a January-to-December window answered a question
+# nobody there was asking (4 Oct 2026). AY2025 is the year that STARTS in September 2025
+# and reads "2025/26". Calendar years are no longer offered, but FY keys above still
+# resolve: they are in saved analyses, published copies and links already sent.
+AY = re.compile(r"^AY(\d{4})$", re.I)
+AY_START = 9
+
+
+def academic_year(year: int, month: int) -> int:
+    """The academic year a month belongs to, named by the year it starts in."""
+    return year if month >= AY_START else year - 1
+
+
+def academic_label(start: int) -> str:
+    return f"{start}/{(start + 1) % 100:02d}"
+
 
 def period_label(label: str | None) -> str:
     """What a person reads for a window. "FY2025" -> "2025"; anything else unchanged.
@@ -64,7 +81,9 @@ def picked(window: str | None) -> list[str] | None:
 
 def parse_window(window: str | None = None, frm: str | None = None, to: str | None = None,
                  tenant: str | None = None):
-    """-> (label, y0, m0, y1, m1). 'FY2025', 'all', 'files:a,b', or from/to as YYYY-MM."""
+    """-> (label, y0, m0, y1, m1). 'AY2025', 'all', 'files:a,b', or from/to as YYYY-MM.
+
+    'FY2025' (a calendar year) still resolves, though it is no longer offered."""
     # Before the months check below, which asks what is COUNTED. A chosen set of files is
     # a question about those files, and it stays answerable when nothing is counted at all.
     chosen = picked(window)
@@ -121,46 +140,71 @@ def parse_window(window: str | None = None, frm: str | None = None, to: str | No
         label = "All data"
     else:
         w = window or default_window(tenant)
-        m = FY.match(w)
-        if not m:
-            raise WindowError(f"unknown window {w!r} — use a year, 'all', or from/to")
-        y = int(m.group(1))
-        y0, m0, y1, m1, label = y, 1, y, 12, str(y)
+        a, m = AY.match(w), FY.match(w)
+        if a:
+            y = int(a.group(1))
+            y0, m0, y1, m1, label = y, AY_START, y + 1, AY_START - 1, academic_label(y)
+        elif m:
+            y = int(m.group(1))
+            y0, m0, y1, m1, label = y, 1, y, 12, str(y)
+        else:
+            raise WindowError(
+                f"unknown window {w!r} — use an academic year (AY2025), 'all', or from/to")
 
     if (y0 * 100 + m0) > (y1 * 100 + m1):
         raise WindowError("the window starts after it ends")
     return label, y0, m0, y1, m1
 
 
+def _by_academic_year(months: list[dict]) -> dict[int, list[dict]]:
+    by_year: dict[int, list[dict]] = {}
+    for m in months:
+        by_year.setdefault(academic_year(m["year"], m["month"]), []).append(m)
+    return by_year
+
+
 def default_window(tenant: str | None = None) -> str:
-    """The most recent complete calendar year we hold, else the latest year."""
+    """The most recent complete academic year we hold, else the latest one."""
     months = db.months(tenant)
     if not months:
-        return "FY2025"
-    by_year = {}
-    for m in months:
-        by_year.setdefault(m["year"], []).append(m)
+        return "AY2025"
+    by_year = _by_academic_year(months)
     for y in sorted(by_year, reverse=True):
         if len(by_year[y]) == 12 and all(x["complete"] for x in by_year[y]):
-            return f"FY{y}"
-    return f"FY{max(by_year)}"
+            return f"AY{y}"
+    return f"AY{max(by_year)}"
 
 
 def windows(tenant: str | None = None) -> list[dict]:
-    """The windows worth offering in the UI, newest first."""
+    """The windows worth offering in the UI, newest first: academic years, then all data.
+
+    `months` of `expected` is how much of the year is held. An academic year is offered
+    as soon as it has one month in it, so the picker has to say when it is not a whole
+    one -- "2025/26" over ten months is not the figure a contract year is judged on.
+    """
     months = db.months(tenant)
-    by_year = {}
-    for m in months:
-        by_year.setdefault(m["year"], []).append(m)
+    by_year = _by_academic_year(months)
     out = []
     for y in sorted(by_year, reverse=True):
         ms = by_year[y]
         partial = [x["period"] for x in ms if not x["complete"]]
-        out.append(dict(key=f"FY{y}", label=str(y), months=len(ms),
+        out.append(dict(key=f"AY{y}", label=academic_label(y), kind="academic",
+                        months=len(ms), expected=12,
                         complete=len(ms) == 12 and not partial, partial=partial))
     if out:
         out.append(dict(key="all", label="All data", months=len(months),
                         complete=False, partial=[]))
+    return out
+
+
+def missing_months(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> list[str]:
+    """The months inside a window that hold no purchases at all, as 'YYYY-MM'."""
+    held = {(m["year"], m["month"]) for m in db.months(tenant)}
+    out, y, mo = [], y0, m0
+    while (y, mo) <= (y1, m1):
+        if (y, mo) not in held:
+            out.append(f"{y}-{mo:02d}")
+        y, mo = (y, mo + 1) if mo < 12 else (y + 1, 1)
     return out
 
 
@@ -184,6 +228,35 @@ def _months_from(overlaps: list[dict]) -> str:
     return "; ".join(
         f"{', '.join(ps[:4])}{' and more' if len(ps) > 4 else ''} from {name}"
         for name, ps in sorted(by_file.items()))
+
+
+MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _month_ranges(periods: list[str]) -> str:
+    """['2026-07', '2026-08'] -> 'Jul–Aug 2026'. Consecutive months read as one range."""
+    pts = sorted((int(p[:4]), int(p[5:7])) for p in periods)
+    runs, start, prev = [], None, None
+    for y, m in pts:
+        after = (prev[0], prev[1] + 1) if prev and prev[1] < 12 else \
+                ((prev[0] + 1, 1) if prev else None)
+        if prev is not None and (y, m) == after:
+            prev = (y, m)
+            continue
+        if start is not None:
+            runs.append((start, prev))
+        start = prev = (y, m)
+    if start is not None:
+        runs.append((start, prev))
+
+    def say(a, b):
+        if a == b:
+            return f"{MONTH_NAMES[a[1] - 1]} {a[0]}"
+        if a[0] == b[0]:
+            return f"{MONTH_NAMES[a[1] - 1]}–{MONTH_NAMES[b[1] - 1]} {a[0]}"
+        return f"{MONTH_NAMES[a[1] - 1]} {a[0]}–{MONTH_NAMES[b[1] - 1]} {b[0]}"
+    return ", ".join(say(a, b) for a, b in runs)
 
 
 def rows_for(window: str | None, tenant: str, y0: int, m0: int, y1: int, m1: int):
@@ -275,6 +348,26 @@ def _lookup(tenant: str, wkey: str, fingerprint: str,
     if not out.get("catalogue_version"):
         out["catalogue_version"] = {"etag": row["catalogue_version"]}
     return out
+
+
+def held(window: str | None, tenant: str) -> dict | None:
+    """The saved result a page showing this window was drawn from. Asks nobody anything.
+
+    For a follow-up question about figures already on screen -- several restaurants added
+    together (combine.py). run() would answer it too, and would first ask the catalogue
+    what version it is on, which is a network call per tick for a question whose answer
+    is in this database. It is also the right answer when the catalogue has moved on: the
+    page is showing the held figures and saying so, and a total of some of its restaurants
+    must be a total of THOSE figures.
+
+    -> None when nothing has been saved for this window and these purchases, which a page
+    that has been drawn cannot be.
+    """
+    _label, y0, m0, y1, m1 = parse_window(window, None, None, tenant)
+    chosen = picked(window)
+    fingerprint = (db.picked_fingerprint(chosen, tenant) if chosen
+                   else db.window_fingerprint(y0, m0, y1, m1, tenant))
+    return _lookup(tenant, cache_key(y0, m0, y1, m1, None, chosen), fingerprint)
 
 
 def outgrown(result: dict, profile: str | None = None) -> bool:
@@ -448,6 +541,16 @@ def run(window: str | None = None, frm: str | None = None, to: str | None = None
             message=("Some months came from an incomplete export "
                      f"({', '.join(sorted(partial))}), so the totals for this period are "
                      "too low.")))
+    # A year with months missing is a smaller number for a reason that has nothing to do
+    # with what was bought. The picker says so; a screenshot of the figures has no picker.
+    asked = window or default_window(tenant)
+    if not chosen and not (frm or to) and (AY.match(asked) or FY.match(asked)):
+        gone = missing_months(y0, m0, y1, m1, tenant)
+        if gone:
+            result["headline"]["caveats"].insert(0, dict(
+                code="short_year", severity="info", owner="MiSt",
+                message=(f"{label} holds {12 - len(gone)} of 12 months. No purchases for "
+                         + _month_ranges(gone) + ", so the totals cover part of the year.")))
     result["piece_items"] = db.piece_items(y0, m0, y1, m1, tenant=tenant, owner=owner)
     result["window"] = dict(key=window or default_window(tenant), label=label,
                             period_from=f"{y0}-{m0:02d}", period_to=f"{y1}-{m1:02d}")

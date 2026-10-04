@@ -151,5 +151,7 @@ def analysis_workbook(result: dict, scored: dict, client: str,
 def export_name(tenant: str, result: dict) -> str:
     # Only characters every operating system accepts in a file name. A single file's
     # window is labelled "File: ...", and Windows refuses the colon.
-    label = re.sub(r"[^A-Za-z0-9()_-]", "", result["headline"]["window"])
+    # An academic year reads "2025/26"; stripped of its slash it would be "202526", which
+    # names no year at all.
+    label = re.sub(r"[^A-Za-z0-9()_-]", "", result["headline"]["window"].replace("/", "-"))
     return f"PLANETmeal_{tenant}_{label}.xlsx"

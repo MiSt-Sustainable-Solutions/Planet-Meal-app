@@ -209,6 +209,40 @@ h1.page-h1 em{color:var(--teal);font-style:italic;}
 .chart .area{fill:var(--teal);opacity:.11;}
 .chart .pt{fill:var(--teal);}
 .chart .pt.partial{fill:var(--danger);}
+.chart .axis-title{font-weight:700;}
+
+/* Restaurants ticked together. Looks like the dropdown it replaced until it is opened; the
+   list floats over the page rather than pushing the chart down. Its own colours, stated,
+   because it sits in light and dark sections alike. */
+.multi-pick{display:flex;gap:10px;align-items:center;font-size:13px;}
+.mp{position:relative;}
+.mp-sum{list-style:none;cursor:pointer;font-family:var(--sans);font-size:13px;color:var(--ink);
+  background:var(--white);border:1px solid var(--mist);border-radius:6px;
+  padding:8px 34px 8px 10px;min-width:210px;max-width:300px;position:relative;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mp-sum::-webkit-details-marker{display:none;}
+.mp-sum::after{content:"";position:absolute;right:12px;top:50%;width:6px;height:6px;
+  border-right:1.6px solid var(--ink);border-bottom:1.6px solid var(--ink);
+  transform:translateY(-70%) rotate(45deg);}
+.mp[open] .mp-sum{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal);}
+.mp[open] .mp-sum::after{transform:translateY(-30%) rotate(225deg);}
+.mp-sum:focus-visible{outline:2px solid var(--teal);outline-offset:2px;}
+.mp-body{position:absolute;z-index:60;top:calc(100% + 6px);left:0;width:max-content;
+  min-width:100%;max-width:min(92vw,440px);max-height:min(56vh,420px);overflow-y:auto;
+  background:var(--white);color:var(--ink);border:1px solid var(--mist);border-radius:8px;
+  box-shadow:0 12px 32px rgba(10,32,16,.18);padding:4px 12px 8px;}
+.mp-top{display:flex;justify-content:space-between;align-items:center;gap:16px;
+  position:sticky;top:0;background:var(--white);padding:8px 0;border-bottom:1px solid var(--mist);}
+.mp-hint{font-size:12px;color:var(--sage);}
+.mp-clear{font-family:var(--sans);font-size:12px;font-weight:700;color:var(--teal-ink);
+  background:none;border:0;padding:2px 0;cursor:pointer;text-decoration:underline;white-space:nowrap;}
+.mp-clear:disabled{color:var(--sage);text-decoration:none;cursor:default;opacity:.6;}
+.mp-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px;color:var(--ink);
+  border-top:1px solid var(--linen2);cursor:pointer;}
+.mp-top + .mp-row{border-top:0;}
+.mp-row input{accent-color:var(--teal);width:15px;height:15px;flex:none;}
+.combining{opacity:.55;transition:opacity .12s;}
+.combo-names{font-size:12.5px;margin:0 0 12px;}
 .chart .line2{fill:none;stroke:var(--ink);stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round;}
 .chart .pt2{fill:var(--ink);}
 .chart .hit{fill:transparent;cursor:crosshair;}

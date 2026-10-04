@@ -99,13 +99,16 @@ def signed_in(u, pw):
     return c
 
 
-def kg(client, window="FY2025"):
+# "all" and not a year: every line here is in calendar 2025, which is two academic years
+# (Jan-Aug closes 2024/25, Sep-Dec opens 2025/26), and a client is only ever published
+# academic years and all data. These tests are about adjustments, so they read the lot.
+def kg(client, window="all"):
     r = client.get(f"/api/analysis?window={window}")
     return r.json()["headline"]["food_kg"] if r.status_code == 200 else None
 
 
 def notes(client):
-    r = client.get("/api/analysis?window=FY2025").json()
+    r = client.get("/api/analysis?window=all").json()
     return [c["message"] for c in r["headline"]["caveats"] if c["code"] == "adjustment"]
 
 
@@ -152,7 +155,7 @@ P(r.status_code == 303 and "done=" in r.headers["location"], "saved")
 P(kg(M) == 2520, f"the working figure is recalculated with it: 1200 + 1200 + 120 = 2520 ({kg(M)} kg)")
 P(notes(M) == ["Only 10% of purchased frying oil is counted."],
   f"the dashboard says so once, under its label, not once per product ({notes(M)})")
-dash = M.get("/").text
+dash = M.get("/?window=all").text
 P("<strong>Adjusted:</strong> Only 10% of purchased frying oil is counted." in dash,
   "as the Adjusted line under the headline figures")
 P("agreed with Alpha" not in dash, "and the reason stays MiSt's")
@@ -233,7 +236,7 @@ P(refused(artikelnr=[OMEGA], from_period="2025-01", to_period="2025-06")[0] is F
 P(kg(M) == 2520 - 300, f"and that one is counted too (-300 kg: {kg(M)})")
 # Two adjustment lines now apply. On 16 Sep 2026 nine frying oils, each under its own
 # name, filled the first page with nine of these; more than one is folded into one line.
-dash = M.get("/").text
+dash = M.get("/?window=all").text
 P("<strong>Adjusted:</strong> 2 purchases count only in part." in dash
   and "Show which" in dash and dash.count("<strong>Adjusted:</strong>") == 1,
   "with more than one, the first page shows one folded line, not one line each")
