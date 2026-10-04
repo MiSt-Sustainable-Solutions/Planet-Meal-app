@@ -221,6 +221,21 @@ def decisions(limit: int = 20) -> dict | None:
         return None
 
 
+def averages() -> dict | None:
+    """Every group and bucket average, with the RIVM items each is the mean of.
+
+    For the reference sheets of the Excel. None if the catalogue cannot be reached or is
+    older than the endpoint (before 4 Oct 2026): the workbook is then written without
+    those sheets, rather than not at all.
+    """
+    try:
+        with _client() as c:
+            r = c.get("/catalogue/averages", timeout=60)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
 def eat_profiles() -> dict | None:
     try:
         with _client() as c:

@@ -532,8 +532,8 @@ TIER_SWATCH = [f"var(--tier{i})" for i in range(1, 7)]
 # --------------------------------------------------------------------------- grades
 # A client needs three words, not five tier names. "Curated pin" and "Archetype rule"
 # describe how MiSt works, not how much to trust a number. The five tiers stay where MiSt
-# works on the data -- Data health, the catalogue, the per-line export -- and the
-# dashboard speaks in these.
+# works on the data -- Data health and the catalogue -- and the dashboard and the Excel
+# speak in these. The Excel adds what each footprint was matched to, by name (4 Oct 2026).
 GRADE = {
     "curated_pin": "Exact",
     "rivm_archetype": "Close",

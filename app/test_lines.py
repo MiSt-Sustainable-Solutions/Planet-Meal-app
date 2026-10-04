@@ -110,14 +110,67 @@ head_row = next(i for i, r in enumerate(ws.iter_rows(values_only=True), start=1)
                 if r[0] == "Period")
 heads = [c.value for c in ws[head_row]]
 for want in ("Period", "Product", "Kilograms", "Kilograms counted", "kg CO2e",
-             "EAT-Lancet group", "Footprint from", "Footprint confidence", "Matched by"):
+             "EAT-Lancet group", "Precision", "Matched to (type)", "Matched to", "NEVO code",
+             "Footprint confidence", "Matched by"):
     P(want in heads, f"column present: {want}")
+P("Footprint from" not in heads, "and the engine's tier codes are no longer a column")
 P(ws.max_row == head_row + len(rows), f"one row per line ({ws.max_row - head_row})")
 P(ws.freeze_panes is not None, "the headings stay put when you scroll")
 
 notes = " ".join(str(ws.cell(row=r, column=1).value or "") for r in range(1, head_row))
 P("reconcile" in notes.lower(), "the sheet says how to reconcile it with the dashboard")
 P("Nutrition is deliberately absent" in notes, "and why nutrition is not in it")
+
+print("\n=== every line says what it was matched to, and it can be looked up ===")
+# 4 Oct 2026. The sheet said HOW a footprint was found ("rivm_group_avg") and never TO WHAT.
+# Now each line names its reference, and the reference sheets after it list each one with
+# its value -- which must be the value on the line, or the name is decoration.
+_c = {h: i for i, h in enumerate(heads)}
+_lines = [r for r in ws.iter_rows(min_row=head_row + 1, values_only=True)]
+_named = [r for r in _lines if r[_c["kg CO2e per kg"]] is not None]
+P(_named and all(r[_c["Matched to"]] and r[_c["Matched to (type)"]] for r in _named),
+  f"every line with a footprint names what it was matched to ({len(_named)} of {len(_lines)})")
+P(all(r[_c["Precision"]] in ("Exact", "Close", "Estimated") for r in _named),
+  "in the dashboard's precision words")
+P(all((r[_c["NEVO code"]] is not None) == (r[_c["Matched to (type)"]] == "RIVM product")
+      for r in _named), "with a NEVO code exactly where it is a RIVM product")
+book = openpyxl.load_workbook(io.BytesIO(data))
+P({"RIVM products used", "RIVM group averages", "Bucket averages", "Average members"}
+  <= set(book.sheetnames), f"the reference sheets follow the lines ({', '.join(book.sheetnames)})")
+
+
+def _sheet(name):
+    w = book[name]
+    rows_ = list(w.iter_rows(values_only=True))
+    at = next(i for i, r in enumerate(rows_) if r[0] and r[1] and all(isinstance(x, str) for x in r if x))
+    return rows_[at], rows_[at + 1:]
+
+
+_h, _rv = _sheet("RIVM products used")
+_val = {r[_h.index("NEVO code")]: r[_h.index("kg CO2e per kg")] for r in _rv}
+P(all(_val.get(r[_c["NEVO code"]]) == r[_c["kg CO2e per kg"]]
+      for r in _named if r[_c["NEVO code"]] is not None),
+  "each RIVM product on a line is listed with the value the line carries")
+_h, _gv = _sheet("RIVM group averages")
+_gval = {r[0]: r[_h.index("kg CO2e per kg")] for r in _gv}
+_h2, _bv = _sheet("Bucket averages")
+_bval = {r[0]: r[_h2.index("kg CO2e per kg")] for r in _bv}
+P(len(_gv) == 29 and len(_bv) == 18, f"all group averages ({len(_gv)}) and bucket averages ({len(_bv)})")
+_avg_lines = [r for r in _named if r[_c["Matched to (type)"]] != "RIVM product"]
+P(all(abs(({"RIVM group average": _gval, "Bucket average": _bval}[r[_c["Matched to (type)"]]]
+            [r[_c["Matched to"]]]) - r[_c["kg CO2e per kg"]]) < 1e-9 for r in _avg_lines),
+  f"each average on a line is listed with the value the line carries ({len(_avg_lines)} lines)")
+_h3, _mv = _sheet("Average members")
+_means = {}
+for r in _mv:
+    _means.setdefault((r[0], r[1]), []).append(r[_h3.index("kg CO2e per kg")])
+P(all(abs(sum(v) / len(v) - (_gval if t == "RIVM group average" else _bval)[n]) < 1e-9
+      for (t, n), v in _means.items()) and len(_means) == len(_gv) + len(_bv),
+  "and every average is the mean of the members listed for it")
+_bare = lines_export.workbook(rows, "Acme University", "probe", averages={})
+P({"RIVM products used"} <= set(openpyxl.load_workbook(io.BytesIO(_bare)).sheetnames)
+  and "Average members" not in openpyxl.load_workbook(io.BytesIO(_bare)).sheetnames,
+  "without the averages (an older catalogue) the file is still written, with what it has")
 
 print("\n=== the totals ARE the dashboard's ===")
 # The claim the whole export rests on: filter to food, sum two columns, get the headline.
@@ -209,7 +262,12 @@ r = client.get("/export.xlsx?window=all")
 P(r.status_code == 200, f"the export downloads ({r.status_code})")
 ex = openpyxl.load_workbook(io.BytesIO(r.content))
 P("lines" in ex.sheetnames, f"it has a lines tab ({ex.sheetnames})")
-P(ex.sheetnames[-1] == "lines", "last, after the summaries it is the evidence for")
+# After every summary it is the evidence for; followed only by the reference sheets that
+# say what its lines were matched to (4 Oct 2026).
+_after = ex.sheetnames[ex.sheetnames.index("lines") + 1:]
+P(set(_after) <= {"RIVM products used", "RIVM group averages", "Bucket averages",
+                  "Average members"} and "summary" in ex.sheetnames[:ex.sheetnames.index("lines")],
+  f"after the summaries it is the evidence for, then what it was matched to ({_after})")
 
 lw = ex["lines"]
 lrows = list(lw.iter_rows(values_only=True))

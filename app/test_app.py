@@ -547,6 +547,49 @@ else:
           and _s["names"] == _names[1:3] and ("chart" in _s or "rows" in _s),
           f"the {_sec} section gets a drawable series for the combination")
 
+print("\n=== on real purchases, every line's 'matched to' is listed with its value ===")
+# 4 Oct 2026. test_lines checks this on three probe lines; here it is a year of real
+# purchases, where every kind of reference occurs -- RIVM products, group averages and
+# bucket averages -- and the lookup has to hold for all of them.
+if catalogue.health() is None:
+    print("  (catalogue API not running — skipping)")
+else:
+    import io as _io
+    import openpyxl as _ox
+    import lines_export as _le
+    _lab2, _a0, _b0, _a1, _b1 = analysis.parse_window("FY2024")
+    _scored = catalogue.score_lines(db.lines_for(_a0, _b0, _a1, _b1), label="FY2024")
+    _rows = _scored["rows"]
+    _avg = catalogue.averages()
+    P(_avg is not None, "the catalogue lists its averages")
+    _book = _ox.load_workbook(_io.BytesIO(_le.workbook(_rows, "Test", "FY2024", averages=_avg)),
+                              read_only=True)
+
+    def _tab(name):
+        rs = list(_book[name].iter_rows(values_only=True))
+        at = next(i for i, r in enumerate(rs) if r and r[0] and "kg CO2e per kg" in r)
+        h = rs[at]
+        return {r[0]: r[h.index("kg CO2e per kg")] for r in rs[at + 1:] if r and r[0] is not None}
+
+    _look = {"RIVM product": _tab("RIVM products used"),
+             "RIVM group average": _tab("RIVM group averages"),
+             "Bucket average": _tab("Bucket averages")}
+    _kinds2, _off2, _blank = {}, 0, 0
+    for r in _rows:
+        if r.get("co2") is None:
+            continue
+        kind = r.get("reference_kind")
+        if not kind:
+            _blank += 1
+            continue
+        _kinds2[kind] = _kinds2.get(kind, 0) + 1
+        key = _le.nevo_code(r) if kind == "RIVM product" else _le.matched_name(r)
+        if key not in _look[kind] or abs(_look[kind][key] - r["co2"]) > 1e-9:
+            _off2 += 1
+    P(_blank == 0, f"every one of {len(_rows):,} lines with a footprint names its reference")
+    P(set(_kinds2) == set(_look), f"all three kinds occur ({_kinds2})")
+    P(_off2 == 0, "and every one is listed in the workbook with exactly the value on the line")
+
 print("\n=== the year on offer is the academic one ===")
 # 4 Oct 2026. TU Delft's KPIs are set against a school year, 1 September to 31 August, so
 # the calendar year answered a question nobody there asks. AY2025 STARTS in September 2025.

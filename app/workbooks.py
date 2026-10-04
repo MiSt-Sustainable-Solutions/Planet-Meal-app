@@ -98,21 +98,27 @@ def analysis_workbook(result: dict, scored: dict, client: str,
                             "intensity", "products"],
           [[group(r), r["food_kg"], r["co2_kg"], r["pct_of_weight"], r["pct_of_co2"],
             r["intensity_kg_co2_per_kg"], r["products"]] for r in result["by_food_group"]])
+    # "matched to" names what the footprint was taken from, as on the lines sheet (4 Oct
+    # 2026). Empty for figures scored before the catalogue recorded it.
     sheet("top contributors", ["rank", "artikelnr", "product", "food group", "food kg",
                                "kg CO2e", "kg CO2e per kg", "% of CO2", "running % of CO2",
-                               "precision", "confidence"],
+                               "precision", "matched to (type)", "matched to", "NEVO code",
+                               "confidence"],
           [[i, r["artikelnr"], r["description"], group(r), r["food_kg"], r["co2_kg"],
             r["co2_per_kg"], r["pct_of_co2"], r.get("cumulative_pct_of_co2"),
-            charts.grade(r.get("source")), r["confidence"]]
+            charts.grade(r.get("source")), r.get("reference_kind"),
+            lines_export.matched_name(r), lines_export.nevo_code(r), r["confidence"]]
            for i, r in enumerate(result["top_contributors"], start=1)])
     # The same ranking per kitchen. One sheet rather than one per restaurant, so it can be
     # filtered and pivoted; the percentages are of that restaurant's own CO2, as on screen.
     sheet("top per restaurant", ["restaurant", "rank", "artikelnr", "product", "food group",
                                  "food kg", "kg CO2e", "% of this restaurant's CO2",
-                                 "running %", "precision"],
+                                 "running %", "precision", "matched to (type)", "matched to",
+                                 "NEVO code"],
           [[per["restaurant"], i, r["artikelnr"], r["description"], group(r),
             r["food_kg"], r["co2_kg"], r["pct_of_co2"], r.get("cumulative_pct_of_co2"),
-            charts.grade(r.get("source"))]
+            charts.grade(r.get("source")), r.get("reference_kind"),
+            lines_export.matched_name(r), lines_export.nevo_code(r)]
            for per in result.get("top_by_restaurant") or []
            for i, r in enumerate(per.get("rows") or [], start=1)])
     # "scored as" says whether a row is a target or a limit: under a limit costs nothing, so
@@ -143,6 +149,8 @@ def analysis_workbook(result: dict, scored: dict, client: str,
     lines_export.add_sheet(wb, scored["rows"], client, h["window"],
                            version=scored.get("catalogue_version"),
                            extra_notes=extra_notes or [])
+    # ...and what those lines were matched to, so a name on a line can be looked up here.
+    lines_export.add_reference_sheets(wb, scored["rows"], lines_export._averages())
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
