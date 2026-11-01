@@ -167,7 +167,8 @@ _h, _gv = _sheet("RIVM group averages")
 _gval = {r[0]: r[_h.index("kg CO2e per kg")] for r in _gv}
 _h2, _bv = _sheet("Bucket averages")
 _bval = {r[0]: r[_h2.index("kg CO2e per kg")] for r in _bv}
-P(len(_gv) == 29 and len(_bv) == 18, f"all group averages ({len(_gv)}) and bucket averages ({len(_bv)})")
+# 30 since 1 Nov 2026: dried fruit has its own group
+P(len(_gv) == 30 and len(_bv) == 18, f"all group averages ({len(_gv)}) and bucket averages ({len(_bv)})")
 _avg_lines = [r for r in _named if r[_c["Matched to (type)"]] != "RIVM product"]
 P(all(abs(({"RIVM group average": _gval, "Bucket average": _bval}[r[_c["Matched to (type)"]]]
             [r[_c["Matched to"]]]) - r[_c["kg CO2e per kg"]]) < 1e-9 for r in _avg_lines),

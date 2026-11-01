@@ -363,9 +363,10 @@ def eat_explain(eat: dict | None) -> dict | None:
     rows = eat["rows"]
 
     def costs(r):
-        """What a row costs the score: nothing, when it is under a limit."""
+        """What a row costs the score: nothing under a limit, nothing over a floor."""
         gap = float(r.get("gap_pct") or 0)
-        return 0.0 if (r.get("is_limit") and gap <= 0) else abs(gap)
+        spare = (r.get("is_limit") and gap <= 0) or (r.get("is_floor") and gap >= 0)
+        return 0.0 if spare else abs(gap)
 
     biggest = sorted(rows, key=lambda r: -costs(r))[:2]
 
@@ -385,6 +386,8 @@ def eat_explain(eat: dict | None) -> dict | None:
         # Rows that are a limit rather than a target: being under one is not a failing, and
         # the card has to say so or the arithmetic looks wrong (21 Sep 2026).
         limits=[(r.get("food_group") or "").lower() for r in rows if r.get("is_limit")],
+        # rows where only a shortfall counts (1 Nov 2026): vegetables, fruit, legumes, nuts
+        floors=[(r.get("food_group") or "").lower() for r in rows if r.get("is_floor")],
         method=eat.get("profile_label"),
         intake_pct=(round(eat["intake_pct_of_food"]) if eat.get("intake_pct_of_food")
                     is not None else None),
@@ -422,13 +425,15 @@ def paired(rows, label_key="food_group", a_key="purchased_pct", b_key="reference
         b = float(r.get(b_key) or 0)
         gap = a - b
         limit = bool(r.get("is_limit"))
-        spare = limit and gap <= 0            # under a limit: costs nothing
+        floor = bool(r.get("is_floor"))
+        # under a limit, or over a floor (1 Nov 2026): costs nothing
+        spare = (limit and gap <= 0) or (floor and gap >= 0)
         counted = 0.0 if spare else gap
         out.append(dict(
             y=i * row_h, label=str(r.get(label_key, "")),
             a_w=max(1.5, round(plot_w * a / vmax, 2)),
             b_w=max(1.5, round(plot_w * b / vmax, 2)),
-            a=a, b=b, gap=counted, raw_gap=gap, limit=limit, spare=spare,
+            a=a, b=b, gap=counted, raw_gap=gap, limit=limit, floor=floor, spare=spare,
             gap_display="0" if spare else ("+" if counted > 0 else "") + f"{counted:.1f}",
             over=counted > 0))
     return dict(empty=False, width=width, height=len(out) * row_h + 6, rows=out,

@@ -65,7 +65,8 @@ def _eat(d: dict, kg_by_group: list[float]) -> dict | None:
     """The EAT-Lancet comparison for summed kilograms per diet group.
 
     The catalogue's eat_deviation, on sums instead of lines: each group's share of the
-    intake against its share in the diet, a limit costing nothing while under it. None when
+    intake against its share in the diet, a limit costing nothing while under it and a floor
+    (vegetables, fruit, legumes, nuts; 1 Nov 2026) nothing while over it. None when
     there is no intake food, for the engine's reason -- every group at 0% would score as
     the worst possible diet rather than as no diet at all.
     """
@@ -74,13 +75,16 @@ def _eat(d: dict, kg_by_group: list[float]) -> dict | None:
     if not total:
         return None
     rows, absdev = [], 0.0
+    # a result calculated before 1 Nov 2026 carries no floors: every row then counts both
+    # ways except a limit, which is how that result was scored
+    floors = e.get("floors") or [False] * len(e["groups"])
     for i, group in enumerate(e["groups"]):
-        ref, limit = e["reference"][i], bool(e["limits"][i])
+        ref, limit, floor = e["reference"][i], bool(e["limits"][i]), bool(floors[i])
         pur = 100 * kg_by_group[i] / total
-        if not (limit and pur <= ref):
+        if not ((limit and pur <= ref) or (floor and pur >= ref)):
             absdev += abs(pur - ref)
         rows.append(dict(food_group=group, reference_pct=ref, purchased_pct=round(pur, 1),
-                         gap_pct=round(pur - ref, 1), is_limit=limit))
+                         gap_pct=round(pur - ref, 1), is_limit=limit, is_floor=floor))
     return dict(score=round(1 - absdev / 100, 3), total_abs_deviation=round(absdev, 1),
                 intake_kg=round(total), rows=rows)
 

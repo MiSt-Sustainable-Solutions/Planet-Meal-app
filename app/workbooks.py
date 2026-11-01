@@ -158,7 +158,8 @@ def analysis_workbook(result: dict, scored: dict, client: str,
     # a reader adding the gaps up by hand would otherwise get a different total (21 Sep 2026).
     sheet("eat lancet", ["food group", "reference %", "purchased %", "gap", "scored as"],
           [[r["food_group"], r["reference_pct"], r["purchased_pct"], r["gap_pct"],
-            "limit" if r.get("is_limit") else "target"]
+            "limit: only too much counts" if r.get("is_limit") else
+            ("at least: only too little counts" if r.get("is_floor") else "target: both ways count")]
            for r in result["eat_lancet"]["rows"]]
           + [[], ["measured against", result["eat_lancet"].get("profile_label")],
              ["source", result["eat_lancet"].get("profile_source")]])

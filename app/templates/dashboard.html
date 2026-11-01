@@ -94,9 +94,11 @@
               ({{ e.intake_pct }}% of it{% if e.left_out %}; left out: {% for x in e.left_out %}{{ x.words }} {{ x.pct }}%{{ ', ' if not loop.last }}{% endfor %}{% endif %}){% endif %}.</li>
             <li>Each group&rsquo;s share is compared with the diet&rsquo;s.
               {% for b in e.biggest %}{{ b.group|capitalize }}: {{ b.purchased }}% bought, {{ b.reference }}% in the diet{{ '; ' if not loop.last else '.' }}{% endfor %}</li>
-            <li>All differences are added up, too much and too little alike: <strong>{{ e.deviation }} points</strong>.{% if e.limits %}
-              {{ e.limits|join(' and ')|capitalize }} are limits, so buying less than the diet
-              allows costs nothing.{% endif %}</li>
+            {# 1 Nov 2026: a difference counts only in the direction that is a problem #}
+            <li>The differences that matter are added up: <strong>{{ e.deviation }} points</strong>.{% if e.floors or e.limits %}
+              {% if e.floors %}For {{ (e.floors[:-1]|join(', ') ~ ' and ' ~ e.floors[-1]) if e.floors|length > 1 else e.floors[0] }}, only buying too little counts.{% endif %}
+              {% if e.limits %}For {{ (e.limits[:-1]|join(', ') ~ ' and ' ~ e.limits[-1]) if e.limits|length > 1 else e.limits[0] }}, only buying too much counts.{% endif %}
+              The other groups count both ways.{% endif %}</li>
             <li>1 &minus; {{ e.deviation }} &divide; 100 = <strong>{{ e.score }}</strong></li>
           </ol>
           <div class="flip-links">
@@ -440,8 +442,9 @@
     <p class="muted" style="margin-top:18px;font-size:13px;max-width:78ch;">
       Measured against <strong>{{ el.profile_label }}</strong>{% if el.profile_source %} &mdash;
       {{ el.profile_source }}{% endif %}
-      {%- if el.limits %} Added sugars and saturated fats are limits: buying less than the diet
-      allows is not counted against the score.{% endif %}
+      {%- if el.floors or el.limits %} A difference counts only in the direction that is a problem:
+      {% if el.floors %}too little {{ ((el.floors[:-1]|join(', ') ~ ' and ' ~ el.floors[-1]) if el.floors|length > 1 else el.floors[0])|lower }}{% endif %}{% if el.floors and el.limits %}; {% endif %}
+      {% if el.limits %}too much {{ ((el.limits[:-1]|join(', ') ~ ' and ' ~ el.limits[-1]) if el.limits|length > 1 else el.limits[0])|lower }}{% endif %}. The other groups count both ways.{% endif %}
       {%- if not el.profile_confirmed %} This reference is provisional.{% endif %}
     </p>
   </div>
