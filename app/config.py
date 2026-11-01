@@ -9,7 +9,17 @@ configuration only:
     MIST_TENANT          the FIRST client, at setup   (default: tudelft)
 """
 import os
+import time
 from pathlib import Path
+
+# Every time the app stamps or shows is Dutch time (1 Nov 2026). Railway runs in UTC, so a
+# publish made at 20:31 read "19:31" in the admin bar. Set here, where every module's
+# imports begin, rather than converted in each place a time is shown. A POSIX rule, not
+# "Europe/Amsterdam", because it needs no time-zone database in the container. Windows
+# has no tzset, and a laptop there is on Dutch time already.
+if hasattr(time, "tzset"):
+    os.environ.setdefault("TZ", "CET-1CEST,M3.5.0,M10.5.0/3")
+    time.tzset()
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
