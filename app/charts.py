@@ -610,8 +610,14 @@ def precision(data_health: dict | None) -> dict:
         rows.append(dict(label="No weight", explain="food sold per piece, counted as 0 kg",
                          swatch="transparent", weight=None, co2=None,
                          spend=round(nw["pct_of_spend"])))
+    # How much of the weight the file did not state (1 Nov 2026): measured on the same
+    # article elsewhere, or estimated from a reviewed weight per piece.
+    wf = {w.get("basis"): w for w in dh.get("weight_from") or []}
+    filled = dict(measured=(wf.get("measured") or {}).get("pct_of_weight") or 0,
+                  estimated=(wf.get("estimated") or {}).get("pct_of_weight") or 0)
     return dict(rows=rows, has_spend=has_spend,
-                specific_co2=round(sums["Exact"]["co2"] + sums["Close"]["co2"]))
+                specific_co2=round(sums["Exact"]["co2"] + sums["Close"]["co2"]),
+                filled=filled if any(filled.values()) else None)
 
 
 def grades(tiers) -> list[dict]:

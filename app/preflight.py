@@ -29,6 +29,8 @@ Nothing here is silent. A file can be poor and still be analysed — but never q
 """
 from __future__ import annotations
 
+import statistics
+
 import catalogue
 import config
 import db
@@ -240,12 +242,95 @@ def check_weights(r) -> list[dict]:
     return [_f("weights", sev,
                f"{100 - pct_lines:.1f}% of lines convert to kilograms. {len(unweighable):,} "
                f"line(s) ({pct_lines:.1f}% of lines, {pct_spend:.1f}% of spend) are sold per "
-               "piece with no weight in the file and will contribute zero kg and zero CO2e. "
-               "They are never silently dropped — they are reported as a known gap.",
+               "piece with no weight in the file. Where the same article is weighed, here or "
+               "in another of this client's files, its kilograms per case are used; where the "
+               "catalogue has a reviewed weight per piece, that is; the rest count as zero kg "
+               "and zero CO2e. Every line says which.",
                unweighable_lines=len(unweighable), pct_of_lines=round(pct_lines, 1),
                pct_of_spend=round(pct_spend, 1), products=len(worst),
                examples=[dict(artikelnr=a, description=(r.products.get(a) or ("", ""))[1],
                               spend_eur=round(v)) for a, v in top])]
+
+
+JUMP = 3.0      # a case weighing this many times its history is worth a look
+
+
+def _case_kg(r) -> dict:
+    """This file's kg per case per article, over lines whose Aantal counts cases."""
+    ratios: dict = {}
+    for l in r.lines:
+        p = r.products.get(l[5])
+        if l[9] and (l[6] or 0) > 0 and (l[8] or 0) > 0 and not (p and (p[5] or "").upper() == "KG"):
+            ratios.setdefault(l[5], []).append(l[8] / l[6])
+    return {a: statistics.median(v) for a, v in ratios.items()}
+
+
+def check_pack_weights(r, tenant: str | None = None) -> list[dict]:
+    """What this file's weights add to, or say against, the client's history (1 Nov 2026).
+
+    Three things, all about the same article in different files:
+      * filled   sold by the piece here, weighed elsewhere: those lines take that weight
+      * changed  Sligro switched the article between pieces and kilograms (or back)
+      * jumped   a case here weighs more than 3x (or under a third of) its history: a
+                 changed pack, or a misread -- 30 kg of cheese read as 300
+    """
+    import weights
+    hist = weights.history(tenant)
+    here = _case_kg(r)
+    spend: dict = {}
+    unweighed_here, weighed_here = set(), set()
+    for l in r.lines:
+        spend[l[5]] = spend.get(l[5], 0.0) + (l[7] or 0)
+        (weighed_here if l[9] else unweighed_here).add(l[5])
+
+    def name(a):
+        return (r.products.get(a) or ("", ""))[1]
+
+    def by_spend(arts):
+        return sorted(arts, key=lambda a: -spend.get(a, 0))
+
+    filled = [a for a in unweighed_here if a in here or (hist.get(a) or {}).get("kg_case")]
+    changed = [a for a in r.products
+               if a in hist and ((a in unweighed_here and hist[a]["weighed"])
+                                 or (a in weighed_here and hist[a]["unweighed"]))]
+    jumped = {}
+    for a, kg in here.items():
+        past = (hist.get(a) or {}).get("kg_case")
+        if past and (kg > JUMP * past or kg < past / JUMP):
+            jumped[a] = (kg, past)
+
+    out = []
+    if filled:
+        eur = sum(spend.get(a, 0) for a in filled)
+        out.append(_f("weights_filled", "info",
+                      f"{len(filled)} product(s) sold by the piece in this file (EUR {eur:,.0f}) "
+                      "are weighed elsewhere, here or in another of this client's files. Those "
+                      "lines take that kg per case, and say so: 'measured'.",
+                      products=len(filled), spend_eur=round(eur),
+                      examples=[dict(artikelnr=a, description=name(a),
+                                     kg_per_case=round(here.get(a) or hist[a]["kg_case"], 3))
+                                for a in by_spend(filled)[:10]]))
+    if changed:
+        out.append(_f("pack_changed", "info",
+                      f"Sligro describes {len(changed)} product(s) differently here than in "
+                      "this client's other files: by the piece in one, by weight in the other. "
+                      "Nothing is lost -- the weighed lines give the others their weight -- "
+                      "but the descriptions disagree.",
+                      products=len(changed),
+                      examples=[dict(artikelnr=a, description=name(a))
+                                for a in by_spend(changed)[:10]]))
+    if jumped:
+        out.append(_f("pack_jumped", "warning",
+                      f"{len(jumped)} product(s) weigh more than {JUMP:g} times, or under a "
+                      "third of, what a case of them weighed before. Either the pack changed or "
+                      "the file was misread (a 30 kg cheese read as 300 kg). Worth a look before "
+                      "this file is counted.",
+                      products=len(jumped),
+                      examples=[dict(artikelnr=a, description=name(a),
+                                     kg_per_case=round(jumped[a][0], 3),
+                                     before=round(jumped[a][1], 3))
+                                for a in by_spend(jumped)[:10]]))
+    return out
 
 
 def check_barcodes(r) -> list[dict]:
@@ -321,7 +406,7 @@ def check_catalogue(r, tenant: str | None = None) -> list[dict]:
 
 # --------------------------------------------------------------------------- report
 CHECKS = [check_structure, check_duplicate_rows, check_overlap, check_volume,
-          check_weights, check_barcodes, check_catalogue]
+          check_weights, check_pack_weights, check_barcodes, check_catalogue]
 
 
 def report(r, tenant: str | None = None) -> dict:

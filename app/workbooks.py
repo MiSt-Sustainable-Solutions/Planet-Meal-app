@@ -55,10 +55,14 @@ def analysis_workbook(result: dict, scored: dict, client: str,
          h["confidence"]["product_specific_pct_of_weight"]],
         ["per-piece share of spend (%)", h["piece_spend_pct"]],
         # Adjusted and unadjusted side by side, from the same lines as the last tab.
+        # A weight the file did not state, filled in (1 Nov 2026), is bought food too.
         ["food bought, before adjustments (kg)", round(sum(
-            r.get("kg") or 0 for r in scored["rows"] if r.get("is_food")))],
+            (r.get("kg") or 0) + (r.get("kg_fill") or 0)
+            for r in scored["rows"] if r.get("is_food")))],
+        ["of which filled in where the file had no weight (kg)", round(sum(
+            r.get("kg_fill") or 0 for r in scored["rows"] if r.get("is_food")))],
         ["food not counted because of adjustments (kg)", round(sum(
-            (r.get("kg") or 0) - (r.get("kg_eff") or 0)
+            (r.get("kg") or 0) + (r.get("kg_fill") or 0) - (r.get("kg_eff") or 0)
             for r in scored["rows"] if r.get("is_food")))],
     ] + ([
         # Beside the footprint, never in it: the intensity above is food CO2 / food, as in
@@ -173,9 +177,12 @@ def analysis_workbook(result: dict, scored: dict, client: str,
           + ([["no weight", "No weight", "food sold per piece, counted as 0 kg", None, None,
                dh["no_weight"]["pct_of_spend"], dh["no_weight"]["products"], "no"]]
              if dh.get("no_weight") else []))
-    sheet("zero weight", ["artikelnr", "product", "category", "pack", "unit", "pieces", "spend EUR"],
+    # 1 Nov 2026: beside each, the weight it was given -- measured, estimated -- or none
+    sheet("zero weight", ["artikelnr", "product", "category", "pack", "unit", "pieces", "spend EUR",
+                          "weight now", "kg filled in"],
           [[r["artikelnr"], r["description"], r["category"], r["vp"], r["eenh"],
-            r["pieces"], r["spend_eur"]] for r in result["piece_items"]["rows"]])
+            r["pieces"], r["spend_eur"], r.get("weight_note") or r.get("weight_label") or "no weight",
+            r.get("kg_filled", 0.0)] for r in result["piece_items"]["rows"]])
 
     # Every line the sheets above are made of. This is the point of the whole download:
     # a reader who doubts a figure can open the rows underneath it here, in the same

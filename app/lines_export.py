@@ -52,6 +52,10 @@ COLUMNS = [
     ("aantal",         "Quantity",            "#,##0.##",  10),
     ("omzet",          "Spend EUR",           "#,##0.00",  12),
     ("kg",             "Kilograms",           "#,##0.###", 12),
+    # Where the file stated no weight and one was found (1 Nov 2026): what, and from where
+    ("kg_fill",        "Kilograms filled in", "#,##0.###", 14),
+    ("kg_basis",       "Weight from",         None,        13),
+    ("kg_note",        "How the weight was found", None,   44),
     ("share",          "Share counted",       "0%",        13),
     ("adjustment",     "Adjustment",          None,        20),
     ("kg_eff",         "Kilograms counted",   "#,##0.###", 17),
@@ -116,9 +120,15 @@ def _sheet_notes(ws, client: str, label: str, rows: int, version, extra) -> int:
         "match gets coarser. A line with no weight contributes 0 kg and 0 kg CO2e; it is "
         "not dropped, it is here with zeros so the gap is visible.",
         "'Kilograms' is what the file said was bought. 'Kilograms counted' is what the "
-        "footprint was calculated from and what the dashboard totals. They differ only "
-        "where MiSt has adjusted how much of a product counts: 'Share counted' says how "
-        "much, and 'Adjustment' names it.",
+        "footprint was calculated from and what the dashboard totals: (Kilograms + "
+        "Kilograms filled in) x Share counted. 'Share counted' and 'Adjustment' say where "
+        "MiSt has adjusted how much of a product counts.",
+        "'Weight from' says where a line's kilograms came from: 'file' (the file states "
+        "them), 'measured' (the file sold it by the piece, and the same article is weighed "
+        "in another of the client's files, so its kilograms per case are used), "
+        "'estimated' (a reviewed weight per piece, e.g. a banana at 180 g) or 'none' (no "
+        "weight anywhere: 0 kg). 'How the weight was found' gives the numbers. The file's "
+        "own 'Kilograms' are never changed.",
         "HOW TO RECONCILE THIS WITH THE DASHBOARD. Filter Food? = food, then sum "
         "'Kilograms counted' and 'kg CO2e' — those two totals are the headline exactly. "
         "Non-food lines are in this sheet as well, and they carry a footprint of their "

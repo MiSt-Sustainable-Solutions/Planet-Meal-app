@@ -247,17 +247,43 @@
 <section class="dark">
   <div class="inner">
     <div class="sec-label sl-teal">The weight gap</div>
-    <h2 class="sec-h2">{{ result.piece_items.pct_of_spend }}% of spend <em>weighs zero.</em></h2>
+    {# 1 Nov 2026: a weight the file does not state is filled in where it can be, and said #}
+    {% set still = result.headline.piece_spend_pct if result.headline.piece_spend_pct is not none else result.piece_items.pct_of_spend %}
+    <h2 class="sec-h2">{{ still }}% of spend <em>still weighs zero.</em></h2>
     <p class="muted" style="margin-top:14px;max-width:66ch;">
-      {{ result.piece_items.products }} products are sold per piece and carry no weight in the
-      export, so they contribute nothing to the footprint. This is not something we can
-      compute around — only the wholesaler can supply piece weights. Until then it is
-      disclosed on every screen that shows a total.
+      {{ result.piece_items.products }} products are sold per piece with no weight in the
+      export. Where the same article is weighed in another of your files, its kilograms per
+      case are used: <strong>measured</strong>. Where a reviewed weight per piece exists
+      (a banana, a head of iceberg lettuce), that is used: <strong>estimated</strong>. The
+      rest count as zero kilograms and zero CO<sub>2</sub>e, and every screen that shows a
+      total says so.
     </p>
+    {% if dh.weight_from %}
+    <div class="card scroll-x" style="margin-top:24px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Food weight</th><th>What it means</th><th class="num">% of food weight</th>
+          <th class="num">% of food spend</th><th class="num">Products</th>
+        </tr></thead>
+        <tbody>
+        {% for w in dh.weight_from %}
+        <tr>
+          <td class="name">{{ w.label|capitalize }}</td>
+          <td class="muted" style="max-width:46ch;">{{ w.explain }}</td>
+          <td class="num">{{ w.pct_of_weight }}</td>
+          <td class="num">{{ w.pct_of_spend }}</td>
+          <td class="num">{{ "{:,}".format(w.products) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
     <div class="card scroll-x" style="margin-top:24px;">
       <table class="tbl">
         <thead><tr>
           <th>Product</th><th>Category</th><th>Pack</th><th class="num">Pieces</th><th class="num">Spend €</th>
+          <th>Weight now</th>
         </tr></thead>
         <tbody>
         {% for p in result.piece_items.rows[:30] %}
@@ -267,6 +293,7 @@
           <td class="muted">{{ p.vp }} / {{ p.eenh }}</td>
           <td class="num">{{ "{:,}".format(p.pieces) }}</td>
           <td class="num">{{ "{:,}".format(p.spend_eur) }}</td>
+          <td class="muted" style="max-width:40ch;">{{ p.weight_note or p.weight_label or 'no weight' }}</td>
         </tr>
         {% endfor %}
         </tbody>

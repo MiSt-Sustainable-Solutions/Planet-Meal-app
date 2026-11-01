@@ -566,6 +566,7 @@ def _run(window: str | None = None, frm: str | None = None, to: str | None = Non
                 message=(f"{label} holds {12 - len(gone)} of 12 months. No purchases for "
                          + _month_ranges(gone) + ", so the totals cover part of the year.")))
     result["piece_items"] = db.piece_items(y0, m0, y1, m1, tenant=tenant, owner=owner)
+    weight_given(result)
     result["window"] = dict(key=window or default_window(tenant), label=label,
                             period_from=f"{y0}-{m0:02d}", period_to=f"{y1}-{m1:02d}")
 
@@ -609,6 +610,24 @@ def _run(window: str | None = None, frm: str | None = None, to: str | None = Non
         result["run_id"] = _save(result, label, y0, m0, y1, m1, len(lines), tenant,
                                  wkey, scored_at, fingerprint)
     return result
+
+
+def weight_given(result: dict) -> None:
+    """Say, beside each product the file did not weigh, what weight it was given.
+
+    The app counts its per-piece lines itself; the catalogue fills their weight in where it
+    can (1 Nov 2026) and returns what it gave each article. A product listed as weighing
+    zero must not be one that no longer does.
+    """
+    given = {r["artikelnr"]: r for r in result.get("weight_filled") or []}
+    for row in (result.get("piece_items") or {}).get("rows", []):
+        g = given.get(row["artikelnr"]) or {}
+        row["basis"] = g.get("basis", "none")
+        row["weight_label"] = g.get("label", "no weight")
+        row["weight_note"] = g.get("note", "")
+        row["kg_filled"] = g.get("kg_filled", 0.0)
+        if g and not g.get("is_food", True):
+            row["weight_label"], row["weight_note"] = "not food", "not food, not counted"
 
 
 def _save(result: dict, label, y0, m0, y1, m1, nlines: int, tenant: str,

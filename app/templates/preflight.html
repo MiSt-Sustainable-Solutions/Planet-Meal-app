@@ -126,6 +126,23 @@
         {% endfor %}
         </tbody>
       </table>
+      {% elif e0.kg_per_case is defined or f.code == 'pack_changed' %}
+      {# the weights a case of the same article has in this file and before (1 Nov 2026) #}
+      <table>
+        <thead><tr><th>Product</th><th>Article</th>
+          {% if e0.kg_per_case is defined %}<th class="num">kg per case</th>{% endif %}
+          {% if e0.before is defined %}<th class="num">before</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for e in f.examples[:12] %}
+        <tr>
+          <td class="k">{{ (e.description or e.artikelnr or '—')|truncate(38) }}</td>
+          <td>{{ e.artikelnr }}</td>
+          {% if e.kg_per_case is defined %}<td class="num">{{ e.kg_per_case }}</td>{% endif %}
+          {% if e.before is defined %}<td class="num">{{ e.before }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
       {% else %}
       <div style="margin-bottom:8px;">
         This check was run by an older version of the app and its examples are in a shape

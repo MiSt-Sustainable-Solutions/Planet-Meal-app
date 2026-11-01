@@ -101,6 +101,17 @@ piece = next(r for r in rows if r["artikelnr"] == "149475")
 P(piece is not None, "the per-piece banana line is in the export")
 P((piece.get("kg_eff") or 0) == 0 and (piece.get("co2_kg") or 0) == 0,
   "it contributes nothing, and says so rather than vanishing")
+P(piece.get("kg_basis") == "none", f"'Weight from' says none ({piece.get('kg_basis')})")
+
+print("\n=== ... unless the same article states its weight elsewhere (1 Nov 2026) ===")
+# The client's other file weighs a bag of these bananas at 0.9 kg: the app sends that as
+# pack_kg, and the line counts 100 x 0.9 kg -- beside, not instead of, the file's 0 kg.
+measured = catalogue.score_lines([dict(LINES[2], ivp="1", vp="ZK", maat=5, eenh="ST",
+                                       pack_kg=0.9)], label="probe")["rows"][0]
+P(measured.get("kg_basis") == "measured" and abs((measured.get("kg_eff") or 0) - 90) < 1e-6,
+  f"100 bags count 90 kg, measured ({measured.get('kg_basis')}, {measured.get('kg_eff')})")
+P(measured.get("kg") == 0 and abs((measured.get("kg_fill") or 0) - 90) < 1e-6,
+  "the file's Kilograms stay 0; the 90 kg are 'Kilograms filled in'")
 
 print("\n=== the workbook is readable and carries what it promises ===")
 data = lines_export.workbook(rows, "Acme University", "probe",
@@ -109,7 +120,8 @@ ws = openpyxl.load_workbook(io.BytesIO(data))["lines"]
 head_row = next(i for i, r in enumerate(ws.iter_rows(values_only=True), start=1)
                 if r[0] == "Period")
 heads = [c.value for c in ws[head_row]]
-for want in ("Period", "Product", "Kilograms", "Kilograms counted", "kg CO2e",
+for want in ("Period", "Product", "Kilograms", "Kilograms filled in", "Weight from",
+             "How the weight was found", "Kilograms counted", "kg CO2e",
              "Food group", "EAT-Lancet group", "Precision", "Matched to (type)", "Matched to",
              "NEVO code",
              "Footprint confidence", "Matched by"):

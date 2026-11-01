@@ -516,6 +516,10 @@
         <p style="margin-top:12px;font-size:12px;color:rgba(242,248,243,.7);max-width:70ch;">
           Shares of the food counted in this period.{% if precision.has_spend %} Spend also
           includes food sold per piece, which has no weight and so no CO<sub>2</sub>.{% endif %}
+          {%- if precision.filled %} Where the file gave no weight, it was filled in:
+          {{ precision.filled.measured }}% of the weight is measured on the same article
+          elsewhere{% if precision.filled.estimated %}, {{ precision.filled.estimated }}% estimated
+          from a reviewed weight per piece{% endif %}.{% endif %}
         </p>
       </div>
     </div>

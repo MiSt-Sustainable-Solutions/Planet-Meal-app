@@ -217,6 +217,9 @@ def window_fingerprint(y0: int, m0: int, y1: int, m1: int,
     # And so do the client's adjustments, without touching a single purchase line either.
     import adjustments
     parts.append(f"adjustments:{adjustments.digest(tenant or config.TENANT)}")
+    # and the kg per case another of the client's files gives an article (weights.py)
+    import weights
+    parts.append(f"weights:{weights.digest(tenant or config.TENANT)}")
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
 
 
@@ -315,7 +318,8 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
     con = connect()
     rows = con.execute("""
         SELECT l.artikelnr, p.description, p.category, p.ean, p.ean_he,
-               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known
+               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known,
+               l.source_upload
         FROM purchase_line l
         LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr""" +
         COUNTED_JOIN + """
@@ -331,7 +335,8 @@ def lines_for(y0: int, m0: int, y1: int, m1: int, tenant: str | None = None) -> 
                            klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
                            aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
                            kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
-                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "",
+                           source_upload=r["source_upload"])
                       for r in rows], tenant)
 
 
@@ -341,8 +346,14 @@ def _adjusted(lines: list[dict], tenant: str | None) -> list[dict]:
     Here, in the three readers, rather than in each caller: a period, a chosen set of files
     and one file's lines must all be counted the same way, and a caller that forgot would
     publish a figure with the frying oil counted in full.
+
+    And its case as its own file describes it, with this client's kg per case where the
+    file gave no weight (1 Nov 2026), so the catalogue can fill that weight in -- the same
+    way for all three readers, for the same reason.
     """
     import adjustments
+    import weights
+    weights.attach(lines, tenant or config.TENANT)
     return adjustments.apply(lines, tenant or config.TENANT)
 
 
@@ -374,7 +385,8 @@ def lines_picked(owner: dict, tenant: str | None = None) -> list[dict]:
                            klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
                            aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
                            kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
-                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "",
+                           source_upload=r["source_upload"])
                       for r in rows
                       if owner.get((r["year"], r["month"])) == r["source_upload"]], tenant)
 
@@ -399,6 +411,9 @@ def picked_fingerprint(upload_ids: list[str], tenant: str | None = None) -> str:
     parts = [f"{r[0]}:{r[1]}:{r[2]}:{r[3]}" for r in rows]
     import adjustments
     parts.append(f"adjustments:{adjustments.digest(tenant or config.TENANT)}")
+    # and the kg per case another of the client's files gives an article (weights.py)
+    import weights
+    parts.append(f"weights:{weights.digest(tenant or config.TENANT)}")
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
 
 
@@ -413,7 +428,8 @@ def lines_from_upload(upload_id: str, tenant: str | None = None) -> list[dict]:
     con = connect()
     rows = con.execute("""
         SELECT l.artikelnr, p.description, p.category, p.ean, p.ean_he,
-               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known
+               l.restaurant, l.klantnr, l.year, l.month, l.aantal, l.omzet, l.kg, l.kg_known,
+               l.source_upload
         FROM purchase_line l
         LEFT JOIN product p ON p.tenant=l.tenant AND p.artikelnr=l.artikelnr
         WHERE l.tenant=? AND l.source_upload=?""", (tenant, upload_id)).fetchall()
@@ -423,7 +439,8 @@ def lines_from_upload(upload_id: str, tenant: str | None = None) -> list[dict]:
                            klantnr=r["klantnr"] or "", year=r["year"], month=r["month"],
                            aantal=r["aantal"] or 0.0, omzet=r["omzet"] or 0.0,
                            kg=r["kg"] or 0.0, kg_known=r["kg_known"] or 0,
-                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "")
+                           ean_ce=r["ean"] or "", ean_he=r["ean_he"] or "",
+                           source_upload=r["source_upload"])
                       for r in rows], tenant)
 
 
